@@ -1,0 +1,14 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: parcelflow:latest
+    container_name: parcelflow
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Add app environment variables here as needed, e.g.:
+      # - DATABASE_URL=${DATABASE_URL}
+    restart: unless-stopped
