@@ -308,7 +308,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     }
 
     return { ok: false, error: "Invalid email or password." }
-  }, [])
+  }, [merchantUsers])
 
   const logout = useCallback(() => {
     setCurrentUser(null)
@@ -329,7 +329,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         updatedBy: currentUser?.name ?? "Super Admin",
       }))
     },
-    [currentUser],
+    [currentUser?.name],
   )
 
   const createAccount = useCallback((input: NewAccountInput) => {
@@ -420,7 +420,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         ),
       )
     },
-    [currentUser],
+    [currentUser?.name],
   )
 
   const suspendMerchant = useCallback((id: string) => {
@@ -522,7 +522,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setOrders((prev) => [order, ...prev])
       return { ok: true, order }
     },
-    [currentMerchant, securityConfig, orders],
+    [securityConfig, orders],
   )
 
   // --- Phase 4: Order approval & pickup assignment (admin) ----------------
@@ -575,7 +575,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [orders, riders, merchants, currentUser],
+    [orders, riders, merchants, currentUser?.name],
   )
 
   // --- Phase 5: Pickup from merchant (rider) ------------------------------
@@ -620,7 +620,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [orders, currentRider],
+    [orders],
   )
 
   // --- Phase 6: Parcel submitted to warehouse (warehouse admin) -----------
@@ -664,7 +664,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [orders, currentWarehouse, currentUser],
+    [orders, currentUser?.name],
   )
 
   // --- Phase 7: Delivery rider assignment (warehouse admin) ---------------
@@ -727,7 +727,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [orders, riders, currentWarehouse, currentUser],
+    [orders, riders, currentUser?.name],
   )
 
   // --- Phase 8: Delivery attempt (delivery rider -> customer) -------------
@@ -748,7 +748,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       }
       return { order }
     },
-    [orders, currentRider],
+    [orders],
   )
 
   const markOutForDelivery = useCallback<
@@ -873,7 +873,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       }
       return { order }
     },
-    [orders, currentWarehouse],
+    [orders],
   )
 
   const reattemptFailedOrder = useCallback<
@@ -902,7 +902,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [findFailedWarehouseOrder, currentUser],
+    [findFailedWarehouseOrder, currentUser?.name],
   )
 
   const returnFailedOrder = useCallback<
@@ -931,7 +931,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [findFailedWarehouseOrder, currentUser],
+    [findFailedWarehouseOrder, currentUser?.name],
   )
 
   // --- Phase 9: COD reconciliation & merchant payout ----------------------
@@ -984,7 +984,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [orders, currentWarehouse, currentUser],
+    [orders, currentUser?.name],
   )
 
   // Orders that are delivered, COD-settled, and not locked to an active payout
@@ -1052,7 +1052,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setPayoutRequests((prev) => [request, ...prev])
       return { ok: true, request }
     },
-    [currentMerchant, orders, payoutRequests],
+    [orders, payoutRequests],
   )
 
   const approvePayout = useCallback<PlatformContextValue["approvePayout"]>(
@@ -1078,7 +1078,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [payoutRequests, currentUser],
+    [payoutRequests, currentUser?.name],
   )
 
   const rejectPayout = useCallback<PlatformContextValue["rejectPayout"]>(
@@ -1115,7 +1115,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
       return { ok: true }
     },
-    [payoutRequests, currentUser],
+    [payoutRequests, currentUser?.name],
   )
 
   const markPayoutPaid = useCallback<PlatformContextValue["markPayoutPaid"]>(

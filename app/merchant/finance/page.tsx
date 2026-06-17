@@ -65,7 +65,6 @@ function StatCard({
 
 export default function MerchantFinancePage() {
   const {
-    currentUser,
     currentMerchant,
     merchantPayableOrders,
     merchantPayoutRequests,

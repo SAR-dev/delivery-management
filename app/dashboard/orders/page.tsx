@@ -95,7 +95,7 @@ export default function OrdersPage() {
       return matchesTab && matchesQuery
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orders, tab, query, merchants])
+  }, [orders, tab, query])
 
   function openApprove(order: Order) {
     setActiveOrder(order)

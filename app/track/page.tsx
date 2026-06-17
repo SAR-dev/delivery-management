@@ -57,7 +57,7 @@ function TrackContent() {
           o.id.toUpperCase() === normalized,
       ) ?? null
     )
-  }, [orders, submittedCode])
+  }, [orders])
 
   const merchant = useMemo(
     () => (order ? merchants.find((m) => m.id === order.merchantId) ?? null : null),
