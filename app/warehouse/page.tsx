@@ -6,7 +6,6 @@ import {
   PackageOpen,
   MapPin,
   Phone,
-  Store,
   Package,
   Bike,
   Boxes,
