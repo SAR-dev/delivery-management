@@ -6,9 +6,11 @@ import {
   doublePrecision,
   integer,
 } from "drizzle-orm/pg-core";
+import { createId } from "@paralleldrive/cuid2";
 
 // =============================================================================
 // Better Auth tables (camelCase column names required by Better Auth)
+// Better Auth generates and passes its own IDs — no $defaultFn needed here.
 // =============================================================================
 
 export const user = pgTable("user", {
@@ -79,6 +81,7 @@ export const verification = pgTable("verification", {
 
 // =============================================================================
 // Platform profile (extends a Better Auth user with role + domain links)
+// userId is the PK and comes from Better Auth — no $defaultFn needed.
 // =============================================================================
 
 // role values: SUPER_ADMIN | ADMIN | WAREHOUSE_ADMIN | MERCHANT | RIDER
@@ -93,8 +96,8 @@ export const profile = pgTable("profile", {
   canManagePricing: boolean("canManagePricing").notNull().default(false),
   // FK-like references; kept as plain text to avoid circular deps.
   warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
-  merchantId: text("merchantId"), // MERCHANT: their merchant business
-  riderId: text("riderId"), // RIDER: their rider profile
+  merchantId: text("merchantId"),   // MERCHANT: their merchant business
+  riderId: text("riderId"),         // RIDER: their rider profile
   createdAt: timestamp("createdAt", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -105,7 +108,7 @@ export const profile = pgTable("profile", {
 // =============================================================================
 
 export const warehouse = pgTable("warehouse", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   name: text("name").notNull(),
   address: text("address").notNull(),
   city: text("city").notNull(),
@@ -119,7 +122,7 @@ export const warehouse = pgTable("warehouse", {
 // =============================================================================
 
 export const rider = pgTable("rider", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
   // Service zone the rider primarily covers.
@@ -137,7 +140,7 @@ export const rider = pgTable("rider", {
 
 // status values: PENDING | ACTIVE | SUSPENDED
 export const merchant = pgTable("merchant", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   businessName: text("businessName").notNull(),
   // Owner contact details captured at registration.
   ownerName: text("ownerName").notNull(),
@@ -163,7 +166,7 @@ export const merchant = pgTable("merchant", {
 // =============================================================================
 
 export const pickupLocation = pgTable("pickup_location", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   merchantId: text("merchantId")
     .notNull()
     .references(() => merchant.id, { onDelete: "cascade" }),
@@ -173,6 +176,7 @@ export const pickupLocation = pgTable("pickup_location", {
 
 // =============================================================================
 // Security money config (single-row table; row id = 'default')
+// No $defaultFn — the seed always inserts with id = 'default' explicitly.
 // =============================================================================
 
 export const securityConfig = pgTable("security_config", {
@@ -197,7 +201,7 @@ export const securityConfig = pgTable("security_config", {
 
 // status values: PENDING | APPROVED | PAID | REJECTED
 export const payoutRequest = pgTable("payout_request", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   // Short human-friendly reference shown in the UI (e.g. PR-0001).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
@@ -229,7 +233,7 @@ export const payoutRequest = pgTable("payout_request", {
 // status values: PENDING | APPROVED | PICKED_UP | IN_WAREHOUSE | IN_TRANSIT |
 //                OUT_FOR_DELIVERY | DELIVERED | FAILED_ATTEMPT | RETURNED
 export const order = pgTable("order", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$defaultFn(() => createId()),
   // Short human-friendly tracking code (e.g. PF-000123).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
