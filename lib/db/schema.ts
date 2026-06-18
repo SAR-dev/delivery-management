@@ -37,6 +37,11 @@ export const user = pgTable("user", {
   image: text("image"),
   createdAt: ts("createdAt").notNull().defaultNow(),
   updatedAt: ts("updatedAt").notNull().defaultNow(),
+  // Required by the better-auth admin plugin
+  role: text("role"),
+  banned: boolean("banned"),
+  banReason: text("banReason"),
+  banExpires: ts("banExpires"),
 });
 
 export const session = pgTable("session", {

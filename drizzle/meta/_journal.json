@@ -8,6 +8,13 @@
       "when": 1781713314207,
       "tag": "0000_magenta_lucky_pierre",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781762821029,
+      "tag": "0001_cold_wrecking_crew",
+      "breakpoints": true
     }
   ]
 }

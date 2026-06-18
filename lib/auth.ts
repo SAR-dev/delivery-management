@@ -1,8 +1,10 @@
 import { betterAuth } from 'better-auth'
+import { admin } from 'better-auth/plugins'
 import { pool } from '@/lib/db'
 
 export const auth = betterAuth({
   database: pool,
+  plugins: [admin()],
   baseURL:
     process.env.BETTER_AUTH_URL ??
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -27,14 +29,14 @@ export const auth = betterAuth({
   },
   ...(process.env.NODE_ENV === 'development'
     ? {
-        advanced: {
-          // In dev (v0 preview iframe), force cross-site cookies so the
-          // session cookie is stored by the browser.
-          defaultCookieAttributes: {
-            sameSite: 'none' as const,
-            secure: true,
-          },
+      advanced: {
+        // In dev (v0 preview iframe), force cross-site cookies so the
+        // session cookie is stored by the browser.
+        defaultCookieAttributes: {
+          sameSite: 'none' as const,
+          secure: true,
         },
-      }
+      },
+    }
     : {}),
 })
