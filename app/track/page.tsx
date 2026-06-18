@@ -10,7 +10,6 @@ import {
   Store,
   PackageX,
   ArrowRight,
-  Clock,
   CheckCircle2,
   XCircle,
   Undo2,
@@ -19,7 +18,7 @@ import {
   Bike,
   Warehouse,
   Truck,
-  Circle, User,
+  User,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order, OrderStatus } from "@/lib/types"
