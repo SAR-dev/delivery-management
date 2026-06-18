@@ -5,11 +5,27 @@ import {
   timestamp,
   doublePrecision,
   integer,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 
 // =============================================================================
+// Shared column helpers
+// =============================================================================
+
+// All timestamp columns use `mode: "string"` so Drizzle decodes them as ISO
+// strings instead of `Date` objects. This matches how the rest of the app
+// (mock data, React state, anything crossing a server/client boundary) has
+// always represented dates, and means the inferred row types below need no
+// extra conversion layer to be used directly as app-level types.
+const ts = (name: string) => timestamp(name, { mode: "string", withTimezone: true });
+
+// =============================================================================
 // Better Auth tables (camelCase column names required by Better Auth)
+// Better Auth talks to Postgres directly (see lib/auth.ts: `database: pool`),
+// so it doesn't read these definitions. They exist purely so the app can
+// query/join these tables through Drizzle with full type safety — the SQL
+// shape must still match whatever Better Auth's own migrations create.
 // Better Auth generates and passes its own IDs — no $defaultFn needed here.
 // =============================================================================
 
@@ -19,24 +35,16 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("emailVerified").notNull().default(false),
   image: text("image"),
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  updatedAt: ts("updatedAt").notNull().defaultNow(),
 });
 
 export const session = pgTable("session", {
   id: text("id").primaryKey(),
-  expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
+  expiresAt: ts("expiresAt").notNull(),
   token: text("token").notNull().unique(),
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  updatedAt: ts("updatedAt").notNull().defaultNow(),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId")
@@ -54,29 +62,21 @@ export const account = pgTable("account", {
   accessToken: text("accessToken"),
   refreshToken: text("refreshToken"),
   idToken: text("idToken"),
-  accessTokenExpiresAt: timestamp("accessTokenExpiresAt", {
-    withTimezone: true,
-  }),
-  refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt", {
-    withTimezone: true,
-  }),
+  accessTokenExpiresAt: ts("accessTokenExpiresAt"),
+  refreshTokenExpiresAt: ts("refreshTokenExpiresAt"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  updatedAt: ts("updatedAt").notNull().defaultNow(),
 });
 
 export const verification = pgTable("verification", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
-  expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
-  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow(),
+  expiresAt: ts("expiresAt").notNull(),
+  createdAt: ts("createdAt").defaultNow(),
+  updatedAt: ts("updatedAt").defaultNow(),
 });
 
 // =============================================================================
@@ -84,12 +84,23 @@ export const verification = pgTable("verification", {
 // userId is the PK and comes from Better Auth — no $defaultFn needed.
 // =============================================================================
 
-// role values: SUPER_ADMIN | ADMIN | WAREHOUSE_ADMIN | MERCHANT | RIDER
+// `enum` here doesn't create a Postgres enum type or check runtime values —
+// it's a Drizzle-only hint so $inferSelect/$inferInsert narrow `role` to this
+// literal union instead of plain `string`. The column stays a normal `text`
+// column in the database; nothing to migrate.
+export const profileRoles = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "WAREHOUSE_ADMIN",
+  "MERCHANT",
+  "RIDER",
+] as const;
+
 export const profile = pgTable("profile", {
   userId: text("userId")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
+  role: text("role", { enum: profileRoles }).notNull(),
   phone: text("phone").notNull().default(""),
   isActive: boolean("isActive").notNull().default(true),
   // Only meaningful for ADMIN users.
@@ -98,9 +109,7 @@ export const profile = pgTable("profile", {
   warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
   merchantId: text("merchantId"),   // MERCHANT: their merchant business
   riderId: text("riderId"),         // RIDER: their rider profile
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: ts("createdAt").notNull().defaultNow(),
 });
 
 // =============================================================================
@@ -138,7 +147,8 @@ export const rider = pgTable("rider", {
 // Merchants (standalone entity — owner contact info stored here directly)
 // =============================================================================
 
-// status values: PENDING | ACTIVE | SUSPENDED
+export const merchantStatuses = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
+
 export const merchant = pgTable("merchant", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   businessName: text("businessName").notNull(),
@@ -147,7 +157,7 @@ export const merchant = pgTable("merchant", {
   email: text("email").notNull(),
   phone: text("phone").notNull(),
   address: text("address").notNull(),
-  status: text("status").notNull().default("PENDING"),
+  status: text("status", { enum: merchantStatuses }).notNull().default("PENDING"),
   // Delivery pricing — set by an Admin after approval.
   baseRate: doublePrecision("baseRate").notNull().default(0),
   extraRatePerKg: doublePrecision("extraRatePerKg").notNull().default(0),
@@ -155,10 +165,8 @@ export const merchant = pgTable("merchant", {
   freeWeightKg: doublePrecision("freeWeightKg").notNull().default(1),
   // Soft reference to the admin user who approved this merchant.
   approvedBy: text("approvedBy"),
-  approvedAt: timestamp("approvedAt", { withTimezone: true }),
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  approvedAt: ts("approvedAt"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
 });
 
 // =============================================================================
@@ -188,9 +196,7 @@ export const securityConfig = pgTable("security_config", {
   highValuePercentage: doublePrecision("highValuePercentage")
     .notNull()
     .default(1),
-  updatedAt: timestamp("updatedAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  updatedAt: ts("updatedAt").notNull().defaultNow(),
   // Name (not id) of the admin who last updated, matching frontend display.
   updatedBy: text("updatedBy").notNull(),
 });
@@ -199,7 +205,13 @@ export const securityConfig = pgTable("security_config", {
 // Payout requests
 // =============================================================================
 
-// status values: PENDING | APPROVED | PAID | REJECTED
+export const payoutRequestStatuses = [
+  "PENDING",
+  "APPROVED",
+  "PAID",
+  "REJECTED",
+] as const;
+
 export const payoutRequest = pgTable("payout_request", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   // Short human-friendly reference shown in the UI (e.g. PR-0001).
@@ -207,31 +219,42 @@ export const payoutRequest = pgTable("payout_request", {
   merchantId: text("merchantId")
     .notNull()
     .references(() => merchant.id),
-  // JSON-encoded array of order ids included in this request.
-  // Stored as text to keep the schema simple; parse in application code.
-  orderIds: text("orderIds").notNull(),
+  // Array of order ids included in this request, stored as jsonb so Drizzle
+  // reads/writes a real string[] — no manual JSON.stringify/parse needed.
+  orderIds: jsonb("orderIds").$type<string[]>().notNull(),
   amount: doublePrecision("amount").notNull(),
-  status: text("status").notNull().default("PENDING"),
+  status: text("status", { enum: payoutRequestStatuses })
+    .notNull()
+    .default("PENDING"),
   // Merchant-supplied payout destination.
   payoutMethod: text("payoutMethod").notNull(),
   payoutDetails: text("payoutDetails").notNull(),
-  requestedAt: timestamp("requestedAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  requestedAt: ts("requestedAt").notNull().defaultNow(),
   // Super Admin review stamps.
   reviewedBy: text("reviewedBy"),
-  reviewedAt: timestamp("reviewedAt", { withTimezone: true }),
+  reviewedAt: ts("reviewedAt"),
   rejectReason: text("rejectReason"),
-  paidAt: timestamp("paidAt", { withTimezone: true }),
+  paidAt: ts("paidAt"),
 });
 
 // =============================================================================
 // Orders (lifecycle timestamps embedded; replaces separate audit log)
 // =============================================================================
 
-// deliveryType values: STANDARD | FRAGILE
-// status values: PENDING | APPROVED | PICKED_UP | IN_WAREHOUSE | IN_TRANSIT |
-//                OUT_FOR_DELIVERY | DELIVERED | FAILED_ATTEMPT | RETURNED
+export const orderDeliveryTypes = ["STANDARD", "FRAGILE"] as const;
+
+export const orderStatuses = [
+  "PENDING",
+  "APPROVED",
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "FAILED_ATTEMPT",
+  "RETURNED",
+] as const;
+
 export const order = pgTable("order", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   // Short human-friendly tracking code (e.g. PF-000123).
@@ -247,61 +270,59 @@ export const order = pgTable("order", {
   deliveryAddress: text("deliveryAddress").notNull(),
   deliveryCity: text("deliveryCity").notNull(),
   parcelWeightKg: doublePrecision("parcelWeightKg").notNull(),
-  deliveryType: text("deliveryType").notNull().default("STANDARD"),
+  deliveryType: text("deliveryType", { enum: orderDeliveryTypes })
+    .notNull()
+    .default("STANDARD"),
   productCost: doublePrecision("productCost").notNull(),
   deliveryCharge: doublePrecision("deliveryCharge").notNull(),
   securityMoney: doublePrecision("securityMoney").notNull(),
   totalCollectible: doublePrecision("totalCollectible").notNull(),
-  status: text("status").notNull().default("PENDING"),
-  createdAt: timestamp("createdAt", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  status: text("status", { enum: orderStatuses }).notNull().default("PENDING"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
 
   // Phase 4: Admin approves order and assigns pickup rider.
   approvedBy: text("approvedBy"),
-  approvedAt: timestamp("approvedAt", { withTimezone: true }),
+  approvedAt: ts("approvedAt"),
   pickupRiderId: text("pickupRiderId").references(() => rider.id),
-  assignedAt: timestamp("assignedAt", { withTimezone: true }),
+  assignedAt: ts("assignedAt"),
 
   // Phase 5: Pickup rider collects parcel from merchant.
-  pickedUpAt: timestamp("pickedUpAt", { withTimezone: true }),
+  pickedUpAt: ts("pickedUpAt"),
 
   // Phase 6: Parcel received at warehouse.
   warehouseId: text("warehouseId").references(() => warehouse.id),
-  receivedAtWarehouseAt: timestamp("receivedAtWarehouseAt", {
-    withTimezone: true,
-  }),
+  receivedAtWarehouseAt: ts("receivedAtWarehouseAt"),
   // Name of the Warehouse Admin who logged the parcel in.
   receivedByWarehouse: text("receivedByWarehouse"),
 
   // Phase 7: Warehouse Admin assigns delivery rider and dispatches parcel.
   deliveryRiderId: text("deliveryRiderId").references(() => rider.id),
-  dispatchedAt: timestamp("dispatchedAt", { withTimezone: true }),
+  dispatchedAt: ts("dispatchedAt"),
   // Name of the Warehouse Admin who dispatched.
   dispatchedBy: text("dispatchedBy"),
 
   // Phase 8: Delivery rider heads out and attempts delivery.
-  outForDeliveryAt: timestamp("outForDeliveryAt", { withTimezone: true }),
+  outForDeliveryAt: ts("outForDeliveryAt"),
   // Successful delivery.
-  deliveredAt: timestamp("deliveredAt", { withTimezone: true }),
+  deliveredAt: ts("deliveredAt"),
   // Soft reference to uploaded proof image (URL / storage key).
   deliveryProofRef: text("deliveryProofRef"),
   amountCollected: doublePrecision("amountCollected"),
   // Failed attempt.
-  failedAttemptAt: timestamp("failedAttemptAt", { withTimezone: true }),
+  failedAttemptAt: ts("failedAttemptAt"),
   failureNote: text("failureNote"),
   deliveryAttempts: integer("deliveryAttempts").notNull().default(0),
 
   // Phase 8B: Warehouse Admin resolves a failed attempt.
-  failedResolvedAt: timestamp("failedResolvedAt", { withTimezone: true }),
+  failedResolvedAt: ts("failedResolvedAt"),
   // Name of the Warehouse Admin who resolved the exception.
   failedResolvedBy: text("failedResolvedBy"),
   // Set only when parcel is closed as RETURNED.
-  returnedAt: timestamp("returnedAt", { withTimezone: true }),
+  returnedAt: ts("returnedAt"),
   returnReason: text("returnReason"),
 
   // Phase 9: COD reconciliation — rider settles cash with Warehouse Admin.
-  codSettledAt: timestamp("codSettledAt", { withTimezone: true }),
+  codSettledAt: ts("codSettledAt"),
   codSettledBy: text("codSettledBy"),
   // Payout request this order is attached to. While set (and not REJECTED)
   // the order is locked and cannot be added to another request.

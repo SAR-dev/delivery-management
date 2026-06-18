@@ -336,17 +336,21 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const id = `usr_${input.role === "ADMIN" ? "admin" : "wh"}_${Math.random()
       .toString(36)
       .slice(2, 7)}`
+    const now = new Date().toISOString()
     const account: User = {
       id,
       name: input.name,
       email: input.email,
+      emailVerified: false,
       phone: input.phone,
       role: input.role,
       isActive: true,
-      createdAt: new Date().toISOString(),
-      ...(input.role === "ADMIN"
-        ? { canManagePricing: input.canManagePricing ?? false }
-        : { warehouseId: input.warehouseId ?? null }),
+      canManagePricing:
+        input.role === "ADMIN" ? (input.canManagePricing ?? false) : false,
+      warehouseId:
+        input.role === "WAREHOUSE_ADMIN" ? (input.warehouseId ?? null) : null,
+      createdAt: now,
+      updatedAt: now,
     }
     setTeam((prev) => [account, ...prev])
   }, [])
@@ -388,16 +392,20 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       approvedAt: null,
       createdAt: new Date().toISOString(),
     }
+    const now = new Date().toISOString()
     const user: User = {
       id: `usr_mch_${Math.random().toString(36).slice(2, 8)}`,
       name: input.ownerName,
       email: input.email.trim().toLowerCase(),
+      emailVerified: false,
       phone: input.phone,
       role: "MERCHANT",
       isActive: true,
+      canManagePricing: false,
       merchantId,
       password: input.password,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     }
     setMerchants((prev) => [merchant, ...prev])
     setMerchantUsers((prev) => [user, ...prev])
@@ -518,6 +526,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         totalCollectible,
         status: "PENDING",
         createdAt: new Date().toISOString(),
+        deliveryAttempts: 0,
       }
       setOrders((prev) => [order, ...prev])
       return { ok: true, order }
