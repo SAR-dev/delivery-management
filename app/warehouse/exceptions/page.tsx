@@ -3,10 +3,6 @@
 import { useMemo, useState } from "react"
 import {
   AlertTriangle,
-  PackageOpen,
-  MapPin,
-  Phone,
-  Package,
   Bike,
   RotateCcw,
   Undo2,
@@ -21,6 +17,7 @@ import { FailedDeliveryDialog } from "@/components/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 type FilterTab = "NEEDS_ACTION" | "RESOLVED"
 
@@ -66,6 +63,7 @@ export default function WarehouseExceptionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
@@ -91,11 +89,113 @@ export default function WarehouseExceptionsPage() {
     setDialogOpen(true)
   }
 
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="size-4 text-muted-foreground" />
+          {rider(o.deliveryRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span>{o.deliveryCity}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.recipientName} · {o.recipientPhone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "attempts",
+      header: "Attempts",
+      align: "center",
+      sortable: true,
+      sortValue: (o) => o.deliveryAttempts ?? 1,
+      cell: (o) => (
+        <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
+      ),
+    },
+    {
+      id: "note",
+      header: "Note",
+      cell: (o) =>
+        o.status === "FAILED_ATTEMPT" && o.failureNote ? (
+          <span className="flex max-w-56 items-start gap-1.5 text-xs text-destructive">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            {o.failureNote}
+          </span>
+        ) : o.status === "RETURNED" ? (
+          <span className="flex max-w-56 items-start gap-1.5 text-xs text-muted-foreground">
+            <Undo2 className="mt-0.5 size-3.5 shrink-0" />
+            Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
+            {o.returnReason ? ` — ${o.returnReason}` : ""}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "FAILED_ATTEMPT" ? (
+          <Button size="sm" onClick={() => openResolve(o)}>
+            <RotateCcw className="size-4" />
+            Resolve
+          </Button>
+        ) : null,
+    },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Exceptions desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 8B: resolve failed delivery attempts at ${
+        description={`Resolve failed delivery attempts at ${
           currentWarehouse?.name ?? "your warehouse"
         } — re-attempt delivery or close the parcel as returned.`}
       />
@@ -132,118 +232,28 @@ export default function WarehouseExceptionsPage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <PackageOpen className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">
-                {tab === "NEEDS_ACTION"
-                  ? "No failed deliveries"
-                  : "Nothing returned yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "NEEDS_ACTION"
-                  ? "Parcels appear here when a delivery rider records a failed attempt."
-                  : "Parcels you close as returned will be listed here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {visible.map((o) => {
-            const m = merchant(o.merchantId)
-            const dr = rider(o.deliveryRiderId)
-            return (
-              <Card key={o.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {o.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                    </div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm">
-                    <div className="flex items-start gap-3">
-                      <Bike className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">
-                          Delivery rider
-                        </p>
-                        <p className="font-medium leading-snug">
-                          {dr?.name ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.parcelWeightKg} KG · {o.deliveryType} ·{" "}
-                        {o.deliveryAttempts ?? 1} attempt
-                        {(o.deliveryAttempts ?? 1) === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.deliveryAddress}, {o.deliveryCity}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.recipientName} · {o.recipientPhone}
-                      </p>
-                    </div>
-                  </div>
-
-                  {o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-                    <p className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                      <span className="leading-snug">{o.failureNote}</span>
-                    </p>
-                  ) : null}
-
-                  {o.status === "RETURNED" ? (
-                    <p className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                      <Undo2 className="mt-0.5 size-4 shrink-0" />
-                      <span className="leading-snug">
-                        Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
-                        {o.returnReason ? ` — ${o.returnReason}` : ""}. No COD
-                        collected, no merchant payout.
-                      </span>
-                    </p>
-                  ) : null}
-
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-muted-foreground">
-                      Collectible{" "}
-                      <span className="font-medium text-foreground tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </span>
-                    </span>
-                    {o.status === "FAILED_ATTEMPT" ? (
-                      <Button size="sm" onClick={() => openResolve(o)}>
-                        <RotateCcw className="size-4" />
-                        Resolve
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            searchable
+            searchPlaceholder="Search code, merchant, rider, city"
+            getSearchText={(o) =>
+              `${o.code} ${merchantName(o.merchantId)} ${
+                rider(o.deliveryRiderId)?.name ?? ""
+              } ${o.deliveryCity} ${o.recipientName}`
+            }
+            emptyMessage={
+              tab === "NEEDS_ACTION"
+                ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."
+                : "Nothing returned yet."
+            }
+          />
+        </CardContent>
+      </Card>
 
       <FailedDeliveryDialog
         order={activeOrder}

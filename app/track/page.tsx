@@ -179,7 +179,7 @@ export default function TrackPage() {
 }
 
 function TrackContent() {
-  const { orders, merchants } = usePlatform()
+  const { orders, merchants, riders, warehouses } = usePlatform()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialCode = (searchParams.get("code") ?? "").trim()
@@ -205,6 +205,21 @@ function TrackContent() {
   const merchant = useMemo(
     () => (order ? merchants.find((m) => m.id === order.merchantId) ?? null : null),
     [merchants, order],
+  )
+
+  const pickupRider = useMemo(
+    () => (order?.pickupRiderId ? riders.find((r) => r.id === order.pickupRiderId) ?? null : null),
+    [riders, order],
+  )
+
+  const deliveryRider = useMemo(
+    () => (order?.deliveryRiderId ? riders.find((r) => r.id === order.deliveryRiderId) ?? null : null),
+    [riders, order],
+  )
+
+  const warehouse = useMemo(
+    () => (order?.warehouseId ? warehouses.find((w) => w.id === order.warehouseId) ?? null : null),
+    [warehouses, order],
   )
 
   function handleSubmit(e: { preventDefault(): void }) {
@@ -347,6 +362,46 @@ function TrackContent() {
               </div>
             </div>
 
+            {/* Who's handling the parcel */}
+            {(pickupRider || warehouse || deliveryRider) && (
+              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
+                  Who&apos;s handling your parcel
+                </p>
+                <ul className="space-y-3">
+                  {pickupRider && (
+                    <HandlerRow
+                      icon={Bike}
+                      role="Pickup rider"
+                      name={pickupRider.name}
+                      detail={[maskPhone(pickupRider.phone), pickupRider.zone].filter(Boolean).join(" · ")}
+                      done={Boolean(order.pickedUpAt)}
+                    />
+                  )}
+                  {warehouse && (
+                    <HandlerRow
+                      icon={Warehouse}
+                      role="Sorting hub"
+                      name={warehouse.name}
+                      detail={[warehouse.city, order.receivedByWarehouse ? `Logged by ${order.receivedByWarehouse}` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      done={Boolean(order.receivedAtWarehouseAt)}
+                    />
+                  )}
+                  {deliveryRider && (
+                    <HandlerRow
+                      icon={Truck}
+                      role="Delivery rider"
+                      name={deliveryRider.name}
+                      detail={[maskPhone(deliveryRider.phone), deliveryRider.zone].filter(Boolean).join(" · ")}
+                      done={Boolean(order.deliveredAt)}
+                    />
+                  )}
+                </ul>
+              </div>
+            )}
+
             {/* Timeline card */}
             <div className="rounded-xl border border-border bg-card shadow-sm p-5">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-5">
@@ -359,6 +414,40 @@ function TrackContent() {
         )}
       </div>
     </main>
+  )
+}
+
+function HandlerRow({
+  icon: Icon,
+  role,
+  name,
+  detail,
+  done,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  role: string
+  name: string
+  detail?: string
+  done?: boolean
+}) {
+  return (
+    <li className="flex items-center gap-3">
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-full border",
+          done
+            ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
+            : "border-border bg-muted text-muted-foreground",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">{role}</p>
+        <p className="text-sm font-medium truncate">{name}</p>
+        {detail && <p className="text-xs text-muted-foreground truncate">{detail}</p>}
+      </div>
+    </li>
   )
 }
 

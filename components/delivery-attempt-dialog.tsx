@@ -75,28 +75,31 @@ export function DeliveryAttemptDialog({
     onOpenChange(next)
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitting(true)
-    if (outcome === "DELIVERED") {
-      const result = markDelivered(order!.id)
-      if (result.ok) {
-        toast.success(
-          `${order!.code} delivered. ${formatTk(order!.totalCollectible)} collected.`,
-        )
-        handleOpenChange(false)
+    try {
+      if (outcome === "DELIVERED") {
+        const result = await markDelivered(order!.id)
+        if (result.ok) {
+          toast.success(
+            `${order!.code} delivered. ${formatTk(order!.totalCollectible)} collected.`,
+          )
+          handleOpenChange(false)
+        } else {
+          toast.error(result.error ?? "Unable to mark delivered.")
+        }
       } else {
-        toast.error(result.error ?? "Unable to mark delivered.")
+        const result = await markDeliveryFailed(order!.id, note)
+        if (result.ok) {
+          toast.success(`${order!.code} marked as a failed attempt.`)
+          handleOpenChange(false)
+        } else {
+          toast.error(result.error ?? "Unable to record failed attempt.")
+        }
       }
-    } else {
-      const result = markDeliveryFailed(order!.id, note)
-      if (result.ok) {
-        toast.success(`${order!.code} marked as a failed attempt.`)
-        handleOpenChange(false)
-      } else {
-        toast.error(result.error ?? "Unable to record failed attempt.")
-      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   const failedNeedsNote = outcome === "FAILED" && !note.trim()

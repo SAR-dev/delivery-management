@@ -7,8 +7,19 @@ services:
     container_name: parcelflow
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
-      # Add app environment variables here as needed, e.g.:
-      # - DATABASE_URL=${DATABASE_URL}
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel run
+    depends_on:
+      - web
+    network_mode: host

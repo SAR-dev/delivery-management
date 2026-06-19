@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
+import type { Order, PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { PayoutStatusBadge } from "@/components/payout-status-badge"
 import { PayoutRequestDialog } from "@/components/payout-request-dialog"
@@ -23,14 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function StatCard({
   label,
@@ -86,11 +80,130 @@ export default function MerchantFinancePage() {
   const isActive = currentMerchant?.status === "ACTIVE"
   const canRequest = isActive && merchantPayableOrders.length > 0
 
+  const payableColumns: DataTableColumn<Order>[] = [
+    {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cellClassName: "font-mono text-xs",
+      cell: (o) => o.code,
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="leading-tight">
+          <p className="font-medium">{o.recipientName}</p>
+          <p className="text-xs text-muted-foreground">{o.deliveryCity}</p>
+        </div>
+      ),
+    },
+    {
+      id: "delivered",
+      header: "Delivered",
+      sortable: true,
+      sortValue: (o) => o.deliveredAt ?? "",
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (o) =>
+        o.deliveredAt
+          ? new Date(o.deliveredAt).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })
+          : "—",
+    },
+    {
+      id: "productCost",
+      header: "Product cost",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.productCost,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.productCost)}
+        </span>
+      ),
+    },
+  ]
+
+  const requestColumns: DataTableColumn<PayoutRequest>[] = [
+    {
+      id: "code",
+      header: "Request",
+      sortable: true,
+      sortValue: (p) => p.code,
+      cellClassName: "font-mono text-xs",
+      cell: (p) => p.code,
+    },
+    {
+      id: "method",
+      header: "Method",
+      sortable: true,
+      sortValue: (p) => p.payoutMethod,
+      cell: (p) => (
+        <div className="leading-tight">
+          <p>{p.payoutMethod}</p>
+          <p className="text-xs text-muted-foreground">{p.payoutDetails}</p>
+        </div>
+      ),
+    },
+    {
+      id: "orders",
+      header: "Orders",
+      align: "center",
+      sortable: true,
+      sortValue: (p) => p.orderIds.length,
+      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
+    },
+    {
+      id: "requested",
+      header: "Requested",
+      sortable: true,
+      sortValue: (p) => p.requestedAt,
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (p) =>
+        new Date(p.requestedAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortable: true,
+      sortValue: (p) => p.amount,
+      cell: (p) => (
+        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (p) => p.status,
+      cell: (p) => (
+        <div className="flex flex-col gap-1">
+          <PayoutStatusBadge status={p.status} />
+          {p.status === "REJECTED" && p.rejectReason ? (
+            <span className="flex max-w-48 items-start gap-1 text-xs text-destructive">
+              <AlertCircle className="mt-0.5 size-3 shrink-0" />
+              {p.rejectReason}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+  ]
+
   return (
     <>
       <PageHeader
         title="Financial dashboard"
-        description="Phase 9: track your available funds and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
+        description="Track your available funds and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
       >
         <Button onClick={() => setDialogOpen(true)} disabled={!canRequest}>
           <Wallet className="size-4" />
@@ -159,46 +272,12 @@ export default function MerchantFinancePage() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tracking</TableHead>
-                    <TableHead>Recipient</TableHead>
-                    <TableHead>Delivered</TableHead>
-                    <TableHead className="text-right">Product cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {merchantPayableOrders.map((o) => (
-                    <TableRow key={o.id}>
-                      <TableCell className="font-mono text-xs">
-                        {o.code}
-                      </TableCell>
-                      <TableCell>
-                        <div className="leading-tight">
-                          <p className="font-medium">{o.recipientName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {o.deliveryCity}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {o.deliveredAt
-                          ? new Date(o.deliveredAt).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric" },
-                            )
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatTk(o.productCost)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={payableColumns}
+              data={merchantPayableOrders}
+              getRowKey={(o) => o.id}
+              initialSortId="tracking"
+            />
           )}
         </CardContent>
       </Card>
@@ -225,51 +304,18 @@ export default function MerchantFinancePage() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
-              {merchantPayoutRequests.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      <Wallet className="size-5" />
-                    </div>
-                    <div className="leading-tight">
-                      <div className="flex items-center gap-2">
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {p.code}
-                        </p>
-                        <PayoutStatusBadge status={p.status} />
-                      </div>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        {p.orderIds.length} order
-                        {p.orderIds.length === 1 ? "" : "s"} ·{" "}
-                        {p.payoutMethod} · {p.payoutDetails}
-                      </p>
-                      {p.status === "REJECTED" && p.rejectReason ? (
-                        <p className="mt-1 flex items-start gap-1.5 text-sm text-destructive">
-                          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                          {p.rejectReason}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-semibold tabular-nums">
-                      {formatTk(p.amount)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Requested{" "}
-                      {new Date(p.requestedAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DataTable
+              columns={requestColumns}
+              data={merchantPayoutRequests}
+              getRowKey={(p) => p.id}
+              initialSortId="requested"
+              initialSortDir="desc"
+              searchable
+              searchPlaceholder="Search code, method"
+              getSearchText={(p) =>
+                `${p.code} ${p.payoutMethod} ${p.payoutDetails}`
+              }
+            />
           )}
         </CardContent>
       </Card>

@@ -14,7 +14,6 @@ import type {
   SecurityMoneyConfig,
   Role,
   Merchant,
-  MerchantRegistrationInput,
   MerchantPricingInput,
   Order,
   PickupLocation,
@@ -23,8 +22,6 @@ import type {
   Warehouse,
   PayoutRequest,
 } from "@/lib/types"
-import { DEFAULT_MERCHANT_PRICING } from "@/lib/mock-data"
-import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { authClient } from "@/lib/auth-client"
 
 interface NewAccountInput {
@@ -39,6 +36,10 @@ interface NewAccountInput {
 interface PlatformContextValue {
   currentUser: User | null
   isReady: boolean
+  // Non-null when the initial platform data load failed. Pages can show a
+  // retry prompt and call refreshData() to re-attempt the load.
+  dataError: string | null
+  refreshData: () => void
   login: (
     email: string,
     password: string,
@@ -51,19 +52,21 @@ interface PlatformContextValue {
       SecurityMoneyConfig,
       "lowValueThreshold" | "lowValueFlatFee" | "highValuePercentage"
     >,
-  ) => void
+  ) => Promise<void>
 
   team: User[]
-  createAccount: (input: NewAccountInput) => void
-  toggleAccountActive: (id: string) => void
-  togglePricingPermission: (id: string) => void
+  createAccount: (input: NewAccountInput & { password: string }) => Promise<void>
+  toggleAccountActive: (id: string) => Promise<void>
+  togglePricingPermission: (id: string) => Promise<void>
 
   merchants: Merchant[]
-  registerMerchant: (input: MerchantRegistrationInput) => Merchant
-  approveMerchant: (id: string) => void
-  suspendMerchant: (id: string) => void
-  reactivateMerchant: (id: string) => void
-  setMerchantPricing: (id: string, pricing: MerchantPricingInput) => void
+  approveMerchant: (id: string) => Promise<void>
+  suspendMerchant: (id: string) => Promise<void>
+  reactivateMerchant: (id: string) => Promise<void>
+  setMerchantPricing: (
+    id: string,
+    pricing: MerchantPricingInput,
+  ) => Promise<void>
 
   // --- Phase 3: orders (merchant-facing) ---
   orders: Order[]
@@ -72,7 +75,11 @@ interface PlatformContextValue {
   currentMerchant: Merchant | null
   createOrder: (
     input: CreateOrderInput,
-  ) => { ok: boolean; order?: Order; error?: string }
+  ) => Promise<{ ok: boolean; order?: Order; error?: string }>
+  // Create several orders in a single batch (atomic on the server).
+  createOrders: (
+    inputs: CreateOrderInput[],
+  ) => Promise<{ ok: boolean; orders?: Order[]; error?: string }>
 
   // --- Phase 4: order approval & pickup assignment (admin) ---
   riders: Rider[]
@@ -80,20 +87,24 @@ interface PlatformContextValue {
   approveAndAssignOrder: (
     orderId: string,
     riderId: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 5: pickup from merchant (rider) ---
   // The rider profile for the currently logged-in rider user.
   currentRider: Rider | null
   // Rider marks an APPROVED order assigned to them as PICKED_UP.
-  markOrderPickedUp: (orderId: string) => { ok: boolean; error?: string }
+  markOrderPickedUp: (
+    orderId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 6: parcel submitted to warehouse (warehouse admin) ---
   warehouses: Warehouse[]
   // The warehouse managed by the currently logged-in Warehouse Admin.
   currentWarehouse: Warehouse | null
   // Warehouse Admin logs a PICKED_UP parcel into their warehouse -> IN_WAREHOUSE.
-  receiveOrderAtWarehouse: (orderId: string) => { ok: boolean; error?: string }
+  receiveOrderAtWarehouse: (
+    orderId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 7: delivery rider assignment (warehouse admin) ---
   // Delivery riders based at the current Warehouse Admin's warehouse.
@@ -103,23 +114,25 @@ interface PlatformContextValue {
   assignDeliveryRider: (
     orderId: string,
     riderId: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 8: delivery attempt (delivery rider -> customer) ---
   // Delivery rider starts the run: IN_TRANSIT -> OUT_FOR_DELIVERY.
-  markOutForDelivery: (orderId: string) => { ok: boolean; error?: string }
+  markOutForDelivery: (
+    orderId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   // Delivery rider completes delivery: OUT_FOR_DELIVERY -> DELIVERED.
   // `proofRef` stands in for the uploaded proof image (mock).
   markDelivered: (
     orderId: string,
     proofRef?: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
   // Delivery rider records a failed attempt: OUT_FOR_DELIVERY -> FAILED_ATTEMPT.
   // A reason `note` is required.
   markDeliveryFailed: (
     orderId: string,
     note: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 8B: failed delivery resolution (warehouse admin) -------------
   // FAILED_ATTEMPT parcels held at the current Warehouse Admin's warehouse,
@@ -127,13 +140,15 @@ interface PlatformContextValue {
   warehouseFailedOrders: Order[]
   // Send a FAILED_ATTEMPT parcel back out with its delivery rider:
   // FAILED_ATTEMPT -> OUT_FOR_DELIVERY.
-  reattemptFailedOrder: (orderId: string) => { ok: boolean; error?: string }
+  reattemptFailedOrder: (
+    orderId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   // Close a FAILED_ATTEMPT parcel as a return: FAILED_ATTEMPT -> RETURNED. No
   // COD is collected and no merchant payout is issued. A `reason` is required.
   returnFailedOrder: (
     orderId: string,
     reason: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 9: COD reconciliation & merchant payout ----------------------
   payoutRequests: PayoutRequest[]
@@ -143,7 +158,7 @@ interface PlatformContextValue {
   // Warehouse Admin records that the delivery rider has settled the collected
   // cash for a delivered parcel. Platform retains delivery charge + security
   // money; product cost becomes available for merchant payout.
-  settleOrderCod: (orderId: string) => { ok: boolean; error?: string }
+  settleOrderCod: (orderId: string) => Promise<{ ok: boolean; error?: string }>
 
   // Delivered + COD-settled orders for the current merchant that are not yet
   // attached to an active payout request — i.e. available funds.
@@ -154,18 +169,37 @@ interface PlatformContextValue {
   requestPayout: (input: {
     payoutMethod: string
     payoutDetails: string
-  }) => { ok: boolean; request?: PayoutRequest; error?: string }
+  }) => Promise<{ ok: boolean; request?: PayoutRequest; error?: string }>
 
   // Super Admin approves a PENDING payout request.
-  approvePayout: (requestId: string) => { ok: boolean; error?: string }
+  approvePayout: (
+    requestId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   // Super Admin rejects a PENDING payout request (unlocks its orders). A
   // `reason` is required.
   rejectPayout: (
     requestId: string,
     reason: string,
-  ) => { ok: boolean; error?: string }
+  ) => Promise<{ ok: boolean; error?: string }>
   // Super Admin marks an APPROVED payout request as PAID.
-  markPayoutPaid: (requestId: string) => { ok: boolean; error?: string }
+  markPayoutPaid: (
+    requestId: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+}
+
+// Maps each order-lifecycle PATCH path to the status the order is expected to
+// land in, so the UI can update optimistically before the server responds.
+// Paths that don't change status (e.g. "settle-cod") are handled separately.
+const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
+  approve: "APPROVED",
+  "picked-up": "PICKED_UP",
+  receive: "IN_WAREHOUSE",
+  dispatch: "IN_TRANSIT",
+  "out-for-delivery": "OUT_FOR_DELIVERY",
+  delivered: "DELIVERED",
+  failed: "FAILED_ATTEMPT",
+  reattempt: "OUT_FOR_DELIVERY",
+  return: "RETURNED",
 }
 
 const PlatformContext = createContext<PlatformContextValue | null>(null)
@@ -185,12 +219,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [securityConfig, setSecurityConfig] = useState<SecurityMoneyConfig | null>(null)
   const [team, setTeam] = useState<User[]>([])
   const [merchants, setMerchants] = useState<Merchant[]>([])
-  const [merchantUsers, setMerchantUsers] = useState<User[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([])
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  // Surfaced when the initial platform data load fails so pages can degrade
+  // gracefully (show a retry prompt) instead of rendering empty/stale UI.
+  const [dataError, setDataError] = useState<string | null>(null)
+  // Bumped by refreshData() to re-run the loader effect on demand.
+  const [reloadKey, setReloadKey] = useState(0)
 
   // Restore a real Better Auth session on mount, then hydrate the full
   // app-level User (role + merchant/rider/warehouse linkage) from
@@ -226,48 +264,78 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setRiders([])
       setWarehouses([])
       setSecurityConfig(null)
+      setDataError(null)
       return
     }
 
     let cancelled = false
 
     async function loadAll() {
-      const [
-        teamRes,
-        merchantsRes,
-        ordersRes,
-        payoutsRes,
-        pickupLocationsRes,
-        ridersRes,
-        warehousesRes,
-        securityConfigRes,
-      ] = await Promise.all([
-        fetch("/api/team"),
-        fetch("/api/merchants"),
-        fetch("/api/orders"),
-        fetch("/api/payouts"),
-        fetch("/api/pickup-locations"),
-        fetch("/api/riders"),
-        fetch("/api/warehouses"),
-        fetch("/api/security-config"),
-      ])
-      if (cancelled) return
+      try {
+        const [
+          teamRes,
+          merchantsRes,
+          ordersRes,
+          payoutsRes,
+          pickupLocationsRes,
+          ridersRes,
+          warehousesRes,
+          securityConfigRes,
+        ] = await Promise.all([
+          fetch("/api/team"),
+          fetch("/api/merchants"),
+          fetch("/api/orders"),
+          fetch("/api/payouts"),
+          fetch("/api/pickup-locations"),
+          fetch("/api/riders"),
+          fetch("/api/warehouses"),
+          fetch("/api/security-config"),
+        ])
+        if (cancelled) return
 
-      if (teamRes.ok) setTeam(await teamRes.json())
-      if (merchantsRes.ok) setMerchants(await merchantsRes.json())
-      if (ordersRes.ok) setOrders(await ordersRes.json())
-      if (payoutsRes.ok) setPayoutRequests(await payoutsRes.json())
-      if (pickupLocationsRes.ok) setPickupLocations(await pickupLocationsRes.json())
-      if (ridersRes.ok) setRiders(await ridersRes.json())
-      if (warehousesRes.ok) setWarehouses(await warehousesRes.json())
-      if (securityConfigRes.ok) setSecurityConfig(await securityConfigRes.json())
+        // If any endpoint hard-fails (network error aside), treat the load as
+        // failed so the UI can prompt a retry rather than show partial data.
+        const responses = [
+          teamRes,
+          merchantsRes,
+          ordersRes,
+          payoutsRes,
+          pickupLocationsRes,
+          ridersRes,
+          warehousesRes,
+          securityConfigRes,
+        ]
+        if (responses.some((r) => !r.ok)) {
+          throw new Error("One or more platform resources failed to load.")
+        }
+
+        setTeam(await teamRes.json())
+        setMerchants(await merchantsRes.json())
+        setOrders(await ordersRes.json())
+        setPayoutRequests(await payoutsRes.json())
+        setPickupLocations(await pickupLocationsRes.json())
+        setRiders(await ridersRes.json())
+        setWarehouses(await warehousesRes.json())
+        setSecurityConfig(await securityConfigRes.json())
+        if (!cancelled) setDataError(null)
+      } catch (err) {
+        if (cancelled) return
+        setDataError(
+          err instanceof Error
+            ? err.message
+            : "Could not load platform data. Please try again.",
+        )
+      }
     }
 
     loadAll()
     return () => {
       cancelled = true
     }
-  }, [currentUser])
+  }, [currentUser, reloadKey])
+
+  // Re-run the platform data loader (used to recover from a failed load).
+  const refreshData = useCallback(() => setReloadKey((k) => k + 1), [])
 
   const login = useCallback(async (email: string, password: string) => {
     const normalized = email.trim().toLowerCase()
@@ -305,139 +373,105 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const updateSecurityConfig = useCallback<
     PlatformContextValue["updateSecurityConfig"]
-  >(
-    (next) => {
-      setSecurityConfig((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          ...next,
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.name ?? "Super Admin",
-        }
-      })
-    },
-    [currentUser?.name],
-  )
-
-  const createAccount = useCallback((input: NewAccountInput) => {
-    const id = `usr_${input.role === "ADMIN" ? "admin" : "wh"}_${Math.random()
-      .toString(36)
-      .slice(2, 7)}`
-    const now = new Date().toISOString()
-    const account: User = {
-      id,
-      name: input.name,
-      email: input.email,
-      emailVerified: false,
-      phone: input.phone,
-      role: input.role,
-      isActive: true,
-      canManagePricing:
-        input.role === "ADMIN" ? (input.canManagePricing ?? false) : false,
-      warehouseId:
-        input.role === "WAREHOUSE_ADMIN" ? (input.warehouseId ?? null) : null,
-      createdAt: now,
-      updatedAt: now,
-    }
-    setTeam((prev) => [account, ...prev])
+  >(async (next) => {
+    const res = await fetch("/api/security-config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    })
+    if (!res.ok) return
+    const updated = await res.json()
+    setSecurityConfig(updated)
   }, [])
 
-  const toggleAccountActive = useCallback((id: string) => {
+  const createAccount = useCallback<PlatformContextValue["createAccount"]>(
+    async (input) => {
+      const res = await fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const newUser = await res.json()
+      setTeam((prev) => [newUser, ...prev])
+    },
+    [],
+  )
+
+  const toggleAccountActive = useCallback<
+    PlatformContextValue["toggleAccountActive"]
+  >(async (id) => {
+    const res = await fetch(`/api/team/${id}/active`, { method: "PATCH" })
+    if (!res.ok) return
+    const updatedProfile = await res.json()
     setTeam((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, isActive: !u.isActive } : u)),
+      prev.map((u) =>
+        u.id === id ? { ...u, isActive: updatedProfile.isActive } : u,
+      ),
     )
   }, [])
 
-  const togglePricingPermission = useCallback((id: string) => {
+  const togglePricingPermission = useCallback<
+    PlatformContextValue["togglePricingPermission"]
+  >(async (id) => {
+    const res = await fetch(`/api/team/${id}/pricing`, { method: "PATCH" })
+    if (!res.ok) return
+    const updatedProfile = await res.json()
     setTeam((prev) =>
       prev.map((u) =>
-        u.id === id && u.role === "ADMIN"
-          ? { ...u, canManagePricing: !u.canManagePricing }
+        u.id === id
+          ? { ...u, canManagePricing: updatedProfile.canManagePricing }
           : u,
       ),
     )
   }, [])
 
   // --- Phase 2: Merchant onboarding ---------------------------------------
+  // Public merchant registration now lives in app/register/page.tsx, which
+  // posts directly to /api/merchants and signs the new owner in.
 
-  // Public registration: anyone can create a merchant. New merchants land in
-  // PENDING with zeroed base rate and platform-default weight rules.
-  const registerMerchant = useCallback<
-    PlatformContextValue["registerMerchant"]
-  >((input) => {
-    const merchantId = `mch_${Math.random().toString(36).slice(2, 8)}`
-    const merchant: Merchant = {
-      id: merchantId,
-      businessName: input.businessName,
-      ownerName: input.ownerName,
-      email: input.email,
-      phone: input.phone,
-      address: input.address,
-      status: "PENDING",
-      ...DEFAULT_MERCHANT_PRICING,
-      approvedBy: null,
-      approvedAt: null,
-      createdAt: new Date().toISOString(),
-    }
-    const now = new Date().toISOString()
-    const user: User = {
-      id: `usr_mch_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.ownerName,
-      email: input.email.trim().toLowerCase(),
-      emailVerified: false,
-      phone: input.phone,
-      role: "MERCHANT",
-      isActive: true,
-      canManagePricing: false,
-      merchantId,
-      password: input.password,
-      createdAt: now,
-      updatedAt: now,
-    }
-    setMerchants((prev) => [merchant, ...prev])
-    setMerchantUsers((prev) => [user, ...prev])
-    return merchant
+  // Super Admin / Admin approves a pending merchant -> ACTIVE.
+  const approveMerchant = useCallback<
+    PlatformContextValue["approveMerchant"]
+  >(async (id) => {
+    const res = await fetch(`/api/merchants/${id}/approve`, { method: "PATCH" })
+    if (!res.ok) return
+    const updated = await res.json()
+    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
   }, [])
 
-  // Super Admin approves a pending merchant -> ACTIVE.
-  const approveMerchant = useCallback(
-    (id: string) => {
-      setMerchants((prev) =>
-        prev.map((m) =>
-          m.id === id
-            ? {
-                ...m,
-                status: "ACTIVE",
-                approvedBy: currentUser?.name ?? "Super Admin",
-                approvedAt: new Date().toISOString(),
-              }
-            : m,
-        ),
-      )
-    },
-    [currentUser?.name],
-  )
-
-  const suspendMerchant = useCallback((id: string) => {
-    setMerchants((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, status: "SUSPENDED" } : m)),
-    )
+  const suspendMerchant = useCallback<
+    PlatformContextValue["suspendMerchant"]
+  >(async (id) => {
+    const res = await fetch(`/api/merchants/${id}/suspend`, { method: "PATCH" })
+    if (!res.ok) return
+    const updated = await res.json()
+    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
   }, [])
 
-  const reactivateMerchant = useCallback((id: string) => {
-    setMerchants((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, status: "ACTIVE" } : m)),
-    )
+  const reactivateMerchant = useCallback<
+    PlatformContextValue["reactivateMerchant"]
+  >(async (id) => {
+    const res = await fetch(`/api/merchants/${id}/reactivate`, {
+      method: "PATCH",
+    })
+    if (!res.ok) return
+    const updated = await res.json()
+    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
   }, [])
 
   // Admin sets per-merchant pricing (base rate, per-kg, free/max weight).
   const setMerchantPricing = useCallback<
     PlatformContextValue["setMerchantPricing"]
-  >((id, pricing) => {
-    setMerchants((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, ...pricing } : m)),
-    )
+  >(async (id, pricing) => {
+    const res = await fetch(`/api/merchants/${id}/pricing`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pricing),
+    })
+    if (!res.ok) return
+    const updated = await res.json()
+    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
   }, [])
 
   // --- Phase 3: Order creation (merchant) ---------------------------------
@@ -449,80 +483,99 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       : null
 
   const createOrder = useCallback<PlatformContextValue["createOrder"]>(
-    (input) => {
-      if (!currentMerchant) {
-        return { ok: false, error: "No merchant context for current user." }
+    async (input) => {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        return { ok: false, error: data.error ?? "Failed to create order." }
       }
-
-      // Only an ACTIVE merchant may create orders. Pending merchants are not
-      // yet approved; suspended merchants are blocked.
-      if (currentMerchant.status !== "ACTIVE") {
-        return {
-          ok: false,
-          error:
-            currentMerchant.status === "PENDING"
-              ? "Your merchant account is pending approval."
-              : "Your merchant account is suspended and cannot create orders.",
-        }
-      }
-
-      const weight = input.parcelWeightKg
-      // Hard rejection: anything above the merchant's max weight (3 KG).
-      if (weight > currentMerchant.maxWeightKg) {
-        return {
-          ok: false,
-          error: `Parcel weight exceeds the ${currentMerchant.maxWeightKg} KG limit.`,
-        }
-      }
-      if (weight <= 0) {
-        return { ok: false, error: "Parcel weight must be greater than 0." }
-      }
-      if (input.productCost < 0) {
-        return { ok: false, error: "Product cost cannot be negative." }
-      }
-
-      const { total: deliveryCharge } = calcDeliveryCharge(
-        currentMerchant,
-        weight,
-      )
-      if (!securityConfig) {
-        return { ok: false, error: "Security config is not loaded yet. Please try again." }
-      }
-      const securityMoney = calcSecurityMoney(securityConfig, input.productCost)
-      const totalCollectible =
-        input.productCost + deliveryCharge + securityMoney
-
-      // Derive the next sequence from the highest existing PF code so codes
-      // stay unique even as orders are added/removed (length-based counting
-      // could repeat a code).
-      const maxSeq = orders.reduce((max, o) => {
-        const n = Number.parseInt(o.code.replace(/^PF-/, ""), 10)
-        return Number.isFinite(n) && n > max ? n : max
-      }, 100258)
-      const seq = maxSeq + 1
-      const order: Order = {
-        id: `ord_${Math.random().toString(36).slice(2, 8)}`,
-        code: `PF-${seq}`,
-        merchantId: currentMerchant.id,
-        pickupLocationId: input.pickupLocationId,
-        recipientName: input.recipientName,
-        recipientPhone: input.recipientPhone,
-        deliveryAddress: input.deliveryAddress,
-        deliveryCity: input.deliveryCity,
-        parcelWeightKg: weight,
-        deliveryType: input.deliveryType,
-        productCost: input.productCost,
-        deliveryCharge,
-        securityMoney,
-        totalCollectible,
-        status: "PENDING",
-        createdAt: new Date().toISOString(),
-        deliveryAttempts: 0,
-      }
-      setOrders((prev) => [order, ...prev])
-      return { ok: true, order }
+    setOrders((prev) => [data, ...prev])
+    return { ok: true, order: data }
     },
-    [securityConfig, orders],
+    [],
+  )
+
+  const createOrders = useCallback<PlatformContextValue["createOrders"]>(
+    async (inputs) => {
+      const res = await fetch("/api/orders/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: inputs }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        return { ok: false, error: data.error ?? "Failed to create orders." }
+      }
+      setOrders((prev) => [...data, ...prev])
+      return { ok: true, orders: data }
+    },
+    [],
+  )
+
+  // Shared helper for every order-lifecycle PATCH. We optimistically apply the
+  // expected status immediately so the UI feels instant, then reconcile with
+  // the authoritative server row on success — or roll back on failure. The
+  // server still validates every transition, so the optimistic value is only
+  // ever a short-lived guess.
+  const patchOrder = useCallback(
+    async (
+      orderId: string,
+      path: string,
+      body?: Record<string, unknown>,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const optimisticStatus = OPTIMISTIC_STATUS[path]
+
+      // Snapshot the pre-mutation row (captured inside the pure updater so it
+      // reflects the latest state without a stale closure) for rollback.
+      let snapshot: Order | undefined
+      if (optimisticStatus || path === "settle-cod") {
+        setOrders((prev) =>
+          prev.map((o) => {
+            if (o.id !== orderId) return o
+            snapshot = o
+            return {
+              ...o,
+              ...(optimisticStatus ? { status: optimisticStatus } : {}),
+              ...(path === "settle-cod"
+                ? { codSettledAt: new Date().toISOString() }
+                : {}),
+              ...(path === "approve" && body?.riderId
+                ? { pickupRiderId: body.riderId as string }
+                : {}),
+              ...(path === "dispatch" && body?.riderId
+                ? { deliveryRiderId: body.riderId as string }
+                : {}),
+            }
+          }),
+        )
+      }
+
+      const res = await fetch(`/api/orders/${orderId}/${path}`, {
+        method: "PATCH",
+        ...(body
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          : {}),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        // Roll back to the snapshot we took before the optimistic update.
+        if (snapshot) {
+          const prevRow = snapshot
+          setOrders((prev) => prev.map((o) => (o.id === orderId ? prevRow : o)))
+        }
+        return { ok: false, error: data?.error ?? "Action failed." }
+      }
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? data : o)))
+      return { ok: true }
+    },
+    [],
   )
 
   // --- Phase 4: Order approval & pickup assignment (admin) ----------------
@@ -530,52 +583,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const approveAndAssignOrder = useCallback<
     PlatformContextValue["approveAndAssignOrder"]
   >(
-    (orderId, riderId) => {
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { ok: false, error: "Order not found." }
-      }
-      if (order.status !== "PENDING") {
-        return { ok: false, error: "Only pending orders can be approved." }
-      }
-      const rider = riders.find((r) => r.id === riderId)
-      if (!rider || !rider.isActive) {
-        return { ok: false, error: "Select an active pickup rider." }
-      }
-      // Pickup riders collect from merchants and are not based at a warehouse.
-      // Warehouse-based (delivery) riders cannot be assigned as pickup riders.
-      if (rider.warehouseId) {
-        return {
-          ok: false,
-          error: "Select a pickup rider — this rider is a warehouse delivery rider.",
-        }
-      }
-      // Verify weight compliance against the merchant's max weight rule.
-      const merchant = merchants.find((m) => m.id === order.merchantId)
-      if (merchant && order.parcelWeightKg > merchant.maxWeightKg) {
-        return {
-          ok: false,
-          error: `Parcel weight exceeds the ${merchant.maxWeightKg} KG limit and cannot be approved.`,
-        }
-      }
-      const now = new Date().toISOString()
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "APPROVED",
-                approvedBy: currentUser?.name ?? "Admin",
-                approvedAt: now,
-                pickupRiderId: riderId,
-                assignedAt: now,
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [orders, riders, merchants, currentUser?.name],
+    (orderId, riderId) => patchOrder(orderId, "approve", { riderId }),
+    [patchOrder],
   )
 
   // --- Phase 5: Pickup from merchant (rider) ------------------------------
@@ -588,40 +597,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const markOrderPickedUp = useCallback<
     PlatformContextValue["markOrderPickedUp"]
-  >(
-    (orderId) => {
-      if (!currentRider) {
-        return { ok: false, error: "No rider context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { ok: false, error: "Order not found." }
-      }
-      // A rider may only collect parcels assigned to them.
-      if (order.pickupRiderId !== currentRider.id) {
-        return { ok: false, error: "This pickup is not assigned to you." }
-      }
-      if (order.status !== "APPROVED") {
-        return {
-          ok: false,
-          error: "Only approved orders awaiting pickup can be collected.",
-        }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "PICKED_UP",
-                pickedUpAt: new Date().toISOString(),
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [orders],
-  )
+  >((orderId) => patchOrder(orderId, "picked-up"), [patchOrder])
 
   // --- Phase 6: Parcel submitted to warehouse (warehouse admin) -----------
 
@@ -633,39 +609,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const receiveOrderAtWarehouse = useCallback<
     PlatformContextValue["receiveOrderAtWarehouse"]
-  >(
-    (orderId) => {
-      if (!currentWarehouse) {
-        return { ok: false, error: "No warehouse context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { ok: false, error: "Order not found." }
-      }
-      // Only parcels a rider has picked up can be logged into the warehouse.
-      if (order.status !== "PICKED_UP") {
-        return {
-          ok: false,
-          error: "Only picked-up parcels can be received into the warehouse.",
-        }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "IN_WAREHOUSE",
-                warehouseId: currentWarehouse.id,
-                receivedAtWarehouseAt: new Date().toISOString(),
-                receivedByWarehouse: currentUser?.name ?? "Warehouse Admin",
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [orders, currentUser?.name],
-  )
+  >((orderId) => patchOrder(orderId, "receive"), [patchOrder])
 
   // --- Phase 7: Delivery rider assignment (warehouse admin) ---------------
 
@@ -680,167 +624,25 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const assignDeliveryRider = useCallback<
     PlatformContextValue["assignDeliveryRider"]
   >(
-    (orderId, riderId) => {
-      if (!currentWarehouse) {
-        return { ok: false, error: "No warehouse context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { ok: false, error: "Order not found." }
-      }
-      // Only parcels held in this warehouse can be dispatched.
-      if (order.status !== "IN_WAREHOUSE") {
-        return {
-          ok: false,
-          error: "Only parcels held in the warehouse can be dispatched.",
-        }
-      }
-      if (order.warehouseId !== currentWarehouse.id) {
-        return {
-          ok: false,
-          error: "This parcel is held at a different warehouse.",
-        }
-      }
-      // The delivery rider must be active and based at this warehouse.
-      const rider = riders.find((r) => r.id === riderId)
-      if (!rider || !rider.isActive) {
-        return { ok: false, error: "Select an active delivery rider." }
-      }
-      if (rider.warehouseId !== currentWarehouse.id) {
-        return {
-          ok: false,
-          error: "Select a delivery rider based at this warehouse.",
-        }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "IN_TRANSIT",
-                deliveryRiderId: riderId,
-                dispatchedAt: new Date().toISOString(),
-                dispatchedBy: currentUser?.name ?? "Warehouse Admin",
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [orders, riders, currentUser?.name],
+    (orderId, riderId) => patchOrder(orderId, "dispatch", { riderId }),
+    [patchOrder],
   )
 
   // --- Phase 8: Delivery attempt (delivery rider -> customer) -------------
 
-  // Guard shared by all three transitions: the order must exist and be
-  // assigned to the currently logged-in rider as its delivery rider.
-  const findMyDeliveryOrder = useCallback(
-    (orderId: string): { order?: Order; error?: string } => {
-      if (!currentRider) {
-        return { error: "No rider context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { error: "Order not found." }
-      }
-      if (order.deliveryRiderId !== currentRider.id) {
-        return { error: "This delivery is not assigned to you." }
-      }
-      return { order }
-    },
-    [orders],
-  )
-
   const markOutForDelivery = useCallback<
     PlatformContextValue["markOutForDelivery"]
-  >(
-    (orderId) => {
-      const { order, error } = findMyDeliveryOrder(orderId)
-      if (error) return { ok: false, error }
-      if (order!.status !== "IN_TRANSIT") {
-        return {
-          ok: false,
-          error: "Only in-transit parcels can be taken out for delivery.",
-        }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "OUT_FOR_DELIVERY",
-                outForDeliveryAt: new Date().toISOString(),
-                deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [findMyDeliveryOrder],
-  )
+  >((orderId) => patchOrder(orderId, "out-for-delivery"), [patchOrder])
 
   const markDelivered = useCallback<PlatformContextValue["markDelivered"]>(
-    (orderId, proofRef) => {
-      const { order, error } = findMyDeliveryOrder(orderId)
-      if (error) return { ok: false, error }
-      if (order!.status !== "OUT_FOR_DELIVERY") {
-        return {
-          ok: false,
-          error: "Only out-for-delivery parcels can be marked delivered.",
-        }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "DELIVERED",
-                deliveredAt: new Date().toISOString(),
-                deliveryProofRef:
-                  proofRef ?? `proof_${o.code.toLowerCase()}.jpg`,
-                amountCollected: o.totalCollectible,
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [findMyDeliveryOrder],
+    (orderId, proofRef) =>
+      patchOrder(orderId, "delivered", proofRef ? { proofRef } : undefined),
+    [patchOrder],
   )
 
   const markDeliveryFailed = useCallback<
     PlatformContextValue["markDeliveryFailed"]
-  >(
-    (orderId, note) => {
-      const { order, error } = findMyDeliveryOrder(orderId)
-      if (error) return { ok: false, error }
-      if (order!.status !== "OUT_FOR_DELIVERY") {
-        return {
-          ok: false,
-          error: "Only out-for-delivery parcels can be marked failed.",
-        }
-      }
-      // A reason is mandatory for a failed attempt.
-      if (!note.trim()) {
-        return { ok: false, error: "A reason note is required." }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "FAILED_ATTEMPT",
-                failedAttemptAt: new Date().toISOString(),
-                failureNote: note.trim(),
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [findMyDeliveryOrder],
-  )
+  >((orderId, note) => patchOrder(orderId, "failed", { note }), [patchOrder])
 
   // --- Phase 8B: Failed delivery resolution (warehouse admin) -------------
 
@@ -854,85 +656,13 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       )
     : []
 
-  // Shared guard: the order must exist, be in FAILED_ATTEMPT, and be held at
-  // the current Warehouse Admin's warehouse.
-  const findFailedWarehouseOrder = useCallback(
-    (orderId: string): { order?: Order; error?: string } => {
-      if (!currentWarehouse) {
-        return { error: "No warehouse context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { error: "Order not found." }
-      }
-      if (order.status !== "FAILED_ATTEMPT") {
-        return { error: "Only failed-attempt parcels can be resolved." }
-      }
-      if (order.warehouseId !== currentWarehouse.id) {
-        return { error: "This parcel is held at a different warehouse." }
-      }
-      return { order }
-    },
-    [orders],
-  )
-
   const reattemptFailedOrder = useCallback<
     PlatformContextValue["reattemptFailedOrder"]
-  >(
-    (orderId) => {
-      const { error } = findFailedWarehouseOrder(orderId)
-      if (error) return { ok: false, error }
-      const now = new Date().toISOString()
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "OUT_FOR_DELIVERY",
-                // Clear the previous failure so the rider sees a fresh attempt.
-                failureNote: null,
-                failedAttemptAt: null,
-                failedResolvedAt: now,
-                failedResolvedBy: currentUser?.name ?? "Warehouse Admin",
-                outForDeliveryAt: now,
-                deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [findFailedWarehouseOrder, currentUser?.name],
-  )
+  >((orderId) => patchOrder(orderId, "reattempt"), [patchOrder])
 
   const returnFailedOrder = useCallback<
     PlatformContextValue["returnFailedOrder"]
-  >(
-    (orderId, reason) => {
-      const { error } = findFailedWarehouseOrder(orderId)
-      if (error) return { ok: false, error }
-      if (!reason.trim()) {
-        return { ok: false, error: "A return reason is required." }
-      }
-      const now = new Date().toISOString()
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "RETURNED",
-                failedResolvedAt: now,
-                failedResolvedBy: currentUser?.name ?? "Warehouse Admin",
-                returnedAt: now,
-                returnReason: reason.trim(),
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [findFailedWarehouseOrder, currentUser?.name],
-  )
+  >((orderId, reason) => patchOrder(orderId, "return", { reason }), [patchOrder])
 
   // --- Phase 9: COD reconciliation & merchant payout ----------------------
 
@@ -948,43 +678,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     : []
 
   const settleOrderCod = useCallback<PlatformContextValue["settleOrderCod"]>(
-    (orderId) => {
-      if (!currentWarehouse) {
-        return { ok: false, error: "No warehouse context for current user." }
-      }
-      const order = orders.find((o) => o.id === orderId)
-      if (!order) {
-        return { ok: false, error: "Order not found." }
-      }
-      if (order.status !== "DELIVERED") {
-        return {
-          ok: false,
-          error: "Only delivered parcels can be settled.",
-        }
-      }
-      if (order.warehouseId !== currentWarehouse.id) {
-        return {
-          ok: false,
-          error: "This parcel belongs to a different warehouse.",
-        }
-      }
-      if (order.codSettledAt) {
-        return { ok: false, error: "This parcel's COD is already settled." }
-      }
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                codSettledAt: new Date().toISOString(),
-                codSettledBy: currentUser?.name ?? "Warehouse Admin",
-              }
-            : o,
-        ),
-      )
-      return { ok: true }
-    },
-    [orders, currentUser?.name],
+    (orderId) => patchOrder(orderId, "settle-cod"),
+    [patchOrder],
   )
 
   // Orders that are delivered, COD-settled, and not locked to an active payout
@@ -1004,139 +699,78 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     : []
 
   const requestPayout = useCallback<PlatformContextValue["requestPayout"]>(
-    (input) => {
-      if (!currentMerchant) {
-        return { ok: false, error: "No merchant context for current user." }
-      }
-      if (!input.payoutMethod.trim() || !input.payoutDetails.trim()) {
-        return {
-          ok: false,
-          error: "Provide a payout method and account details.",
-        }
-      }
-      const payable = orders.filter(
-        (o) =>
-          o.merchantId === currentMerchant.id &&
-          o.status === "DELIVERED" &&
-          Boolean(o.codSettledAt) &&
-          !o.payoutRequestId,
-      )
-      if (payable.length === 0) {
-        return { ok: false, error: "No settled funds available to request." }
-      }
-      const amount = payable.reduce((sum, o) => sum + o.productCost, 0)
-      const id = `pr_${Math.random().toString(36).slice(2, 8)}`
-      const maxSeq = payoutRequests.reduce((max, p) => {
-        const n = Number.parseInt(p.code.replace(/^PR-/, ""), 10)
-        return Number.isFinite(n) && n > max ? n : max
-      }, 2041)
-      const seq = maxSeq + 1
-      const request: PayoutRequest = {
-        id,
-        code: `PR-${seq}`,
-        merchantId: currentMerchant.id,
-        orderIds: payable.map((o) => o.id),
-        amount,
-        status: "PENDING",
-        payoutMethod: input.payoutMethod.trim(),
-        payoutDetails: input.payoutDetails.trim(),
-        requestedAt: new Date().toISOString(),
-      }
-      const payableIds = new Set(payable.map((o) => o.id))
-      // Lock the included orders to this request.
+    async (input) => {
+      const res = await fetch("/api/payouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data.error }
+      setPayoutRequests((prev) => [data, ...prev])
+      const lockedIds = new Set<string>(data.orderIds)
       setOrders((prev) =>
         prev.map((o) =>
-          payableIds.has(o.id) ? { ...o, payoutRequestId: id } : o,
+          lockedIds.has(o.id) ? { ...o, payoutRequestId: data.id } : o,
         ),
       )
-      setPayoutRequests((prev) => [request, ...prev])
-      return { ok: true, request }
+      return { ok: true, request: data }
     },
-    [orders, payoutRequests],
+    [],
   )
 
   const approvePayout = useCallback<PlatformContextValue["approvePayout"]>(
-    (requestId) => {
-      const request = payoutRequests.find((p) => p.id === requestId)
-      if (!request) {
-        return { ok: false, error: "Payout request not found." }
-      }
-      if (request.status !== "PENDING") {
-        return { ok: false, error: "Only pending requests can be approved." }
-      }
+    async (requestId) => {
+      const res = await fetch(`/api/payouts/${requestId}/approve`, {
+        method: "PATCH",
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data.error }
       setPayoutRequests((prev) =>
-        prev.map((p) =>
-          p.id === requestId
-            ? {
-                ...p,
-                status: "APPROVED",
-                reviewedBy: currentUser?.name ?? "Super Admin",
-                reviewedAt: new Date().toISOString(),
-              }
-            : p,
-        ),
+        prev.map((p) => (p.id === requestId ? data : p)),
       )
       return { ok: true }
     },
-    [payoutRequests, currentUser?.name],
+    [],
   )
 
   const rejectPayout = useCallback<PlatformContextValue["rejectPayout"]>(
-    (requestId, reason) => {
-      const request = payoutRequests.find((p) => p.id === requestId)
-      if (!request) {
-        return { ok: false, error: "Payout request not found." }
-      }
-      if (request.status !== "PENDING") {
-        return { ok: false, error: "Only pending requests can be rejected." }
-      }
-      if (!reason.trim()) {
-        return { ok: false, error: "A rejection reason is required." }
-      }
+    async (requestId, reason) => {
+      const res = await fetch(`/api/payouts/${requestId}/reject`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data.error }
+      setPayoutRequests((prev) =>
+        prev.map((p) => (p.id === requestId ? data : p)),
+      )
       // Unlock the request's orders so they can be requested again.
-      const orderIds = new Set(request.orderIds)
+      const unlockedIds = new Set<string>(data.orderIds)
       setOrders((prev) =>
         prev.map((o) =>
-          orderIds.has(o.id) ? { ...o, payoutRequestId: null } : o,
-        ),
-      )
-      setPayoutRequests((prev) =>
-        prev.map((p) =>
-          p.id === requestId
-            ? {
-                ...p,
-                status: "REJECTED",
-                reviewedBy: currentUser?.name ?? "Super Admin",
-                reviewedAt: new Date().toISOString(),
-                rejectReason: reason.trim(),
-              }
-            : p,
+          unlockedIds.has(o.id) ? { ...o, payoutRequestId: null } : o,
         ),
       )
       return { ok: true }
     },
-    [payoutRequests, currentUser?.name],
+    [],
   )
 
   const markPayoutPaid = useCallback<PlatformContextValue["markPayoutPaid"]>(
-    (requestId) => {
-      const request = payoutRequests.find((p) => p.id === requestId)
-      if (!request) {
-        return { ok: false, error: "Payout request not found." }
-      }
-      if (request.status !== "APPROVED") {
-        return { ok: false, error: "Only approved requests can be paid." }
-      }
+    async (requestId) => {
+      const res = await fetch(`/api/payouts/${requestId}/paid`, {
+        method: "PATCH",
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data.error }
       setPayoutRequests((prev) =>
-        prev.map((p) =>
-          p.id === requestId
-            ? { ...p, status: "PAID", paidAt: new Date().toISOString() }
-            : p,
-        ),
+        prev.map((p) => (p.id === requestId ? data : p)),
       )
       return { ok: true }
     },
-    [payoutRequests],
+    [],
   )
 
   return (
@@ -1144,6 +778,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       value={{
         currentUser,
         isReady,
+        dataError,
+        refreshData,
         login,
         logout,
         securityConfig,
@@ -1153,16 +789,16 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         toggleAccountActive,
         togglePricingPermission,
         merchants,
-        registerMerchant,
         approveMerchant,
         suspendMerchant,
         reactivateMerchant,
         setMerchantPricing,
         orders,
         pickupLocations,
-        currentMerchant,
-        createOrder,
-        riders,
+          currentMerchant,
+          createOrder,
+          createOrders,
+          riders,
         approveAndAssignOrder,
         currentRider,
         markOrderPickedUp,

@@ -1,6 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
+import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { profile, user } from "@/lib/db/schema"
+import { parseBody, teamCreateSchema } from "@/lib/validation"
 import { inArray, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -35,4 +37,74 @@ export async function GET() {
   }))
 
   return NextResponse.json(team)
+}
+
+export async function POST(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const parsed = await parseBody(req, teamCreateSchema)
+  if (parsed.error) return parsed.error
+  const {
+    name,
+    email,
+    phone,
+    role: newRole,
+    warehouseId,
+    canManagePricing,
+    password,
+  } = parsed.data
+
+  // Use the admin plugin (no headers passed) so the caller's own session
+  // cookie is untouched. createUser throws on failure.
+  let created
+  try {
+    created = await auth.api.createUser({
+      // The app's real role lives in the `profile` table; Better Auth's admin
+      // plugin only types `role` as "user" | "admin", so cast to satisfy it.
+      body: { name, email, password, role: newRole as "user" },
+    })
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create user" },
+      { status: 400 },
+    )
+  }
+
+  await db.insert(profile).values({
+    userId: created.user.id,
+    role: newRole,
+    phone,
+    isActive: true,
+    canManagePricing: newRole === "ADMIN" ? (canManagePricing ?? false) : false,
+    warehouseId: newRole === "WAREHOUSE_ADMIN" ? (warehouseId ?? null) : null,
+  })
+
+  const [profileRow] = await db
+    .select()
+    .from(profile)
+    .where(eq(profile.userId, created.user.id))
+    .limit(1)
+
+  return NextResponse.json(
+    {
+      id: created.user.id,
+      name: created.user.name,
+      email: created.user.email,
+      emailVerified: created.user.emailVerified,
+      createdAt: created.user.createdAt,
+      updatedAt: created.user.updatedAt,
+      role: profileRow.role,
+      phone: profileRow.phone,
+      isActive: profileRow.isActive,
+      canManagePricing: profileRow.canManagePricing,
+      warehouseId: profileRow.warehouseId,
+      merchantId: profileRow.merchantId,
+      riderId: profileRow.riderId,
+    },
+    { status: 201 },
+  )
 }

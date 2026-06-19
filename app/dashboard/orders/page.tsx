@@ -11,6 +11,7 @@ import {
   Bike,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
+import { cn } from "@/lib/utils"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
@@ -19,14 +20,7 @@ import { ApproveOrderDialog } from "@/components/approve-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
@@ -102,11 +96,103 @@ export default function OrdersPage() {
     setDialogOpen(true)
   }
 
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{o.code}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.recipientName} · {o.deliveryCity}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
+      cell: (o) => merchantName(o.merchantId),
+    },
+    {
+      id: "weight",
+      header: "Weight",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.parcelWeightKg,
+      cell: (o) => {
+        const merchant = merchants.find((m) => m.id === o.merchantId)
+        const exceedsWeight = merchant
+          ? o.parcelWeightKg > merchant.maxWeightKg
+          : false
+        return (
+          <span
+            className={cn(
+              "tabular-nums",
+              exceedsWeight && "font-medium text-destructive",
+            )}
+          >
+            {o.parcelWeightKg} KG
+          </span>
+        )
+      },
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "rider",
+      header: "Rider",
+      sortable: true,
+      sortValue: (o) => riderName(o.pickupRiderId),
+      cell: (o) =>
+        o.pickupRiderId ? (
+          <span className="flex items-center gap-1.5 text-sm">
+            <Bike className="size-4 text-muted-foreground" />
+            {riderName(o.pickupRiderId)}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "PENDING" ? (
+          <Button size="sm" onClick={() => openApprove(o)}>
+            <ShieldCheck className="size-4" />
+            Review
+          </Button>
+        ) : null,
+    },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Orders"
-        description="Phase 4: review pending orders, verify weight compliance, then approve and assign a pickup rider."
+        description="Review pending orders, verify weight compliance, then approve and assign a pickup rider."
       />
 
       {/* Stats */}
@@ -160,88 +246,13 @@ export default function OrdersPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Order</TableHead>
-                <TableHead>Merchant</TableHead>
-                <TableHead className="text-right">Weight</TableHead>
-                <TableHead className="text-right">Collectible</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Rider</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-10 text-center text-sm text-muted-foreground"
-                  >
-                    No orders match the current filters.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtered.map((o) => {
-                  const merchant = merchants.find((m) => m.id === o.merchantId)
-                  const exceedsWeight = merchant
-                    ? o.parcelWeightKg > merchant.maxWeightKg
-                    : false
-                  return (
-                    <TableRow key={o.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{o.code}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {o.recipientName} · {o.deliveryCity}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{merchantName(o.merchantId)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <span
-                          className={
-                            exceedsWeight ? "font-medium text-destructive" : ""
-                          }
-                        >
-                          {o.parcelWeightKg} KG
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </TableCell>
-                      <TableCell>
-                        <OrderStatusBadge status={o.status} />
-                      </TableCell>
-                      <TableCell>
-                        {o.pickupRiderId ? (
-                          <span className="flex items-center gap-1.5 text-sm">
-                            <Bike className="size-4 text-muted-foreground" />
-                            {riderName(o.pickupRiderId)}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            —
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end">
-                          {o.status === "PENDING" ? (
-                            <Button size="sm" onClick={() => openApprove(o)}>
-                              <ShieldCheck className="size-4" />
-                              Review
-                            </Button>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage="No orders match the current filters."
+          />
         </CardContent>
       </Card>
 

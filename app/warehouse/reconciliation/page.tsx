@@ -7,9 +7,6 @@ import {
   HandCoins,
   CheckCircle2,
   Banknote,
-  MapPin,
-  Phone,
-  Package,
   Bike,
   Loader2,
 } from "lucide-react"
@@ -21,6 +18,7 @@ import { OrderStatusBadge } from "@/components/order-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 type FilterTab = "UNSETTLED" | "SETTLED"
 
@@ -66,6 +64,7 @@ export default function WarehouseReconciliationPage() {
   const [settling, setSettling] = useState<string | null>(null)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
@@ -96,26 +95,133 @@ export default function WarehouseReconciliationPage() {
 
   const visible = tab === "UNSETTLED" ? unsettled : settled
 
-  function handleSettle(order: Order) {
+  async function handleSettle(order: Order) {
     setSettling(order.id)
-    const result = settleOrderCod(order.id)
-    if (result.ok) {
-      toast.success(
-        `${order.code} settled. Product cost is now available for merchant payout.`,
-      )
-    } else {
-      toast.error(result.error ?? "Unable to settle this parcel.")
+    try {
+      const result = await settleOrderCod(order.id)
+      if (result.ok) {
+        toast.success(
+          `${order.code} settled. Product cost is now available for merchant payout.`,
+        )
+      } else {
+        toast.error(result.error ?? "Unable to settle this parcel.")
+      }
+    } finally {
+      setSettling(null)
     }
-    setSettling(null)
   }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="size-4 text-muted-foreground" />
+          {rider(o.deliveryRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "collected",
+      header: "Cash collected",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.amountCollected ?? o.totalCollectible,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.amountCollected ?? o.totalCollectible)}
+        </span>
+      ),
+    },
+    {
+      id: "platform",
+      header: "Platform revenue",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.deliveryCharge + o.securityMoney,
+      cell: (o) => (
+        <span className="tabular-nums text-muted-foreground">
+          {formatTk(o.deliveryCharge + o.securityMoney)}
+        </span>
+      ),
+    },
+    {
+      id: "payable",
+      header: "Merchant payable",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.productCost,
+      cell: (o) => (
+        <span className="tabular-nums text-primary">
+          {formatTk(o.productCost)}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
+      cell: (o) =>
+        o.codSettledAt ? (
+          <span className="flex items-center gap-1.5 text-sm text-chart-2">
+            <CheckCircle2 className="size-4" />
+            Settled by {o.codSettledBy ?? "Admin"}
+          </span>
+        ) : (
+          <OrderStatusBadge status={o.status} />
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.codSettledAt ? null : (
+          <Button
+            size="sm"
+            onClick={() => handleSettle(o)}
+            disabled={settling === o.id}
+          >
+            {settling === o.id ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Settling
+              </>
+            ) : (
+              <>
+                <HandCoins className="size-4" />
+                Settle cash
+              </>
+            )}
+          </Button>
+        ),
+    },
+  ]
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`COD reconciliation, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 9: record the cash delivery riders settle for delivered parcels at ${
-          currentWarehouse?.name ?? "your warehouse"
-        }. The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
+        description={`The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -148,138 +254,28 @@ export default function WarehouseReconciliationPage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Wallet className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">
-                {tab === "UNSETTLED"
-                  ? "Nothing to reconcile"
-                  : "No settlements yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "UNSETTLED"
-                  ? "Delivered parcels appear here until their rider settles the collected cash."
-                  : "Parcels you settle will be listed here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {visible.map((o) => {
-            const m = merchant(o.merchantId)
-            const dr = rider(o.deliveryRiderId)
-            const collected = o.amountCollected ?? o.totalCollectible
-            const platformRevenue = o.deliveryCharge + o.securityMoney
-            return (
-              <Card key={o.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {o.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                    </div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm">
-                    <div className="flex items-start gap-3">
-                      <Bike className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">
-                          Delivery rider
-                        </p>
-                        <p className="font-medium leading-snug">
-                          {dr?.name ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.parcelWeightKg} KG · {o.deliveryType}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.deliveryAddress}, {o.deliveryCity}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.recipientName} · {o.recipientPhone}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* COD breakdown */}
-                  <dl className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Cash collected</dt>
-                      <dd className="font-medium tabular-nums">
-                        {formatTk(collected)}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">
-                        Platform revenue (delivery + security)
-                      </dt>
-                      <dd className="tabular-nums">
-                        {formatTk(platformRevenue)}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">
-                        Merchant payable (product cost)
-                      </dt>
-                      <dd className="tabular-nums text-primary">
-                        {formatTk(o.productCost)}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  {o.status === "DELIVERED" && o.codSettledAt ? (
-                    <p className="flex items-center gap-2 rounded-md bg-chart-2/10 px-3 py-2 text-sm text-chart-2">
-                      <CheckCircle2 className="size-4 shrink-0" />
-                      Settled by {o.codSettledBy ?? "Warehouse Admin"}
-                    </p>
-                  ) : (
-                    <div className="flex items-center justify-end">
-                      <Button
-                        size="sm"
-                        onClick={() => handleSettle(o)}
-                        disabled={settling === o.id}
-                      >
-                        {settling === o.id ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Settling
-                          </>
-                        ) : (
-                          <>
-                            <HandCoins className="size-4" />
-                            Settle cash
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            searchable
+            searchPlaceholder="Search code, merchant, rider"
+            getSearchText={(o) =>
+              `${o.code} ${merchantName(o.merchantId)} ${
+                rider(o.deliveryRiderId)?.name ?? ""
+              }`
+            }
+            emptyMessage={
+              tab === "UNSETTLED"
+                ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
+                : "No settlements yet."
+            }
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }

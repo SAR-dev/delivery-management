@@ -1,8 +1,9 @@
 "use client"
 
+import { useMemo } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, LogOut, PackagePlus, Store, Wallet } from "lucide-react"
+import { LayoutDashboard, LogOut, PackagePlus, Store, Wallet, Warehouse } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { usePlatform } from "@/lib/platform-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -26,7 +27,20 @@ function initials(name: string) {
 
 export function MerchantSidebar() {
   const pathname = usePathname()
-  const { currentUser, currentMerchant, logout } = usePlatform()
+  const { currentUser, currentMerchant, logout, orders, warehouses } = usePlatform()
+
+  // The warehouse that has handled the most of this merchant's parcels.
+  const primaryWarehouse = useMemo(() => {
+    if (!currentMerchant) return null
+    const counts = new Map<string, number>()
+    for (const o of orders) {
+      if (o.merchantId !== currentMerchant.id || !o.warehouseId) continue
+      counts.set(o.warehouseId, (counts.get(o.warehouseId) ?? 0) + 1)
+    }
+    if (counts.size === 0) return null
+    const topId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    return warehouses.find((w) => w.id === topId) ?? null
+  }, [currentMerchant, orders, warehouses])
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border">
@@ -64,6 +78,23 @@ export function MerchantSidebar() {
           )
         })}
       </nav>
+
+      {primaryWarehouse && (
+        <div className="px-3 pb-1">
+          <div className="flex items-center gap-3 rounded-md border border-sidebar-border bg-sidebar-accent/40 px-3 py-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary/15 text-sidebar-primary">
+              <Warehouse className="size-4" />
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p className="text-[10px] uppercase tracking-wide text-sidebar-foreground/55 font-medium">
+                Your hub
+              </p>
+              <p className="truncate text-sm font-medium">{primaryWarehouse.name}</p>
+              <p className="truncate text-xs text-sidebar-foreground/60">{primaryWarehouse.city}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 rounded-md px-2 py-2">

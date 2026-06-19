@@ -80,22 +80,25 @@ export function WarehouseDispatchDialog({
 
   const selectedRider = deliveryRiders.find((r) => r.id === riderId)
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!riderId) {
       toast.error("Select a delivery rider first.")
       return
     }
     setSubmitting(true)
-    const result = assignDeliveryRider(order!.id, riderId)
-    if (result.ok) {
-      toast.success(
-        `${order!.code} dispatched with ${selectedRider?.name ?? "rider"}.`,
-      )
-      onOpenChange(false)
-    } else {
-      toast.error(result.error ?? "Unable to dispatch parcel.")
+    try {
+      const result = await assignDeliveryRider(order!.id, riderId)
+      if (result.ok) {
+        toast.success(
+          `${order!.code} dispatched with ${selectedRider?.name ?? "rider"}.`,
+        )
+        onOpenChange(false)
+      } else {
+        toast.error(result.error ?? "Unable to dispatch parcel.")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (

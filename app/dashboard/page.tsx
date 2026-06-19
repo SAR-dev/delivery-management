@@ -13,7 +13,6 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
-import { WAREHOUSES } from "@/lib/mock-data"
 import { PageHeader } from "@/components/page-header"
 import {
   Card,
@@ -55,7 +54,8 @@ function StatCard({
 }
 
 export default function OverviewPage() {
-  const { currentUser, team, securityConfig, merchants, orders } = usePlatform()
+  const { currentUser, team, securityConfig, merchants, orders, warehouses } =
+    usePlatform()
 
   const adminCount = team.filter((u) => u.role === "ADMIN").length
   const warehouseAdminCount = team.filter(
@@ -64,7 +64,7 @@ export default function OverviewPage() {
   const pricingManagers = team.filter(
     (u) => u.role === "ADMIN" && u.canManagePricing,
   ).length
-  const activeWarehouses = WAREHOUSES.filter((w) => w.isActive).length
+  const activeWarehouses = warehouses.filter((w) => w.isActive).length
   const pendingMerchants = merchants.filter(
     (m) => m.status === "PENDING",
   ).length
@@ -103,7 +103,7 @@ export default function OverviewPage() {
     <>
       <PageHeader
         title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Phase 1: get the platform ready before merchants start onboarding."
+        description="Get the platform ready before merchants start onboarding."
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -121,7 +121,7 @@ export default function OverviewPage() {
         <StatCard
           label="Active warehouses"
           value={activeWarehouses}
-          hint={`${WAREHOUSES.length} total`}
+          hint={`${warehouses.length} total`}
           icon={WarehouseIcon}
         />
         <StatCard
@@ -133,7 +133,7 @@ export default function OverviewPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Pending orders — Phase 4 action */}
+        {/* Pending orders — action */}
         {pendingOrders > 0 ? (
           <Card className="lg:col-span-3 border-chart-3/30 bg-chart-3/5">
             <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">

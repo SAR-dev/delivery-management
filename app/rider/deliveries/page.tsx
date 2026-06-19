@@ -2,16 +2,10 @@
 
 import { useMemo, useState } from "react"
 import {
-  Truck,
   PackageOpen,
-  MapPin,
-  Phone,
-  User,
-  Package,
   CheckCircle2,
   Clock,
   Navigation,
-  XCircle,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
@@ -22,6 +16,7 @@ import { DeliveryAttemptDialog } from "@/components/delivery-attempt-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { toast } from "sonner"
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
@@ -62,6 +57,7 @@ export default function RiderDeliveryQueuePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
 
   // All orders dispatched to this rider for delivery.
   const myDeliveries = useMemo(
@@ -86,8 +82,8 @@ export default function RiderDeliveryQueuePage() {
     setDialogOpen(true)
   }
 
-  function startDelivery(order: Order) {
-    const result = markOutForDelivery(order.id)
+  async function startDelivery(order: Order) {
+    const result = await markOutForDelivery(order.id)
     if (result.ok) {
       toast.success(`${order.code} is now out for delivery.`)
     } else {
@@ -95,11 +91,109 @@ export default function RiderDeliveryQueuePage() {
     }
   }
 
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{o.recipientName}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.recipientPhone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span>{o.deliveryCity}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.deliveryAddress}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-sm text-muted-foreground">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collect",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => (
+        <div className="flex flex-col gap-1">
+          <OrderStatusBadge status={o.status} />
+          {o.status === "FAILED_ATTEMPT" && o.failureNote ? (
+            <span className="max-w-48 text-xs text-destructive">
+              {o.failureNote}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "IN_TRANSIT" ? (
+          <Button size="sm" onClick={() => startDelivery(o)}>
+            <Navigation className="size-4" />
+            Out for delivery
+          </Button>
+        ) : o.status === "OUT_FOR_DELIVERY" ? (
+          <Button size="sm" onClick={() => openAttempt(o)}>
+            <CheckCircle2 className="size-4" />
+            Record outcome
+          </Button>
+        ) : null,
+    },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Delivery queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Phase 8: take dispatched parcels out for delivery and record the outcome."
+        description="Take dispatched parcels out for delivery and record the outcome."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -134,107 +228,26 @@ export default function RiderDeliveryQueuePage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Truck className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">
-                {tab === "TO_DELIVER"
-                  ? "No deliveries waiting"
-                  : "Nothing completed yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "TO_DELIVER"
-                  ? "Parcels appear here once a Warehouse Admin dispatches them to you."
-                  : "Delivered and failed parcels will be listed here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {visible.map((o) => {
-            const m = merchant(o.merchantId)
-            return (
-              <Card key={o.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {o.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                    </div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm">
-                    <div className="flex items-start gap-3">
-                      <User className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">
-                          Recipient
-                        </p>
-                        <p className="font-medium leading-snug">
-                          {o.recipientName}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.deliveryAddress}, {o.deliveryCity}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">{o.recipientPhone}</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.parcelWeightKg} KG · {o.deliveryType}
-                      </p>
-                    </div>
-                  </div>
-
-                  {o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-                    <p className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      <XCircle className="mt-0.5 size-4 shrink-0" />
-                      <span className="leading-snug">{o.failureNote}</span>
-                    </p>
-                  ) : null}
-
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-muted-foreground">
-                      Collect{" "}
-                      <span className="font-medium text-foreground tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </span>
-                    </span>
-                    {o.status === "IN_TRANSIT" ? (
-                      <Button size="sm" onClick={() => startDelivery(o)}>
-                        <Navigation className="size-4" />
-                        Out for delivery
-                      </Button>
-                    ) : o.status === "OUT_FOR_DELIVERY" ? (
-                      <Button size="sm" onClick={() => openAttempt(o)}>
-                        <CheckCircle2 className="size-4" />
-                        Record outcome
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            searchable
+            searchPlaceholder="Search code, merchant, recipient, city"
+            getSearchText={(o) =>
+              `${o.code} ${merchantName(o.merchantId)} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
+            }
+            emptyMessage={
+              tab === "TO_DELIVER"
+                ? "No deliveries waiting. Parcels appear here once a Warehouse Admin dispatches them to you."
+                : "Nothing completed yet."
+            }
+          />
+        </CardContent>
+      </Card>
 
       <DeliveryAttemptDialog
         order={activeOrder}
