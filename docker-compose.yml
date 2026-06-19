@@ -16,6 +16,8 @@ services:
     container_name: cloudflared
     restart: unless-stopped
     command: tunnel run --token eyJhIjoiNzFmMDAxMWQ1OTQyODMyYTZiZGU3MGE4OGNmMGJkMjciLCJ0IjoiOTg3ZjRhYWUtMzdhYy00ZjQwLWE3NzQtMmNjMzE1ZDg3ZDNlIiwicyI6IlpEY3dNemN5TmpBdE1HWmlOaTAwTlRObUxXRmpZak10WTJRMk1ETTBNV1UzTVRWaCJ9
+    volumes:
+      - ./config.yml:/etc/cloudflared/config.yml
     depends_on:
       - web
     network_mode: host
