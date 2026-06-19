@@ -95,7 +95,7 @@ export default function WarehouseIntakePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Warehouse intake, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 6: receive picked-up parcels into ${
+        description={`Receive picked-up parcels into ${
           currentWarehouse?.name ?? "your warehouse"
         } and log them in.`}
       />

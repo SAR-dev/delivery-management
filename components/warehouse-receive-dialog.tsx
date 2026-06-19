@@ -63,16 +63,19 @@ export function WarehouseReceiveDialog({
 
   if (!order) return null
 
-  function handleConfirm() {
+  async function handleConfirm() {
     setSubmitting(true)
-    const result = receiveOrderAtWarehouse(order!.id)
-    if (result.ok) {
-      toast.success(`${order!.code} received into ${warehouseName}.`)
-      onOpenChange(false)
-    } else {
-      toast.error(result.error ?? "Unable to log parcel into warehouse.")
+    try {
+      const result = await receiveOrderAtWarehouse(order!.id)
+      if (result.ok) {
+        toast.success(`${order!.code} received into ${warehouseName}.`)
+        onOpenChange(false)
+      } else {
+        toast.error(result.error ?? "Unable to log parcel into warehouse.")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (

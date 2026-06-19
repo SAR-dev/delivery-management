@@ -1,54 +1,104 @@
-# Delivery Management Platform (Mock Frontend)
+# Delivery Management Platform
 
-A B2B parcel-delivery management platform built with **Next.js (App Router)**. This is a
-**frontend-only prototype**: there is no real backend or database. All state lives in memory
-and is seeded from mock data, mirroring an existing backend API design (see the project's
-backend README / `B2B_Delivery_Order_Flow` docs for the source of truth).
+A B2B parcel-delivery management platform built with **Next.js (App Router)**, backed by a
+real **Neon Postgres** database via **Drizzle ORM**, with authentication handled by
+**Better Auth**. Role-based dashboards cover the full parcel lifecycle from merchant order
+creation through pickup, warehousing, delivery, COD reconciliation, and merchant payouts.
 
-> **For AI assistants:** Read this file first. The whole app is driven by one React context
-> (`lib/platform-context.tsx`) over typed data (`lib/types.ts`) seeded from `lib/mock-data.ts`.
-> To add a backend behavior, extend those three files, then build/extend the matching page.
+> **For AI assistants:** Read this file first. The UI is driven by one React context
+> (`lib/platform-context.tsx`) that **fetches** from REST route handlers under `app/api/*`.
+> Those routes are the API layer; they read/write the database through Drizzle
+> (`lib/db/schema.ts`) and enforce auth/role guards via `requireSession()`
+> (`lib/api-auth.ts`). To add a behavior: add a schema/migration, add a route handler with a
+> zod schema, then wire an action in the context and build the page.
 
 ---
 
 ## Tech Stack
 
-- **Next.js** App Router (`app/`), React client components, TypeScript
+- **Next.js 16** App Router (`app/`), React client components, TypeScript
+- **Neon Postgres** + **Drizzle ORM** (`lib/db/`, `drizzle/` migrations)
+- **Better Auth** for email + password auth and sessions (`lib/auth.ts`)
+- **zod** for request-body validation (`lib/validation.ts`)
 - **Tailwind CSS v4** + **shadcn/ui** components (`components/ui/`)
 - **sonner** for toasts, **next-themes** available
-- No database — state is in-memory via React Context, persisted only for the session
-  (current user id in `sessionStorage`).
+
+---
+
+## Getting Started
+
+### Environment
+
+The app requires a Neon connection string and a Better Auth secret:
+
+```
+DATABASE_URL=postgres://...        # provided by the Neon integration
+BETTER_AUTH_SECRET=...             # openssl rand -base64 32
+```
+
+### Database setup
+
+```bash
+pnpm install
+pnpm db:push     # push the Drizzle schema to the database
+pnpm db:seed     # seed roles, warehouses, merchants, riders, orders, payouts
+```
+
+`pnpm dev` starts the app. Use the demo accounts below to sign in.
 
 ---
 
 ## Core Architecture
 
-Everything flows through a single provider. There is **no data fetching** — components read
-state and call actions from `usePlatform()`.
+State flows through a single provider that **fetches from the API** — components read state
+and call actions from `usePlatform()`; they never query the database directly.
 
 ```
-lib/types.ts          → all domain types (Role, User, Merchant, Order, Rider, ...)
-lib/mock-data.ts      → seed data + demo credentials (the "database")
-lib/pricing.ts        → pure pricing helpers (delivery charge, security money, formatTk)
-lib/platform-context.tsx → in-memory store + all actions (the "API layer")
+lib/types.ts             → domain types (Role, User, Merchant, Order, Rider, ...)
+lib/db/schema.ts         → Drizzle tables (the database, incl. Better Auth tables)
+lib/db/index.ts          → Drizzle client bound to DATABASE_URL
+lib/db/seed.ts           → seed script (pnpm db:seed)
+lib/auth.ts              → Better Auth server config
+lib/api-auth.ts          → requireSession(): resolves the session user + role/profile
+lib/validation.ts        → zod schemas + parseBody() helper (returns 400 on bad input)
+lib/pagination.ts        → parsePagination(): optional limit/offset query params
+lib/pricing.ts           → pure pricing helpers (delivery charge, security money, formatTk)
+app/api/**/route.ts      → REST API layer (auth-guarded, zod-validated mutations)
+lib/platform-context.tsx → client store: loads data from the API + all mutating actions
 ```
 
-### `lib/platform-context.tsx` — the heart of the app
+### API layer (`app/api/*`)
 
-Exposes `usePlatform()` returning state + actions. Current surface:
+Every mutation is a route handler that calls `requireSession()` for auth/role checks,
+validates the request body with a zod schema via `parseBody()` (returning `400` with
+per-field issues on bad input), performs the Drizzle write, and returns the updated row.
+Multi-row money operations (payout request / reject) run inside transactions so orders are
+locked/unlocked atomically. Order codes (`PF-XXXXXX`) are generated **server-side** from the
+current max to avoid collisions. List endpoints (`GET /api/orders`, `GET /api/merchants`)
+accept optional `limit`/`offset` query params for pagination.
+
+### `lib/platform-context.tsx` — the client store
+
+On login it loads all platform resources in parallel from the API; on failure it exposes a
+`dataError` plus `refreshData()` so the UI can degrade gracefully (see
+`components/data-error-banner.tsx`, rendered in each role layout). Order-lifecycle actions are
+**optimistic** — they apply the expected status immediately and roll back if the server
+rejects the transition. `usePlatform()` returns:
 
 | Area | State | Actions |
 |------|-------|---------|
-| Auth | `currentUser`, `isReady` | `login`, `logout` |
+| Auth / loading | `currentUser`, `isReady`, `dataError`, `refreshData` | `login`, `logout` |
 | Security money | `securityConfig` | `updateSecurityConfig` |
 | Team | `team` | `createAccount`, `toggleAccountActive`, `togglePricingPermission` |
-| Merchants | `merchants`, `currentMerchant` | `registerMerchant`, `approveMerchant`, `suspendMerchant`, `reactivateMerchant`, `setMerchantPricing` |
+| Merchants | `merchants`, `currentMerchant` | `approveMerchant`, `suspendMerchant`, `reactivateMerchant`, `setMerchantPricing` |
 | Orders | `orders`, `pickupLocations` | `createOrder`, `approveAndAssignOrder`, `markOrderPickedUp`, `receiveOrderAtWarehouse`, `assignDeliveryRider`, `markOutForDelivery`, `markDelivered`, `markDeliveryFailed`, `reattemptFailedOrder`, `returnFailedOrder` |
-| Riders | `riders`, `currentRider` | `markOrderPickedUp`, `markOutForDelivery`, `markDelivered`, `markDeliveryFailed` |
+| Riders | `riders`, `currentRider` | (shares order actions) |
 | Warehouses | `warehouses`, `currentWarehouse`, `warehouseDeliveryRiders`, `warehouseFailedOrders`, `warehouseUnsettledOrders` | `receiveOrderAtWarehouse`, `assignDeliveryRider`, `reattemptFailedOrder`, `returnFailedOrder`, `settleOrderCod` |
-| Payouts (Phase 9) | `payoutRequests`, `merchantPayableOrders`, `merchantPayoutRequests` | `settleOrderCod`, `requestPayout`, `approvePayout`, `rejectPayout`, `markPayoutPaid` |
+| Payouts | `payoutRequests`, `merchantPayableOrders`, `merchantPayoutRequests` | `settleOrderCod`, `requestPayout`, `approvePayout`, `rejectPayout`, `markPayoutPaid` |
 
-Most mutating actions return `{ ok: boolean; error?: string }`. Use that for toast feedback.
+Mutating actions return `{ ok: boolean; error?: string }` — use that for toast feedback.
+Merchant self-registration is a public `POST /api/merchants` called directly from
+`/register` (not a context action).
 
 Helper: `homeForRole(role)` → route a user lands on after login
 (`/dashboard` for admins, `/merchant`, `/rider`, `/warehouse`).
@@ -69,8 +119,8 @@ Helper: `homeForRole(role)` → route a user lands on after login
 
 ```
 /                        → redirects based on auth/role
-/login                   → mock login (has demo role quick-fill buttons; credentials hidden)
-/register                → merchant self-registration (creates PENDING merchant)
+/login                   → email + password login (demo role quick-fill buttons)
+/register                → merchant self-registration (POST /api/merchants → PENDING merchant)
 
 /dashboard               → admin home (layout guards: redirects non-admins)
 /dashboard/orders        → all orders; approve + assign pickup rider
@@ -104,9 +154,9 @@ Helper: `homeForRole(role)` → route a user lands on after login
 ```
 
 Each role's section has a `layout.tsx` that guards access (redirects to `/login` or the
-role's home if the current user doesn't belong) plus a sidebar:
-`components/sidebar.tsx` (admin), `merchant-sidebar.tsx`, `rider-sidebar.tsx`,
-`warehouse-sidebar.tsx`.
+role's home if the current user doesn't belong), renders `components/data-error-banner.tsx`,
+and shows a sidebar: `components/sidebar.tsx` (admin), `merchant-sidebar.tsx`,
+`rider-sidebar.tsx`, `warehouse-sidebar.tsx`.
 
 ---
 
@@ -120,106 +170,86 @@ PENDING → APPROVED → PICKED_UP → IN_WAREHOUSE → IN_TRANSIT
                            → FAILED_ATTEMPT → RETURNED
 ```
 
-Implemented so far (by "phase" from the backend spec):
+Each transition maps to an auth-guarded, zod-validated route handler and an optimistic
+context action:
 
-- **Merchant order creation** — `createOrder` → `PENDING` (computes `deliveryCharge` via
-  `calcDeliveryCharge` and `securityMoney` via `calcSecurityMoney`).
-- **Phase 4 (Admin):** `approveAndAssignOrder(orderId, riderId)` → `APPROVED` + assigns
-  `pickupRiderId`. UI: `components/approve-order-dialog.tsx` on `/dashboard/orders`.
-- **Phase 5 (Rider):** `markOrderPickedUp(orderId)` → `PICKED_UP`. Guards: order must be
-  `APPROVED` and assigned to the current rider. UI: `/rider` + `components/pickup-confirm-dialog.tsx`.
-- **Phase 6 (Warehouse — Parcel Submitted to Warehouse, Rider → Warehouse):**
-  `receiveOrderAtWarehouse(orderId)` → `IN_WAREHOUSE`. The Warehouse Admin logs an incoming
-  parcel that a rider has handed over; the action stamps `warehouseId`,
-  `receivedAtWarehouseAt`, and `receivedByWarehouse`, ending the rider's pickup duty for that
-  parcel. Guards: order must be `PICKED_UP` and the current user must be a Warehouse Admin
-  with a resolved `currentWarehouse`. UI: `/warehouse` (Incoming / Received tabs) +
-  `components/warehouse-receive-dialog.tsx`.
-- **Phase 7 (Warehouse — Delivery Rider Assignment):** `assignDeliveryRider(orderId, riderId)`
-  → `IN_TRANSIT`. The Warehouse Admin dispatches an `IN_WAREHOUSE` parcel to a delivery rider
-  based at their warehouse; the action stamps `deliveryRiderId`, `dispatchedAt`, and
-  `dispatchedBy`. Guards: order must be `IN_WAREHOUSE` and held at the admin's warehouse, and
-  the rider must be active and based at that warehouse (`warehouseDeliveryRiders`). UI:
-  `/warehouse/dispatch` (Ready / Dispatched tabs) + `components/warehouse-dispatch-dialog.tsx`.
-- **Phase 8 (Delivery Rider → Customer — Delivery Attempt):** the assigned delivery rider runs
-  the last mile. `markOutForDelivery(orderId)` → `OUT_FOR_DELIVERY` (increments
-  `deliveryAttempts`); then either `markDelivered(orderId, proofRef?)` → `DELIVERED` (stamps
-  `deliveredAt`, a mock `deliveryProofRef`, and `amountCollected`) or
-  `markDeliveryFailed(orderId, note)` → `FAILED_ATTEMPT` (requires a reason `note`). All three
-  guard that the order is assigned to the current rider and in the correct prior status. UI:
-  `/rider/deliveries` (To deliver / Completed tabs) + `components/delivery-attempt-dialog.tsx`.
-- **Phase 8B (Warehouse Admin — Failed Delivery Resolution):** when a delivery rider records a
-  `FAILED_ATTEMPT`, the parcel surfaces back in its warehouse's exceptions queue
-  (`warehouseFailedOrders`) for the Warehouse Admin to decide its fate. Two actions:
-  `reattemptFailedOrder(orderId)` → `OUT_FOR_DELIVERY` (clears the prior failure note, stamps
-  `failedResolvedAt`/`failedResolvedBy`, increments `deliveryAttempts`) sends the parcel back
-  out with its delivery rider; `returnFailedOrder(orderId, reason)` → `RETURNED` (requires a
-  `reason`, stamps `returnedAt`/`returnReason`) closes the parcel — **no COD is collected and
-  no merchant payout is issued**. Both guard that the order is `FAILED_ATTEMPT` and held at the
-  admin's warehouse. UI: `/warehouse/exceptions` (Needs action / Returned tabs) +
-  `components/failed-delivery-dialog.tsx`.
-- **Phase 9 (COD Reconciliation & Merchant Payout):** money flow after a successful delivery.
-  Split across three roles:
-  - **Warehouse Admin — COD settlement:** `settleOrderCod(orderId)` stamps `codSettledAt` /
-    `codSettledBy` on a `DELIVERED` parcel, recording that the delivery rider has handed over
-    the collected cash. The platform retains the delivery charge + security money; the
-    **product cost** becomes payable to the merchant. Guards: order must be `DELIVERED`, held
-    at the admin's warehouse, and not already settled. Eligible orders surface via
-    `warehouseUnsettledOrders`. UI: `/warehouse/reconciliation`.
-  - **Merchant — payout request:** `requestPayout({ payoutMethod, payoutDetails })` bundles all
-    of the merchant's delivered + COD-settled, unlocked orders (`merchantPayableOrders`) into a
-    new `PayoutRequest` (`PENDING`), summing `productCost` as the `amount` owed and **locking**
-    those orders (`payoutRequestId`) so they can't be requested twice. UI: `/merchant/finance`
-    + `components/payout-request-dialog.tsx`.
-  - **Super Admin — review:** `approvePayout(id)` → `APPROVED`, `rejectPayout(id, reason)` →
-    `REJECTED` (requires a reason, **unlocks** the orders so they're payable again), and
-    `markPayoutPaid(id)` → `PAID`. UI: `/dashboard/payouts`.
+- **Merchant order creation** — `createOrder` → `POST /api/orders` → `PENDING`. The server
+  validates the body, enforces the merchant's max weight, computes `deliveryCharge`
+  (`calcDeliveryCharge`) and `securityMoney` (`calcSecurityMoney`), and generates the
+  `PF-XXXXXX` code from the current max.
+- **Admin approval:** `approveAndAssignOrder(orderId, riderId)` → `PATCH /api/orders/[id]/approve`
+  → `APPROVED` + assigns `pickupRiderId`. UI: `components/approve-order-dialog.tsx`.
+- **Rider pickup:** `markOrderPickedUp` → `PATCH /api/orders/[id]/picked-up` → `PICKED_UP`
+  (order must be `APPROVED` and assigned to the current rider).
+- **Warehouse intake:** `receiveOrderAtWarehouse` → `PATCH /api/orders/[id]/receive` →
+  `IN_WAREHOUSE` (stamps `warehouseId`, `receivedAtWarehouseAt`, `receivedByWarehouse`).
+- **Warehouse dispatch:** `assignDeliveryRider(orderId, riderId)` →
+  `PATCH /api/orders/[id]/dispatch` → `IN_TRANSIT` (stamps `deliveryRiderId`, `dispatchedAt`,
+  `dispatchedBy`; rider must be active and based at the admin's warehouse).
+- **Delivery attempt:** `markOutForDelivery` → `.../out-for-delivery` → `OUT_FOR_DELIVERY`,
+  then `markDelivered(orderId, proofRef?)` → `.../delivered` → `DELIVERED` (stamps
+  `deliveredAt`, proof ref, `amountCollected`) or `markDeliveryFailed(orderId, note)` →
+  `.../failed` → `FAILED_ATTEMPT` (note required).
+- **Failed-delivery resolution:** `reattemptFailedOrder` → `.../reattempt` →
+  `OUT_FOR_DELIVERY` or `returnFailedOrder(orderId, reason)` → `.../return` → `RETURNED`
+  (reason required; no COD collected, no payout).
+- **COD reconciliation & payouts:**
+  - **Warehouse Admin:** `settleOrderCod` → `PATCH /api/orders/[id]/settle-cod` stamps
+    `codSettledAt`/`codSettledBy` on a `DELIVERED` parcel. The platform keeps the delivery
+    charge + security money; the **product cost** becomes payable to the merchant.
+  - **Merchant:** `requestPayout({ payoutMethod, payoutDetails })` → `POST /api/payouts`
+    bundles all delivered + COD-settled, unlocked orders into a `PENDING` `PayoutRequest`
+    inside a transaction, summing `productCost` and **locking** the orders.
+  - **Super Admin:** `approvePayout` → `.../approve` (`APPROVED`), `rejectPayout(id, reason)`
+    → `.../reject` (`REJECTED`, **unlocks** orders, transactional), `markPayoutPaid` →
+    `.../paid` (`PAID`).
   Delivery charge and security money are platform revenue and are **never** part of a payout;
-  `RETURNED` parcels are never settled or paid out. New types: `PayoutRequest`,
-  `PayoutRequestStatus`. Status display: `components/payout-status-badge.tsx`.
+  `RETURNED` parcels are never settled or paid out.
 
 ---
 
 ## Demo Credentials
 
-All defined in `lib/mock-data.ts` (`*_DEMO_CREDENTIALS`). The login page shows one quick-fill
-button per role (Super Admin, Merchant, Rider, Warehouse Admin) — the raw email/password are
-no longer displayed on screen. Values below are for reference.
+Seeded by `pnpm db:seed`. The login page shows one quick-fill button per role.
 
 | Role | Email | Password |
 |------|-------|----------|
-| Super Admin | see `DEMO_CREDENTIALS` | — |
+| Super Admin | see seed output | — |
 | Merchant | `imran@threadline.com` | `merchant123` |
 | Rider (pickup) | `shahin@parcelflow.io` | `rider123` |
 | Rider (delivery) | `kamrul@parcelflow.io` | `rider123` |
 | Warehouse Admin | `rifat@parcelflow.io` | `warehouse123` |
 
-Mock auth: any seeded merchant/rider email works with the shared demo password for that role.
-The demo pickup rider (`shahin` / `rdr_02`) has seeded `APPROVED` orders so the pickup queue is
-populated; the demo delivery rider (`kamrul` / `rdr_d_01`) has seeded `IN_TRANSIT` and
-`OUT_FOR_DELIVERY` orders so the delivery queue is populated.
+The demo pickup rider has seeded `APPROVED` orders and the demo delivery rider has seeded
+`IN_TRANSIT` / `OUT_FOR_DELIVERY` orders so both queues are populated.
 
 ---
 
 ## How to Add a New Backend Behavior (recipe)
 
-1. **Types** — add/extend interfaces and status values in `lib/types.ts`.
-2. **Seed data** — add fields/records in `lib/mock-data.ts` so screens aren't empty.
-3. **Action** — add state + a `useCallback` action in `lib/platform-context.tsx`, add it to
-   `PlatformContextValue`, and expose it in the provider's value object. Return
-   `{ ok, error? }` and enforce role/status guards inside the action.
-4. **UI** — build/extend the page under the right role's `app/<role>/` folder; reuse
+1. **Schema** — add/extend tables in `lib/db/schema.ts`, then `pnpm db:push` (and update
+   `lib/db/seed.ts` if screens need seed data).
+2. **Validation** — add a zod schema to `lib/validation.ts`.
+3. **Route** — add a handler under `app/api/...`; call `requireSession()` for auth/role
+   guards, `parseBody(req, schema)` for input (returns `400` on bad input), do the Drizzle
+   write, and return the updated row. Use a transaction for multi-row money operations.
+4. **Action** — add a `useCallback` action in `lib/platform-context.tsx` that fetches the
+   route and syncs state from the returned row; add it to `PlatformContextValue` and the
+   provider value. Return `{ ok, error? }`.
+5. **UI** — build/extend the page under the right role's `app/<role>/` folder; reuse
    `components/page-header.tsx`, `order-status-badge.tsx`, and `components/ui/*`.
-5. **Verify** — log in with the relevant demo account and exercise the flow in the browser.
+6. **Verify** — sign in with the relevant demo account and exercise the flow in the browser.
 
 ---
 
 ## Conventions
 
 - **Currency:** Taka, formatted with `formatTk()` from `lib/pricing.ts`.
+- **Auth:** email + password via Better Auth; every API route resolves the caller with
+  `requireSession()` and scopes queries by role / `userId` (there is no RLS).
+- **Validation:** every POST/PATCH route validates its body with a zod schema and returns
+  `400` on bad input.
 - **Status badges:** `components/order-status-badge.tsx`, `merchant-status-badge.tsx`,
   `role-badge.tsx` centralize status → color/label mapping. Add new statuses there.
 - **Styling:** use design tokens (`bg-background`, `text-foreground`, etc.) and shadcn
   components; avoid hardcoded colors.
-- **Mock only:** never introduce real fetch/DB calls unless explicitly asked — keep parity
-  with the in-memory pattern.

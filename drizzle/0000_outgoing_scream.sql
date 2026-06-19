@@ -80,7 +80,7 @@ CREATE TABLE "payout_request" (
 	"id" text PRIMARY KEY NOT NULL,
 	"code" text NOT NULL,
 	"merchantId" text NOT NULL,
-	"orderIds" text NOT NULL,
+	"orderIds" jsonb NOT NULL,
 	"amount" double precision NOT NULL,
 	"status" text DEFAULT 'PENDING' NOT NULL,
 	"payoutMethod" text NOT NULL,
@@ -150,6 +150,10 @@ CREATE TABLE "user" (
 	"image" text,
 	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
 	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"role" text,
+	"banned" boolean,
+	"banReason" text,
+	"banExpires" timestamp with time zone,
 	CONSTRAINT "user_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint

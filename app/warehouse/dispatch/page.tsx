@@ -106,7 +106,7 @@ export default function WarehouseDispatchPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Dispatch desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 7: assign delivery riders to parcels held in ${
+        description={`Assign delivery riders to parcels held in ${
           currentWarehouse?.name ?? "your warehouse"
         } and send them out for delivery.`}
       />

@@ -53,25 +53,28 @@ export function PayoutRequestDialog({
   const detailsLabel =
     method === "Bank transfer" ? "Bank account details" : `${method} number`
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!details.trim()) {
       toast.error("Enter your payout account details.")
       return
     }
     setSubmitting(true)
-    const result = requestPayout({
-      payoutMethod: method,
-      payoutDetails: details,
-    })
-    if (result.ok) {
-      toast.success(
-        `Payout request ${result.request?.code} submitted for ${formatTk(total)}.`,
-      )
-      onOpenChange(false)
-    } else {
-      toast.error(result.error ?? "Unable to submit payout request.")
+    try {
+      const result = await requestPayout({
+        payoutMethod: method,
+        payoutDetails: details,
+      })
+      if (result.ok) {
+        toast.success(
+          `Payout request ${result.request?.code} submitted for ${formatTk(total)}.`,
+        )
+        onOpenChange(false)
+      } else {
+        toast.error(result.error ?? "Unable to submit payout request.")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (
@@ -80,7 +83,7 @@ export function PayoutRequestDialog({
         <DialogHeader>
           <DialogTitle>Request payout</DialogTitle>
           <DialogDescription>
-            Phase 9: request the product cost from your delivered, settled
+            Request the product cost from your delivered, settled
             orders. Delivery charge and security money are platform revenue and
             are not paid out.
           </DialogDescription>

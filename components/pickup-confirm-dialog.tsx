@@ -63,16 +63,19 @@ export function PickupConfirmDialog({
 
   if (!order) return null
 
-  function handleConfirm() {
+  async function handleConfirm() {
     setSubmitting(true)
-    const result = markOrderPickedUp(order!.id)
-    if (result.ok) {
-      toast.success(`${order!.code} marked as picked up.`)
-      onOpenChange(false)
-    } else {
-      toast.error(result.error ?? "Unable to update pickup.")
+    try {
+      const result = await markOrderPickedUp(order!.id)
+      if (result.ok) {
+        toast.success(`${order!.code} marked as picked up.`)
+        onOpenChange(false)
+      } else {
+        toast.error(result.error ?? "Unable to update pickup.")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (

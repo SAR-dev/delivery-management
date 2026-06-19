@@ -95,7 +95,7 @@ export default function WarehouseExceptionsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Exceptions desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 8B: resolve failed delivery attempts at ${
+        description={`Resolve failed delivery attempts at ${
           currentWarehouse?.name ?? "your warehouse"
         } — re-attempt delivery or close the parcel as returned.`}
       />

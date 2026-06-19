@@ -3,7 +3,6 @@
 import { useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Loader2, Store, ArrowRight } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -34,28 +33,42 @@ const EMPTY: FormState = {
 }
 
 export default function RegisterPage() {
-  const { registerMerchant } = usePlatform()
   const [form, setForm] = useState<FormState>(EMPTY)
   const [submitting, setSubmitting] = useState(false)
   const [submittedName, setSubmittedName] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError(null)
     setSubmitting(true)
-    const merchant = registerMerchant({
-      businessName: form.businessName.trim(),
-      ownerName: form.ownerName.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      address: form.address.trim(),
-      password: form.password,
-    })
-    setSubmittedName(merchant.businessName)
-    setSubmitting(false)
+    const businessName = form.businessName.trim()
+    try {
+      const res = await fetch("/api/merchants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessName,
+          ownerName: form.ownerName.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          address: form.address.trim(),
+          password: form.password,
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(data?.error ?? "Could not complete registration. Please try again.")
+        return
+      }
+      setSubmittedName(businessName)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -230,6 +243,15 @@ export default function RegisterPage() {
                       minLength={6}
                     />
                   </div>
+
+                  {error ? (
+                    <p
+                      role="alert"
+                      className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                    >
+                      {error}
+                    </p>
+                  ) : null}
 
                   <Button type="submit" className="w-full" disabled={submitting}>
                     {submitting ? (

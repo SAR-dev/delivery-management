@@ -96,26 +96,27 @@ export default function WarehouseReconciliationPage() {
 
   const visible = tab === "UNSETTLED" ? unsettled : settled
 
-  function handleSettle(order: Order) {
+  async function handleSettle(order: Order) {
     setSettling(order.id)
-    const result = settleOrderCod(order.id)
-    if (result.ok) {
-      toast.success(
-        `${order.code} settled. Product cost is now available for merchant payout.`,
-      )
-    } else {
-      toast.error(result.error ?? "Unable to settle this parcel.")
+    try {
+      const result = await settleOrderCod(order.id)
+      if (result.ok) {
+        toast.success(
+          `${order.code} settled. Product cost is now available for merchant payout.`,
+        )
+      } else {
+        toast.error(result.error ?? "Unable to settle this parcel.")
+      }
+    } finally {
+      setSettling(null)
     }
-    setSettling(null)
   }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`COD reconciliation, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Phase 9: record the cash delivery riders settle for delivered parcels at ${
-          currentWarehouse?.name ?? "your warehouse"
-        }. The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
+        description={`The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

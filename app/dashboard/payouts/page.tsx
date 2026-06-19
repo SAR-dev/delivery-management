@@ -97,31 +97,37 @@ export default function PayoutsPage() {
   const visible =
     tab === "PENDING" ? pending : tab === "APPROVED" ? approved : history
 
-  function handleApprove(req: PayoutRequest) {
+  async function handleApprove(req: PayoutRequest) {
     setBusy(req.id)
-    const result = approvePayout(req.id)
-    if (result.ok) {
-      toast.success(`${req.code} approved. Mark it paid once funds are sent.`)
-    } else {
-      toast.error(result.error ?? "Unable to approve this request.")
+    try {
+      const result = await approvePayout(req.id)
+      if (result.ok) {
+        toast.success(`${req.code} approved. Mark it paid once funds are sent.`)
+      } else {
+        toast.error(result.error ?? "Unable to approve this request.")
+      }
+    } finally {
+      setBusy(null)
     }
-    setBusy(null)
   }
 
-  function handleMarkPaid(req: PayoutRequest) {
+  async function handleMarkPaid(req: PayoutRequest) {
     setBusy(req.id)
-    const result = markPayoutPaid(req.id)
-    if (result.ok) {
-      toast.success(`${req.code} marked as paid.`)
-    } else {
-      toast.error(result.error ?? "Unable to mark this request as paid.")
+    try {
+      const result = await markPayoutPaid(req.id)
+      if (result.ok) {
+        toast.success(`${req.code} marked as paid.`)
+      } else {
+        toast.error(result.error ?? "Unable to mark this request as paid.")
+      }
+    } finally {
+      setBusy(null)
     }
-    setBusy(null)
   }
 
-  function confirmReject() {
+  async function confirmReject() {
     if (!rejectTarget) return
-    const result = rejectPayout(rejectTarget.id, rejectReason)
+    const result = await rejectPayout(rejectTarget.id, rejectReason)
     if (result.ok) {
       toast.success(
         `${rejectTarget.code} rejected. Its orders are available again.`,
@@ -137,7 +143,7 @@ export default function PayoutsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Merchant payouts"
-        description="Phase 9: review payout requests merchants raise against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
+        description="Review payout requests merchants raise against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

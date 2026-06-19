@@ -2,7 +2,6 @@
 
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
-import { WAREHOUSES } from "@/lib/mock-data"
 import type { User } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { RoleBadge } from "@/components/role-badge"
@@ -11,19 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-
-function warehouseName(id?: string | null) {
-  if (!id) return "Unassigned"
-  return WAREHOUSES.find((w) => w.id === id)?.name ?? "Unknown"
-}
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function StatusToggle({
   user,
@@ -47,7 +34,13 @@ function StatusToggle({
 }
 
 export default function TeamPage() {
-  const { team, toggleAccountActive, togglePricingPermission } = usePlatform()
+  const { team, warehouses, toggleAccountActive, togglePricingPermission } =
+    usePlatform()
+
+  function warehouseName(id?: string | null) {
+    if (!id) return "Unassigned"
+    return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
+  }
 
   const admins = team.filter((u) => u.role === "ADMIN")
   const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
@@ -65,6 +58,90 @@ export default function TeamPage() {
       `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
     )
   }
+
+  const nameColumn: DataTableColumn<User> = {
+    id: "name",
+    header: "Name",
+    sortable: true,
+    sortValue: (u) => u.name,
+    cell: (u) => (
+      <div className="flex flex-col">
+        <span className="font-medium">{u.name}</span>
+        <span className="text-xs text-muted-foreground sm:hidden">
+          {u.email}
+        </span>
+      </div>
+    ),
+  }
+
+  const contactColumn: DataTableColumn<User> = {
+    id: "contact",
+    header: "Contact",
+    sortable: true,
+    sortValue: (u) => u.email,
+    headClassName: "hidden sm:table-cell",
+    cellClassName: "hidden sm:table-cell",
+    cell: (u) => (
+      <div className="flex flex-col text-sm">
+        <span>{u.email}</span>
+        <span className="text-xs text-muted-foreground">{u.phone}</span>
+      </div>
+    ),
+  }
+
+  const statusColumn: DataTableColumn<User> = {
+    id: "status",
+    header: "Status",
+    align: "right",
+    sortable: true,
+    sortValue: (u) => (u.isActive ? 1 : 0),
+    cell: (u) => (
+      <div className="flex justify-end">
+        <StatusToggle user={u} onToggle={() => handleToggleActive(u)} />
+      </div>
+    ),
+  }
+
+  const adminColumns: DataTableColumn<User>[] = [
+    nameColumn,
+    contactColumn,
+    {
+      id: "pricing",
+      header: "Pricing access",
+      sortable: true,
+      sortValue: (u) => (u.canManagePricing ? 1 : 0),
+      cell: (u) => (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={Boolean(u.canManagePricing)}
+            onCheckedChange={() => handleTogglePricing(u)}
+            aria-label={`Toggle pricing permission for ${u.name}`}
+          />
+          <span className="text-xs text-muted-foreground">
+            {u.canManagePricing ? "Granted" : "Denied"}
+          </span>
+        </div>
+      ),
+    },
+    statusColumn,
+  ]
+
+  const warehouseColumns: DataTableColumn<User>[] = [
+    nameColumn,
+    contactColumn,
+    {
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (u) => warehouseName(u.warehouseId),
+      cell: (u) => (
+        <Badge variant="secondary" className="font-normal">
+          {warehouseName(u.warehouseId)}
+        </Badge>
+      ),
+    },
+    statusColumn,
+  ]
 
   return (
     <>
@@ -87,71 +164,13 @@ export default function TeamPage() {
         <TabsContent value="admins" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden sm:table-cell">
-                      Contact
-                    </TableHead>
-                    <TableHead>Pricing access</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {admins.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="py-10 text-center text-sm text-muted-foreground"
-                      >
-                        No Admin accounts yet. Create one to get started.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    admins.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{user.name}</span>
-                            <span className="text-xs text-muted-foreground sm:hidden">
-                              {user.email}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <div className="flex flex-col text-sm">
-                            <span>{user.email}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {user.phone}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={Boolean(user.canManagePricing)}
-                              onCheckedChange={() => handleTogglePricing(user)}
-                              aria-label={`Toggle pricing permission for ${user.name}`}
-                            />
-                            <span className="text-xs text-muted-foreground">
-                              {user.canManagePricing ? "Granted" : "Denied"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end">
-                            <StatusToggle
-                              user={user}
-                              onToggle={() => handleToggleActive(user)}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <DataTable
+                columns={adminColumns}
+                data={admins}
+                getRowKey={(u) => u.id}
+                initialSortId="name"
+                emptyMessage="No Admin accounts yet. Create one to get started."
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -160,64 +179,13 @@ export default function TeamPage() {
         <TabsContent value="warehouse" className="mt-4">
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden sm:table-cell">
-                      Contact
-                    </TableHead>
-                    <TableHead>Warehouse</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {warehouseAdmins.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="py-10 text-center text-sm text-muted-foreground"
-                      >
-                        No Warehouse Admin accounts yet.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    warehouseAdmins.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{user.name}</span>
-                            <span className="text-xs text-muted-foreground sm:hidden">
-                              {user.email}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <div className="flex flex-col text-sm">
-                            <span>{user.email}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {user.phone}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal">
-                            {warehouseName(user.warehouseId)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end">
-                            <StatusToggle
-                              user={user}
-                              onToggle={() => handleToggleActive(user)}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <DataTable
+                columns={warehouseColumns}
+                data={warehouseAdmins}
+                getRowKey={(u) => u.id}
+                initialSortId="name"
+                emptyMessage="No Warehouse Admin accounts yet."
+              />
             </CardContent>
           </Card>
         </TabsContent>

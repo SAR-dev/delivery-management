@@ -64,24 +64,27 @@ export function ApproveOrderDialog({
     ? order.parcelWeightKg > merchant.maxWeightKg
     : false
 
-  function handleApprove(e: React.FormEvent) {
+  async function handleApprove(e: React.FormEvent) {
     e.preventDefault()
     if (!riderId) {
       toast.error("Assign a pickup rider before approving.")
       return
     }
     setSubmitting(true)
-    const result = approveAndAssignOrder(order!.id, riderId)
-    if (result.ok) {
-      const rider = activeRiders.find((r) => r.id === riderId)
-      toast.success(
-        `${order!.code} approved and assigned to ${rider?.name ?? "rider"}.`,
-      )
-      onOpenChange(false)
-    } else {
-      toast.error(result.error ?? "Unable to approve order.")
+    try {
+      const result = await approveAndAssignOrder(order!.id, riderId)
+      if (result.ok) {
+        const rider = activeRiders.find((r) => r.id === riderId)
+        toast.success(
+          `${order!.code} approved and assigned to ${rider?.name ?? "rider"}.`,
+        )
+        onOpenChange(false)
+      } else {
+        toast.error(result.error ?? "Unable to approve order.")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (

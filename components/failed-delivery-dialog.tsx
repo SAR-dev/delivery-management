@@ -79,30 +79,33 @@ export function FailedDeliveryDialog({
 
   if (!order) return null
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitting(true)
-    if (decision === "REATTEMPT") {
-      const result = reattemptFailedOrder(order!.id)
-      if (result.ok) {
-        toast.success(
-          `${order!.code} sent back out for delivery with ${riderName}.`,
-        )
-        onOpenChange(false)
+    try {
+      if (decision === "REATTEMPT") {
+        const result = await reattemptFailedOrder(order!.id)
+        if (result.ok) {
+          toast.success(
+            `${order!.code} sent back out for delivery with ${riderName}.`,
+          )
+          onOpenChange(false)
+        } else {
+          toast.error(result.error ?? "Unable to re-attempt delivery.")
+        }
       } else {
-        toast.error(result.error ?? "Unable to re-attempt delivery.")
+        const result = await returnFailedOrder(order!.id, reason)
+        if (result.ok) {
+          toast.success(
+            `${order!.code} closed as returned. No COD collected, no payout.`,
+          )
+          onOpenChange(false)
+        } else {
+          toast.error(result.error ?? "Unable to return parcel.")
+        }
       }
-    } else {
-      const result = returnFailedOrder(order!.id, reason)
-      if (result.ok) {
-        toast.success(
-          `${order!.code} closed as returned. No COD collected, no payout.`,
-        )
-        onOpenChange(false)
-      } else {
-        toast.error(result.error ?? "Unable to return parcel.")
-      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   const returnNeedsReason = decision === "RETURN" && !reason.trim()
@@ -113,7 +116,7 @@ export function FailedDeliveryDialog({
         <DialogHeader>
           <DialogTitle>Resolve failed delivery — {order.code}</DialogTitle>
           <DialogDescription>
-            Phase 8B: decide whether to send this parcel back out for another
+            Decide whether to send this parcel back out for another
             attempt or close it as a return.
           </DialogDescription>
         </DialogHeader>

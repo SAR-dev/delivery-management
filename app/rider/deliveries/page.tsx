@@ -86,8 +86,8 @@ export default function RiderDeliveryQueuePage() {
     setDialogOpen(true)
   }
 
-  function startDelivery(order: Order) {
-    const result = markOutForDelivery(order.id)
+  async function startDelivery(order: Order) {
+    const result = await markOutForDelivery(order.id)
     if (result.ok) {
       toast.success(`${order.code} is now out for delivery.`)
     } else {
@@ -99,7 +99,7 @@ export default function RiderDeliveryQueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Delivery queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Phase 8: take dispatched parcels out for delivery and record the outcome."
+        description="Take dispatched parcels out for delivery and record the outcome."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

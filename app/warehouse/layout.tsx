@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Warehouse as WarehouseIcon, LogOut } from "lucide-react"
 import { usePlatform, homeForRole } from "@/lib/platform-context"
+import { DataErrorBanner } from "@/components/data-error-banner"
 import { WarehouseSidebar } from "@/components/warehouse-sidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -70,7 +71,10 @@ export default function WarehouseLayout({
         </header>
 
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+          <div className="mx-auto w-full max-w-5xl">
+            <DataErrorBanner />
+            {children}
+          </div>
         </main>
       </div>
     </div>

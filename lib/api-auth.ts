@@ -16,5 +16,5 @@ export async function requireSession() {
 
   if (!row) return null
 
-  return { ...row, userId: session.user.id }
+  return { ...row, userId: session.user.id, name: session.user.name }
 }

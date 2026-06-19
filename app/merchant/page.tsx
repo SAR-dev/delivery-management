@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/order-status-badge"
 import { MerchantStatusBadge } from "@/components/merchant-status-badge"
@@ -26,14 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function StatCard({
   label,
@@ -128,11 +122,70 @@ export default function MerchantOverviewPage() {
 
   const isActive = currentMerchant?.status === "ACTIVE"
 
+  const orderColumns: DataTableColumn<Order>[] = [
+    {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="leading-tight">
+          <p className="font-medium">{o.recipientName}</p>
+          <p className="text-xs text-muted-foreground">{o.deliveryCity}</p>
+        </div>
+      ),
+    },
+    {
+      id: "weight",
+      header: "Weight",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.parcelWeightKg,
+      cell: (o) => <span className="tabular-nums">{o.parcelWeightKg} KG</span>,
+    },
+    {
+      id: "delivery",
+      header: "Delivery",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.deliveryCharge,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.deliveryCharge)}</span>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.totalCollectible)}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+  ]
+
   return (
     <>
       <PageHeader
         title={`Welcome, ${currentUser?.name.split(" ")[0] ?? "Merchant"}`}
-        description="Phase 3: create delivery orders and track them in real time."
+        description="Create delivery orders and track them in real time."
       >
         {isActive ? (
           <Button render={<Link href="/merchant/orders/new" />} nativeButton={false}>
@@ -209,49 +262,12 @@ export default function MerchantOverviewPage() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tracking</TableHead>
-                    <TableHead>Recipient</TableHead>
-                    <TableHead className="text-right">Weight</TableHead>
-                    <TableHead className="text-right">Delivery</TableHead>
-                    <TableHead className="text-right">Collectible</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {myOrders.map((o) => (
-                    <TableRow key={o.id}>
-                      <TableCell>
-                        <TrackingCell code={o.code} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="leading-tight">
-                          <p className="font-medium">{o.recipientName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {o.deliveryCity}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {o.parcelWeightKg} KG
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatTk(o.deliveryCharge)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </TableCell>
-                      <TableCell>
-                        <OrderStatusBadge status={o.status} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={orderColumns}
+              data={myOrders}
+              getRowKey={(o) => o.id}
+              initialSortId="tracking"
+            />
           )}
         </CardContent>
       </Card>

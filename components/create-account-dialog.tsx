@@ -4,7 +4,6 @@ import { useState } from "react"
 import { UserPlus, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
-import { WAREHOUSES } from "@/lib/mock-data"
 import type { Role } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,45 +32,55 @@ const EMPTY = {
   name: "",
   email: "",
   phone: "",
+  password: "",
   role: "ADMIN" as CreatableRole,
   warehouseId: "" as string,
   canManagePricing: false,
 }
 
 export function CreateAccountDialog() {
-  const { createAccount } = usePlatform()
+  const { createAccount, warehouses } = usePlatform()
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(EMPTY)
 
-  const unassignedWarehouses = WAREHOUSES.filter((w) => !w.managedBy)
+  const unassignedWarehouses = warehouses.filter((w) => !w.managedBy)
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
-      toast.error("Name, email and phone are required.")
+    if (
+      !form.name.trim() ||
+      !form.email.trim() ||
+      !form.phone.trim() ||
+      !form.password
+    ) {
+      toast.error("Name, email, phone and password are required.")
       return
     }
     setSubmitting(true)
-    createAccount({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      role: form.role,
-      ...(form.role === "ADMIN"
-        ? { canManagePricing: form.canManagePricing }
-        : { warehouseId: form.warehouseId || null }),
-    })
-    toast.success(
-      `${form.role === "ADMIN" ? "Admin" : "Warehouse Admin"} account created.`,
-    )
-    setSubmitting(false)
-    setForm(EMPTY)
-    setOpen(false)
+    try {
+      await createAccount({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        password: form.password,
+        role: form.role,
+        ...(form.role === "ADMIN"
+          ? { canManagePricing: form.canManagePricing }
+          : { warehouseId: form.warehouseId || null }),
+      })
+      toast.success(
+        `${form.role === "ADMIN" ? "Admin" : "Warehouse Admin"} account created.`,
+      )
+      setForm(EMPTY)
+      setOpen(false)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -146,6 +155,18 @@ export function CreateAccountDialog() {
                 placeholder="+8801711000000"
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="password">Temporary password</Label>
+            <Input
+              id="password"
+              type="password"
+              value={form.password}
+              onChange={(e) => update("password", e.target.value)}
+              placeholder="At least 6 characters"
+              minLength={6}
+            />
           </div>
 
           {form.role === "WAREHOUSE_ADMIN" ? (

@@ -88,7 +88,7 @@ export default function RiderPickupQueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Pickup queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Phase 5: collect approved parcels from merchants and mark them picked up."
+        description="Collect approved parcels from merchants and mark them picked up."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { PayoutStatusBadge } from "@/components/payout-status-badge"
 import { PayoutRequestDialog } from "@/components/payout-request-dialog"
@@ -23,14 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function StatCard({
   label,
@@ -86,11 +80,60 @@ export default function MerchantFinancePage() {
   const isActive = currentMerchant?.status === "ACTIVE"
   const canRequest = isActive && merchantPayableOrders.length > 0
 
+  const payableColumns: DataTableColumn<Order>[] = [
+    {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cellClassName: "font-mono text-xs",
+      cell: (o) => o.code,
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="leading-tight">
+          <p className="font-medium">{o.recipientName}</p>
+          <p className="text-xs text-muted-foreground">{o.deliveryCity}</p>
+        </div>
+      ),
+    },
+    {
+      id: "delivered",
+      header: "Delivered",
+      sortable: true,
+      sortValue: (o) => o.deliveredAt ?? "",
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (o) =>
+        o.deliveredAt
+          ? new Date(o.deliveredAt).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })
+          : "—",
+    },
+    {
+      id: "productCost",
+      header: "Product cost",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.productCost,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.productCost)}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <>
       <PageHeader
         title="Financial dashboard"
-        description="Phase 9: track your available funds and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
+        description="Track your available funds and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
       >
         <Button onClick={() => setDialogOpen(true)} disabled={!canRequest}>
           <Wallet className="size-4" />
@@ -159,46 +202,12 @@ export default function MerchantFinancePage() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tracking</TableHead>
-                    <TableHead>Recipient</TableHead>
-                    <TableHead>Delivered</TableHead>
-                    <TableHead className="text-right">Product cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {merchantPayableOrders.map((o) => (
-                    <TableRow key={o.id}>
-                      <TableCell className="font-mono text-xs">
-                        {o.code}
-                      </TableCell>
-                      <TableCell>
-                        <div className="leading-tight">
-                          <p className="font-medium">{o.recipientName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {o.deliveryCity}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {o.deliveredAt
-                          ? new Date(o.deliveredAt).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric" },
-                            )
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatTk(o.productCost)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable
+              columns={payableColumns}
+              data={merchantPayableOrders}
+              getRowKey={(o) => o.id}
+              initialSortId="tracking"
+            />
           )}
         </CardContent>
       </Card>
