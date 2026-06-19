@@ -5,12 +5,6 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2, Lock, ShieldCheck } from "lucide-react"
 import { usePlatform, homeForRole } from "@/lib/platform-context"
-import {
-  DEMO_CREDENTIALS,
-  MERCHANT_DEMO_CREDENTIALS,
-  RIDER_DEMO_CREDENTIALS,
-  WAREHOUSE_DEMO_CREDENTIALS,
-} from "@/lib/mock-data"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Input } from "@/components/ui/input"
@@ -37,11 +31,11 @@ export default function LoginPage() {
     }
   }, [isReady, currentUser, router])
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
-    const result = login(email, password)
+    const result = await login(email, password)
     if (result.ok && result.user) {
       router.replace(homeForRole(result.user.role))
     } else if (result.ok) {
@@ -50,30 +44,6 @@ export default function LoginPage() {
       setError(result.error ?? "Unable to sign in.")
       setSubmitting(false)
     }
-  }
-
-  function fillDemo() {
-    setEmail(DEMO_CREDENTIALS.email)
-    setPassword(DEMO_CREDENTIALS.password)
-    setError(null)
-  }
-
-  function fillMerchantDemo() {
-    setEmail(MERCHANT_DEMO_CREDENTIALS.email)
-    setPassword(MERCHANT_DEMO_CREDENTIALS.password)
-    setError(null)
-  }
-
-  function fillRiderDemo() {
-    setEmail(RIDER_DEMO_CREDENTIALS.email)
-    setPassword(RIDER_DEMO_CREDENTIALS.password)
-    setError(null)
-  }
-
-  function fillWarehouseDemo() {
-    setEmail(WAREHOUSE_DEMO_CREDENTIALS.email)
-    setPassword(WAREHOUSE_DEMO_CREDENTIALS.password)
-    setError(null)
   }
 
   return (
@@ -181,46 +151,6 @@ export default function LoginPage() {
                   )}
                 </Button>
               </form>
-
-              <div className="mt-6">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Quick demo sign in
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fillDemo}
-                  >
-                    Super Admin
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fillMerchantDemo}
-                  >
-                    Merchant
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fillRiderDemo}
-                  >
-                    Rider
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fillWarehouseDemo}
-                  >
-                    Warehouse Admin
-                  </Button>
-                </div>
-              </div>
 
               <p className="mt-6 text-center text-sm text-muted-foreground">
                 Are you a merchant?{" "}

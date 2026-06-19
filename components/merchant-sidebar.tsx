@@ -29,7 +29,7 @@ export function MerchantSidebar() {
   const { currentUser, currentMerchant, logout } = usePlatform()
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
+    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border">
       <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
         <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
           <Store className="size-5" />

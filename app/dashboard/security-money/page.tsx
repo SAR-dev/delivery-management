@@ -31,13 +31,22 @@ export default function SecurityMoneyPage() {
   const { securityConfig, updateSecurityConfig } = usePlatform()
 
   const [threshold, setThreshold] = useState(
-    String(securityConfig.lowValueThreshold),
+    String(securityConfig?.lowValueThreshold ?? ""),
   )
-  const [flatFee, setFlatFee] = useState(String(securityConfig.lowValueFlatFee))
+  const [flatFee, setFlatFee] = useState(String(securityConfig?.lowValueFlatFee ?? ""))
   const [percentage, setPercentage] = useState(
-    String(securityConfig.highValuePercentage),
+    String(securityConfig?.highValuePercentage ?? ""),
   )
   const [previewCost, setPreviewCost] = useState("1500")
+
+  // Sync local state when securityConfig first loads from the API.
+  const prevConfigRef = useState<typeof securityConfig>(null)
+  if (securityConfig && prevConfigRef[0] !== securityConfig) {
+    prevConfigRef[1](securityConfig)
+    setThreshold(String(securityConfig.lowValueThreshold))
+    setFlatFee(String(securityConfig.lowValueFlatFee))
+    setPercentage(String(securityConfig.highValuePercentage))
+  }
 
   const parsed = {
     threshold: Number(threshold) || 0,
@@ -45,10 +54,11 @@ export default function SecurityMoneyPage() {
     percentage: Number(percentage) || 0,
   }
 
-  const dirty =
+  const dirty = securityConfig != null && (
     parsed.threshold !== securityConfig.lowValueThreshold ||
     parsed.flatFee !== securityConfig.lowValueFlatFee ||
     parsed.percentage !== securityConfig.highValuePercentage
+  )
 
   const invalid =
     parsed.threshold <= 0 || parsed.flatFee < 0 || parsed.percentage <= 0
@@ -68,6 +78,7 @@ export default function SecurityMoneyPage() {
   }
 
   function handleReset() {
+    if (!securityConfig) return
     setThreshold(String(securityConfig.lowValueThreshold))
     setFlatFee(String(securityConfig.lowValueFlatFee))
     setPercentage(String(securityConfig.highValuePercentage))
@@ -99,13 +110,13 @@ export default function SecurityMoneyPage() {
               Calculation rules
             </CardTitle>
             <CardDescription>
-              Last updated{" "}
-              {new Date(securityConfig.updatedAt).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}{" "}
-              by {securityConfig.updatedBy}
+              {securityConfig
+                ? `Last updated ${new Date(securityConfig.updatedAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })} by ${securityConfig.updatedBy}`
+                : "Loading…"}
             </CardDescription>
           </CardHeader>
           <CardContent>

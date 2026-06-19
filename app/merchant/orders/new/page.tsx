@@ -85,7 +85,9 @@ export default function NewOrderPage() {
   const breakdown = currentMerchant
     ? calcDeliveryCharge(currentMerchant, weight)
     : null
-  const securityMoney = calcSecurityMoney(securityConfig, productCost)
+  const securityMoney = securityConfig
+    ? calcSecurityMoney(securityConfig, productCost)
+    : 0
   const exceedsMax = breakdown?.exceedsMax ?? false
   const deliveryCharge = breakdown && !exceedsMax ? breakdown.total : 0
   const totalCollectible = exceedsMax

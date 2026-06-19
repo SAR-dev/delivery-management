@@ -77,7 +77,7 @@ export default function OverviewPage() {
     },
     {
       label: "Security money rules configured",
-      done: securityConfig.lowValueFlatFee > 0,
+      done: securityConfig != null && securityConfig.lowValueFlatFee > 0,
       href: "/dashboard/security-money",
     },
     {
@@ -221,20 +221,26 @@ export default function OverviewPage() {
             <CardDescription>Current calculation rules</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Low-value orders</p>
-              <p className="font-medium">
-                {"\u2264"} {securityConfig.lowValueThreshold} TK {"\u2192"} flat{" "}
-                {securityConfig.lowValueFlatFee} TK
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">High-value orders</p>
-              <p className="font-medium">
-                {">"} {securityConfig.lowValueThreshold} TK {"\u2192"}{" "}
-                {securityConfig.highValuePercentage}% of order value
-              </p>
-            </div>
+            {securityConfig == null ? (
+              <p className="text-muted-foreground text-sm">Loading…</p>
+            ) : (
+              <>
+                <div>
+                  <p className="text-muted-foreground">Low-value orders</p>
+                  <p className="font-medium">
+                    {"≤"} {securityConfig.lowValueThreshold} TK {"→"} flat{" "}
+                    {securityConfig.lowValueFlatFee} TK
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">High-value orders</p>
+                  <p className="font-medium">
+                    {">"} {securityConfig.lowValueThreshold} TK {"→"}{" "}
+                    {securityConfig.highValuePercentage}% of order value
+                  </p>
+                </div>
+              </>
+            )}
             <Button
               variant="outline"
               size="sm"

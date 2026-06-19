@@ -23,27 +23,9 @@ import type {
   Warehouse,
   PayoutRequest,
 } from "@/lib/types"
-import {
-  SUPER_ADMIN,
-  DEMO_CREDENTIALS,
-  MERCHANT_DEMO_CREDENTIALS,
-  MERCHANT_USERS,
-  RIDER_DEMO_CREDENTIALS,
-  RIDER_USERS,
-  WAREHOUSE_DEMO_CREDENTIALS,
-  WAREHOUSES,
-  INITIAL_SECURITY_MONEY_CONFIG,
-  INITIAL_TEAM,
-  INITIAL_MERCHANTS,
-  INITIAL_PICKUP_LOCATIONS,
-  INITIAL_ORDERS,
-  INITIAL_RIDERS,
-  INITIAL_PAYOUT_REQUESTS,
-  DEFAULT_MERCHANT_PRICING,
-} from "@/lib/mock-data"
+import { DEFAULT_MERCHANT_PRICING } from "@/lib/mock-data"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
-
-const SESSION_KEY = "parcelflow.session"
+import { authClient } from "@/lib/auth-client"
 
 interface NewAccountInput {
   name: string
@@ -60,10 +42,10 @@ interface PlatformContextValue {
   login: (
     email: string,
     password: string,
-  ) => { ok: boolean; user?: User; error?: string }
-  logout: () => void
+  ) => Promise<{ ok: boolean; user?: User; error?: string }>
+  logout: () => Promise<void>
 
-  securityConfig: SecurityMoneyConfig
+  securityConfig: SecurityMoneyConfig | null
   updateSecurityConfig: (
     next: Pick<
       SecurityMoneyConfig,
@@ -200,121 +182,124 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
-  const [securityConfig, setSecurityConfig] = useState<SecurityMoneyConfig>(
-    INITIAL_SECURITY_MONEY_CONFIG,
-  )
-  const [team, setTeam] = useState<User[]>(INITIAL_TEAM)
-  const [merchants, setMerchants] = useState<Merchant[]>(INITIAL_MERCHANTS)
+  const [securityConfig, setSecurityConfig] = useState<SecurityMoneyConfig | null>(null)
+  const [team, setTeam] = useState<User[]>([])
+  const [merchants, setMerchants] = useState<Merchant[]>([])
   const [merchantUsers, setMerchantUsers] = useState<User[]>([])
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS)
-  const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>(
-    INITIAL_PAYOUT_REQUESTS,
-  )
-  const [pickupLocations] = useState<PickupLocation[]>(INITIAL_PICKUP_LOCATIONS)
-  const [riders] = useState<Rider[]>(INITIAL_RIDERS)
-  const [warehouses] = useState<Warehouse[]>(WAREHOUSES)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([])
+  const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
+  const [riders, setRiders] = useState<Rider[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
-  // All accounts that can authenticate (mock auth directory). Warehouse Admins
-  // live in INITIAL_TEAM, so they're included for login resolution too.
-  const knownUsers = [
-    SUPER_ADMIN,
-    ...INITIAL_TEAM,
-    ...MERCHANT_USERS,
-    ...RIDER_USERS,
-    ...merchantUsers,
-  ]
-
-  // Restore an in-memory "session" on mount. We persist the logged-in user id
-  // only; all domain data stays in memory (mock).
+  // Restore a real Better Auth session on mount, then hydrate the full
+  // app-level User (role + merchant/rider/warehouse linkage) from
+  // /api/users/me, which joins the `profile` table for us.
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedId = window.sessionStorage.getItem(SESSION_KEY)
-      const user = knownUsers.find((u) => u.id === savedId)
-      if (user) setCurrentUser(user)
+    async function bootstrap() {
+      try {
+        const { data: session } = await authClient.getSession()
+        if (session) {
+          const res = await fetch("/api/users/me")
+          if (res.ok) {
+            const user = await res.json()
+            setCurrentUser(user)
+          }
+        }
+      } finally {
+        setIsReady(true)
+      }
     }
-    setIsReady(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    bootstrap()
   }, [])
 
-  const login = useCallback((email: string, password: string) => {
+  // Load all platform data from the real API once a session is established.
+  // Re-runs on every currentUser change so logging out clears stale data and
+  // logging in as a different role re-fetches with the correct role filters.
+  useEffect(() => {
+    if (!currentUser) {
+      setTeam([])
+      setMerchants([])
+      setOrders([])
+      setPayoutRequests([])
+      setPickupLocations([])
+      setRiders([])
+      setWarehouses([])
+      setSecurityConfig(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadAll() {
+      const [
+        teamRes,
+        merchantsRes,
+        ordersRes,
+        payoutsRes,
+        pickupLocationsRes,
+        ridersRes,
+        warehousesRes,
+        securityConfigRes,
+      ] = await Promise.all([
+        fetch("/api/team"),
+        fetch("/api/merchants"),
+        fetch("/api/orders"),
+        fetch("/api/payouts"),
+        fetch("/api/pickup-locations"),
+        fetch("/api/riders"),
+        fetch("/api/warehouses"),
+        fetch("/api/security-config"),
+      ])
+      if (cancelled) return
+
+      if (teamRes.ok) setTeam(await teamRes.json())
+      if (merchantsRes.ok) setMerchants(await merchantsRes.json())
+      if (ordersRes.ok) setOrders(await ordersRes.json())
+      if (payoutsRes.ok) setPayoutRequests(await payoutsRes.json())
+      if (pickupLocationsRes.ok) setPickupLocations(await pickupLocationsRes.json())
+      if (ridersRes.ok) setRiders(await ridersRes.json())
+      if (warehousesRes.ok) setWarehouses(await warehousesRes.json())
+      if (securityConfigRes.ok) setSecurityConfig(await securityConfigRes.json())
+    }
+
+    loadAll()
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser])
+
+  const login = useCallback(async (email: string, password: string) => {
     const normalized = email.trim().toLowerCase()
+    const { data, error } = await authClient.signIn.email({
+      email: normalized,
+      password,
+    })
 
-    // Super Admin
-    if (
-      normalized === DEMO_CREDENTIALS.email &&
-      password === DEMO_CREDENTIALS.password
-    ) {
-      setCurrentUser(SUPER_ADMIN)
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_KEY, SUPER_ADMIN.id)
-      }
-      return { ok: true, user: SUPER_ADMIN }
+    if (error || !data) {
+      return { ok: false, error: error?.message ?? "Invalid email or password." }
     }
 
-    // Merchant users — check self-registered users first (they have their own password),
-    // then fall back to seeded users with the shared demo password.
-    const selfRegistered = merchantUsers.find((u) => u.email === normalized)
-    if (selfRegistered) {
-      if (!selfRegistered.isActive) {
-        return { ok: false, error: "This account has been deactivated." }
-      }
-      if (selfRegistered.password !== password) {
-        return { ok: false, error: "Invalid email or password." }
-      }
-      setCurrentUser(selfRegistered)
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_KEY, selfRegistered.id)
-      }
-      return { ok: true, user: selfRegistered }
+    const res = await fetch("/api/users/me")
+    if (!res.ok) {
+      return { ok: false, error: "Could not load your account." }
     }
-    const merchantUser = MERCHANT_USERS.find((u) => u.email === normalized)
-    if (merchantUser && password === MERCHANT_DEMO_CREDENTIALS.password) {
-      if (!merchantUser.isActive) {
-        return { ok: false, error: "This account has been deactivated." }
-      }
-      setCurrentUser(merchantUser)
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_KEY, merchantUser.id)
-      }
-      return { ok: true, user: merchantUser }
+    const user: User = await res.json()
+
+    if (!user.isActive) {
+      // Sign the Better Auth session back out — we don't want a session
+      // cookie sitting around for a deactivated account.
+      await authClient.signOut()
+      return { ok: false, error: "This account has been deactivated." }
     }
 
-    // Rider users — any seeded rider email + shared demo password.
-    const riderUser = RIDER_USERS.find((u) => u.email === normalized)
-    if (riderUser && password === RIDER_DEMO_CREDENTIALS.password) {
-      if (!riderUser.isActive) {
-        return { ok: false, error: "This account has been deactivated." }
-      }
-      setCurrentUser(riderUser)
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_KEY, riderUser.id)
-      }
-      return { ok: true, user: riderUser }
-    }
+    setCurrentUser(user)
+    return { ok: true, user }
+  }, [])
 
-    // Warehouse Admin users — seeded in INITIAL_TEAM + shared demo password.
-    const warehouseUser = INITIAL_TEAM.find(
-      (u) => u.email === normalized && u.role === "WAREHOUSE_ADMIN",
-    )
-    if (warehouseUser && password === WAREHOUSE_DEMO_CREDENTIALS.password) {
-      if (!warehouseUser.isActive) {
-        return { ok: false, error: "This account has been deactivated." }
-      }
-      setCurrentUser(warehouseUser)
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_KEY, warehouseUser.id)
-      }
-      return { ok: true, user: warehouseUser }
-    }
-
-    return { ok: false, error: "Invalid email or password." }
-  }, [merchantUsers])
-
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await authClient.signOut()
     setCurrentUser(null)
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(SESSION_KEY)
-    }
     router.push("/login")
   }, [router])
 
@@ -322,12 +307,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     PlatformContextValue["updateSecurityConfig"]
   >(
     (next) => {
-      setSecurityConfig((prev) => ({
-        ...prev,
-        ...next,
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUser?.name ?? "Super Admin",
-      }))
+      setSecurityConfig((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          ...next,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.name ?? "Super Admin",
+        }
+      })
     },
     [currentUser?.name],
   )
@@ -497,6 +485,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         currentMerchant,
         weight,
       )
+      if (!securityConfig) {
+        return { ok: false, error: "Security config is not loaded yet. Please try again." }
+      }
       const securityMoney = calcSecurityMoney(securityConfig, input.productCost)
       const totalCollectible =
         input.productCost + deliveryCharge + securityMoney
