@@ -9,6 +9,13 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      # Add app environment variables here as needed, e.g.:
-      # - DATABASE_URL=${DATABASE_URL}
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel run --token eyJhIjoiNzFmMDAxMWQ1OTQyODMyYTZiZGU3MGE4OGNmMGJkMjciLCJ0IjoiOTg3ZjRhYWUtMzdhYy00ZjQwLWE3NzQtMmNjMzE1ZDg3ZDNlIiwicyI6IlpEY3dNemN5TmpBdE1HWmlOaTAwTlRObUxXRmpZak10WTJRMk1ETTBNV1UzTVRWaCJ9
+    depends_on:
+      - web
+    network_mode: host
