@@ -23,7 +23,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    ```bash
    DATABASE_URL=your-neon-connection-string
    BETTER_AUTH_SECRET=run `openssl rand -base64 32`
-   BETTER_AUTH_URL=http://localhost:3000
+   BETTER_AUTH_DEV_URL=http://localhost:3000
    ```
 
 3. Set up the database:
@@ -72,19 +72,19 @@ Public order tracking is available at `/track`.
 
 After seeding, sign in at `/login` with any of the following:
 
-| Role            | Name             | Email                      | Password        |
-| --------------- | ---------------- | -------------------------- | --------------- |
-| Super Admin     | Nadia Rahman     | `superadmin@parcelflow.io` | `superadmin123` |
-| Admin           | Tanvir Hossain   | `tanvir@parcelflow.io`     | `admin123`      |
-| Admin           | Sadia Karim      | `sadia@parcelflow.io`      | `admin123`      |
-| Warehouse Admin | Rifat Chowdhury  | `rifat@parcelflow.io`      | `warehouse123`  |
-| Warehouse Admin | Maliha Akter     | `maliha@parcelflow.io`     | `warehouse123`  |
-| Merchant        | Imran Kabir      | `imran@threadline.com`     | `merchant123`   |
-| Merchant        | Farzana Yasmin   | `farzana@greenleaf.com`    | `merchant123`   |
-| Rider           | Jahangir Alam    | `jahangir@parcelflow.io`   | `rider123`      |
-| Rider           | Shahin Mia       | `shahin@parcelflow.io`     | `rider123`      |
-| Rider           | Rasel Khan       | `rasel@parcelflow.io`      | `rider123`      |
-| Rider           | Kamrul Islam     | `kamrul@parcelflow.io`     | `rider123`      |
+| Role            | Name            | Email                      | Password        |
+|-----------------|-----------------|----------------------------|-----------------|
+| Super Admin     | Nadia Rahman    | `superadmin@parcelflow.io` | `superadmin123` |
+| Admin           | Tanvir Hossain  | `tanvir@parcelflow.io`     | `admin123`      |
+| Admin           | Sadia Karim     | `sadia@parcelflow.io`      | `admin123`      |
+| Warehouse Admin | Rifat Chowdhury | `rifat@parcelflow.io`      | `warehouse123`  |
+| Warehouse Admin | Maliha Akter    | `maliha@parcelflow.io`     | `warehouse123`  |
+| Merchant        | Imran Kabir     | `imran@threadline.com`     | `merchant123`   |
+| Merchant        | Farzana Yasmin  | `farzana@greenleaf.com`    | `merchant123`   |
+| Rider           | Jahangir Alam   | `jahangir@parcelflow.io`   | `rider123`      |
+| Rider           | Shahin Mia      | `shahin@parcelflow.io`     | `rider123`      |
+| Rider           | Rasel Khan      | `rasel@parcelflow.io`      | `rider123`      |
+| Rider           | Kamrul Islam    | `kamrul@parcelflow.io`     | `rider123`      |
 
 > Maliha Akter is seeded as an inactive account, useful for testing
 > disabled-user handling.

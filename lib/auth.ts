@@ -6,8 +6,8 @@ export const auth = betterAuth({
   database: pool,
   plugins: [admin()],
   baseURL:
-    process.env.BETTER_AUTH_URL ??
-    process.env.PROJECT_PRODUCTION_URL ??
+    process.env.BETTER_AUTH_DEV_URL ??
+    process.env.BETTER_AUTH_PRD_URL ??
     undefined,
   emailAndPassword: {
     enabled: true,
@@ -17,9 +17,9 @@ export const auth = betterAuth({
     ...(process.env.NODE_ENV === 'development'
       ? ['http://localhost:3000']
       : []),
-    ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
-    ...(process.env.PROJECT_PRODUCTION_URL
-      ? [process.env.PROJECT_PRODUCTION_URL]
+    ...(process.env.BETTER_AUTH_DEV_URL ? [process.env.BETTER_AUTH_DEV_URL] : []),
+    ...(process.env.BETTER_AUTH_PRD_URL
+      ? [process.env.BETTER_AUTH_PRD_URL]
       : []),
   ],
   session: {
