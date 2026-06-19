@@ -7,9 +7,8 @@ export const auth = betterAuth({
   plugins: [admin()],
   baseURL:
     process.env.BETTER_AUTH_URL ??
-    (process.env.PROJECT_PRODUCTION_URL
-      ? `https://${process.env.PROJECT_PRODUCTION_URL}`
-      : undefined),
+    process.env.PROJECT_PRODUCTION_URL ??
+    undefined,
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
@@ -20,7 +19,7 @@ export const auth = betterAuth({
       : []),
     ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
     ...(process.env.PROJECT_PRODUCTION_URL
-      ? [`https://${process.env.PROJECT_PRODUCTION_URL}`]
+      ? [process.env.PROJECT_PRODUCTION_URL]
       : []),
   ],
   session: {
