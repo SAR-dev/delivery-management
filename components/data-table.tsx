@@ -127,7 +127,7 @@ export function DataTable<T>({
     if (!paginated) return sorted
     const start = (page - 1) * size
     return sorted.slice(start, start + size)
-  }, [sorted, paginated, page, size])
+  }, [sorted, page, size])
 
   function toggleSort(col: DataTableColumn<T>) {
     if (!col.sortable || !col.sortValue) return
