@@ -5,12 +5,10 @@ import { toast } from "sonner"
 import {
   Wallet,
   Clock,
-  CheckCircle2,
   Banknote,
   Loader2,
   Check,
   X,
-  Package,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
@@ -22,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 import {
   Dialog,
   DialogContent,
@@ -65,7 +64,6 @@ export default function PayoutsPage() {
   const {
     payoutRequests,
     merchants,
-    orders,
     approvePayout,
     rejectPayout,
     markPayoutPaid,
@@ -76,7 +74,7 @@ export default function PayoutsPage() {
   const [rejectReason, setRejectReason] = useState("")
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const orderByIdOrCode = (id: string) => orders.find((o) => o.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
 
   const pending = payoutRequests.filter((p) => p.status === "PENDING")
   const approved = payoutRequests.filter((p) => p.status === "APPROVED")
@@ -139,6 +137,141 @@ export default function PayoutsPage() {
     }
   }
 
+  const columns: DataTableColumn<PayoutRequest>[] = [
+    {
+      id: "request",
+      header: "Request",
+      sortable: true,
+      sortValue: (p) => p.code,
+      cell: (p) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {p.code}
+          </span>
+          <span className="font-medium">{merchantName(p.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "method",
+      header: "Method",
+      sortable: true,
+      sortValue: (p) => p.payoutMethod,
+      cell: (p) => (
+        <div className="flex flex-col">
+          <span>{p.payoutMethod}</span>
+          <span className="text-xs text-muted-foreground">
+            {p.payoutDetails}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "orders",
+      header: "Orders",
+      align: "center",
+      sortable: true,
+      sortValue: (p) => p.orderIds.length,
+      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
+    },
+    {
+      id: "requested",
+      header: "Requested",
+      sortable: true,
+      sortValue: (p) => p.requestedAt,
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (p) =>
+        new Date(p.requestedAt).toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortable: true,
+      sortValue: (p) => p.amount,
+      cell: (p) => (
+        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (p) => p.status,
+      cell: (p) => (
+        <div className="flex flex-col gap-1">
+          <PayoutStatusBadge status={p.status} />
+          {p.status === "REJECTED" && p.rejectReason ? (
+            <span className="max-w-48 text-xs text-destructive">
+              {p.rejectReason}
+            </span>
+          ) : null}
+          {p.status === "PAID" && p.paidAt ? (
+            <span className="text-xs text-chart-2">
+              Paid{" "}
+              {new Date(p.paidAt).toLocaleDateString("en-US", {
+                day: "numeric",
+                month: "short",
+              })}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (p) =>
+        p.status === "PENDING" ? (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setRejectTarget(p)
+                setRejectReason("")
+              }}
+              disabled={busy === p.id}
+            >
+              <X className="size-4" />
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleApprove(p)}
+              disabled={busy === p.id}
+            >
+              {busy === p.id ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              Approve
+            </Button>
+          </div>
+        ) : p.status === "APPROVED" ? (
+          <Button
+            size="sm"
+            onClick={() => handleMarkPaid(p)}
+            disabled={busy === p.id}
+          >
+            {busy === p.id ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Banknote className="size-4" />
+            )}
+            Mark as paid
+          </Button>
+        ) : null,
+    },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -177,181 +310,29 @@ export default function PayoutsPage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Wallet className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">No payout requests here</p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "PENDING"
-                  ? "New merchant payout requests will appear here for review."
-                  : tab === "APPROVED"
-                    ? "Approved requests awaiting payment will appear here."
-                    : "Paid and rejected requests will appear here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {visible.map((req) => {
-            const m = merchant(req.merchantId)
-            const reqOrders = req.orderIds
-              .map((id) => orderByIdOrCode(id))
-              .filter(Boolean)
-            return (
-              <Card key={req.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {req.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Requested{" "}
-                        {new Date(req.requestedAt).toLocaleDateString("en-US", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <PayoutStatusBadge status={req.status} />
-                      <p className="text-2xl font-semibold tabular-nums">
-                        {formatTk(req.amount)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Payout method
-                      </p>
-                      <p className="font-medium">{req.payoutMethod}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Account details
-                      </p>
-                      <p className="font-medium">{req.payoutDetails}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <Package className="size-4 text-muted-foreground" />
-                      {reqOrders.length} order
-                      {reqOrders.length === 1 ? "" : "s"}
-                    </p>
-                    <ul className="divide-y divide-border rounded-lg border border-border">
-                      {reqOrders.map(
-                        (o) =>
-                          o && (
-                            <li
-                              key={o.id}
-                              className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
-                            >
-                              <span className="font-mono text-xs text-muted-foreground">
-                                {o.code}
-                              </span>
-                              <span className="truncate text-muted-foreground">
-                                {o.recipientName}
-                              </span>
-                              <span className="tabular-nums">
-                                {formatTk(o.productCost)}
-                              </span>
-                            </li>
-                          ),
-                      )}
-                    </ul>
-                  </div>
-
-                  {req.status === "REJECTED" && req.rejectReason && (
-                    <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      Rejected: {req.rejectReason}
-                    </p>
-                  )}
-                  {req.status === "PAID" && req.paidAt && (
-                    <p className="flex items-center gap-2 rounded-md bg-chart-2/10 px-3 py-2 text-sm text-chart-2">
-                      <CheckCircle2 className="size-4 shrink-0" />
-                      Paid on{" "}
-                      {new Date(req.paidAt).toLocaleDateString("en-US", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                  )}
-
-                  {req.status === "PENDING" && (
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setRejectTarget(req)
-                          setRejectReason("")
-                        }}
-                        disabled={busy === req.id}
-                      >
-                        <X className="size-4" />
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleApprove(req)}
-                        disabled={busy === req.id}
-                      >
-                        {busy === req.id ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Approving
-                          </>
-                        ) : (
-                          <>
-                            <Check className="size-4" />
-                            Approve
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-
-                  {req.status === "APPROVED" && (
-                    <div className="flex items-center justify-end">
-                      <Button
-                        size="sm"
-                        onClick={() => handleMarkPaid(req)}
-                        disabled={busy === req.id}
-                      >
-                        {busy === req.id ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Updating
-                          </>
-                        ) : (
-                          <>
-                            <Banknote className="size-4" />
-                            Mark as paid
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(p) => p.id}
+            initialSortId="requested"
+            initialSortDir="desc"
+            searchable
+            searchPlaceholder="Search code, merchant, method"
+            getSearchText={(p) =>
+              `${p.code} ${merchantName(p.merchantId)} ${p.payoutMethod} ${p.payoutDetails}`
+            }
+            emptyMessage={
+              tab === "PENDING"
+                ? "No payout requests to review. New merchant requests will appear here."
+                : tab === "APPROVED"
+                  ? "No approved requests awaiting payment."
+                  : "No paid or rejected requests yet."
+            }
+          />
+        </CardContent>
+      </Card>
 
       <Dialog
         open={Boolean(rejectTarget)}

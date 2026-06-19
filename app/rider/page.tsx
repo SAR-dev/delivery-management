@@ -4,10 +4,6 @@ import { useMemo, useState } from "react"
 import {
   PackageCheck,
   PackageOpen,
-  MapPin,
-  Phone,
-  Store,
-  Package,
   CheckCircle2,
   Clock,
 } from "lucide-react"
@@ -20,6 +16,7 @@ import { PickupConfirmDialog } from "@/components/pickup-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 type FilterTab = "TO_COLLECT" | "COLLECTED"
 
@@ -59,6 +56,7 @@ export default function RiderPickupQueuePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
 
   // All orders assigned to this rider for pickup.
@@ -83,6 +81,93 @@ export default function RiderPickupQueuePage() {
     setActiveOrder(order)
     setDialogOpen(true)
   }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "pickup",
+      header: "Pickup from",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">{p?.label ?? "—"}</span>
+            <span className="text-xs text-muted-foreground">
+              {p?.address ?? "—"}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-sm text-muted-foreground">
+          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+        </span>
+      ),
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span>{o.recipientName}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.recipientPhone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "APPROVED" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackageCheck className="size-4" />
+            Mark picked up
+          </Button>
+        ) : null,
+    },
+  ]
 
   return (
     <div className="flex flex-col gap-6">
@@ -123,97 +208,28 @@ export default function RiderPickupQueuePage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <PackageOpen className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">
-                {tab === "TO_COLLECT"
-                  ? "No pickups waiting"
-                  : "Nothing collected yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "TO_COLLECT"
-                  ? "New pickups appear here once an Admin assigns them to you."
-                  : "Parcels you've picked up will be listed here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {visible.map((o) => {
-            const m = merchant(o.merchantId)
-            const p = pickup(o.pickupLocationId)
-            return (
-              <Card key={o.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {o.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                    </div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm">
-                    <div className="flex items-start gap-3">
-                      <Store className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground">
-                          Pickup from
-                        </p>
-                        <p className="font-medium leading-snug">
-                          {p?.label ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">{p?.address ?? "—"}</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.parcelWeightKg} KG · {o.deliveryType} · deliver to{" "}
-                        {o.deliveryCity}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.recipientName} · {o.recipientPhone}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Collectible{" "}
-                      <span className="font-medium text-foreground tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </span>
-                    </span>
-                    {o.status === "APPROVED" ? (
-                      <Button size="sm" onClick={() => openConfirm(o)}>
-                        <PackageCheck className="size-4" />
-                        Mark picked up
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            searchable
+            searchPlaceholder="Search code, merchant, recipient, pickup"
+            getSearchText={(o) =>
+              `${o.code} ${merchantName(o.merchantId)} ${o.recipientName} ${
+                pickup(o.pickupLocationId)?.label ?? ""
+              } ${o.deliveryCity}`
+            }
+            emptyMessage={
+              tab === "TO_COLLECT"
+                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
+                : "Nothing collected yet."
+            }
+          />
+        </CardContent>
+      </Card>
 
       <PickupConfirmDialog
         order={activeOrder}

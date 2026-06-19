@@ -7,10 +7,12 @@ import {
   ChevronRight,
   ChevronsUpDown,
   ChevronUp,
+  Search,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -41,6 +43,18 @@ export interface DataTableColumn<T> {
   cellClassName?: string
 }
 
+/** A faceted filter rendered as a select in the toolbar. */
+export interface DataTableFilter<T> {
+  /** Stable identifier for the filter. */
+  id: string
+  /** Accessible label / placeholder shown when nothing is selected. */
+  label: string
+  /** The selectable values (the "All" option is added automatically). */
+  options: { label: string; value: string }[]
+  /** Returns the row's value for this filter, compared against the option value. */
+  getValue: (row: T) => string
+}
+
 interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
@@ -55,6 +69,16 @@ interface DataTableProps<T> {
   emptyMessage?: React.ReactNode
   onRowClick?: (row: T) => void
   className?: string
+  /** Show a search box in the toolbar. Requires `getSearchText`. */
+  searchable?: boolean
+  /** Placeholder for the search box. */
+  searchPlaceholder?: string
+  /** Text used to match a row against the search query. */
+  getSearchText?: (row: T) => string
+  /** Faceted select filters rendered in the toolbar. */
+  filters?: DataTableFilter<T>[]
+  /** Extra controls rendered on the right of the toolbar (e.g. tabs, buttons). */
+  toolbarActions?: React.ReactNode
 }
 
 type SortDir = "asc" | "desc"
@@ -82,20 +106,55 @@ export function DataTable<T>({
   emptyMessage = "No records to display.",
   onRowClick,
   className,
+  searchable = false,
+  searchPlaceholder = "Search…",
+  getSearchText,
+  filters,
+  toolbarActions,
 }: DataTableProps<T>) {
   const [sortId, setSortId] = React.useState<string | null>(initialSortId ?? null)
   const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
   const [size, setSize] = React.useState(pageSize)
   const [page, setPage] = React.useState(1)
+  const [query, setQuery] = React.useState("")
+  const [filterValues, setFilterValues] = React.useState<Record<string, string>>(
+    {},
+  )
 
   const paginated = size > 0
 
+  const hasSearch = searchable && Boolean(getSearchText)
+  const hasFilters = Boolean(filters && filters.length > 0)
+  const showToolbar = hasSearch || hasFilters || Boolean(toolbarActions)
+
+  // Apply text search + faceted filters before sorting.
+  const filtered = React.useMemo(() => {
+    let rows = data
+    if (hasSearch && getSearchText) {
+      const q = query.trim().toLowerCase()
+      if (q) {
+        rows = rows.filter((row) =>
+          getSearchText(row).toLowerCase().includes(q),
+        )
+      }
+    }
+    if (hasFilters && filters) {
+      for (const f of filters) {
+        const selected = filterValues[f.id]
+        if (selected && selected !== "__all__") {
+          rows = rows.filter((row) => f.getValue(row) === selected)
+        }
+      }
+    }
+    return rows
+  }, [data, getSearchText, query, hasFilters, filters, filterValues])
+
   const sorted = React.useMemo(() => {
-    if (!sortId) return data
+    if (!sortId) return filtered
     const col = columns.find((c) => c.id === sortId)
-    if (!col?.sortValue) return data
+    if (!col?.sortValue) return filtered
     const getVal = col.sortValue
-    const copy = [...data]
+    const copy = [...filtered]
     copy.sort((a, b) => {
       const av = getVal(a)
       const bv = getVal(b)
@@ -114,7 +173,7 @@ export function DataTable<T>({
       return sortDir === "asc" ? result : -result
     })
     return copy
-  }, [data, columns, sortId, sortDir])
+  }, [filtered, columns, sortId, sortDir])
 
   const totalPages = paginated ? Math.max(1, Math.ceil(sorted.length / size)) : 1
 
@@ -122,6 +181,11 @@ export function DataTable<T>({
   React.useEffect(() => {
     setPage((p) => Math.min(Math.max(1, p), totalPages))
   }, [totalPages])
+
+  // Reset to the first page whenever the query or filters change.
+  React.useEffect(() => {
+    setPage(1)
+  }, [query, filterValues])
 
   const visible = React.useMemo(() => {
     if (!paginated) return sorted
@@ -150,6 +214,51 @@ export function DataTable<T>({
 
   return (
     <div className={cn("flex flex-col", className)}>
+      {showToolbar ? (
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            {hasSearch ? (
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="pl-9"
+                />
+              </div>
+            ) : null}
+            {hasFilters && filters
+              ? filters.map((f) => (
+                  <label key={f.id} className="flex items-center gap-1.5">
+                    <span className="sr-only">{f.label}</span>
+                    <select
+                      value={filterValues[f.id] ?? "__all__"}
+                      onChange={(e) =>
+                        setFilterValues((prev) => ({
+                          ...prev,
+                          [f.id]: e.target.value,
+                        }))
+                      }
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                    >
+                      <option value="__all__">{f.label}: All</option>
+                      {f.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))
+              : null}
+          </div>
+          {toolbarActions ? (
+            <div className="flex items-center gap-2">{toolbarActions}</div>
+          ) : null}
+        </div>
+      ) : null}
+
       <Table>
         <TableHeader>
           <TableRow>

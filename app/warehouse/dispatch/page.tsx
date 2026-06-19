@@ -1,16 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  Truck,
-  PackageOpen,
-  MapPin,
-  Phone,
-  Package,
-  Bike,
-  Boxes,
-  Send,
-} from "lucide-react"
+import { Truck, PackageOpen, Bike, Send } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
@@ -20,6 +11,7 @@ import { WarehouseDispatchDialog } from "@/components/warehouse-dispatch-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 type FilterTab = "READY" | "DISPATCHED"
 
@@ -65,6 +57,7 @@ export default function WarehouseDispatchPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
@@ -101,6 +94,91 @@ export default function WarehouseDispatchPage() {
     setActiveOrder(order)
     setDialogOpen(true)
   }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-muted-foreground">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) =>
+        o.deliveryRiderId ? (
+          <span className="flex items-center gap-1.5 text-sm">
+            <Bike className="size-4 text-muted-foreground" />
+            {rider(o.deliveryRiderId)?.name ?? "—"}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">Unassigned</span>
+        ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-sm text-muted-foreground">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span>{o.deliveryCity}</span>
+          <span className="text-xs text-muted-foreground">
+            {o.recipientName} · {o.recipientPhone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "IN_WAREHOUSE" ? (
+          <Button size="sm" onClick={() => openDispatch(o)}>
+            <Send className="size-4" />
+            Assign rider
+          </Button>
+        ) : null,
+    },
+  ]
 
   return (
     <div className="flex flex-col gap-6">
@@ -143,100 +221,28 @@ export default function WarehouseDispatchPage() {
         </TabsList>
       </Tabs>
 
-      {visible.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Boxes className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">
-                {tab === "READY"
-                  ? "Nothing ready to dispatch"
-                  : "Nothing dispatched yet"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tab === "READY"
-                  ? "Parcels appear here once they're received into the warehouse."
-                  : "Parcels you assign to a delivery rider will be listed here."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {visible.map((o) => {
-            const m = merchant(o.merchantId)
-            const dr = rider(o.deliveryRiderId)
-            return (
-              <Card key={o.id}>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="leading-tight">
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {o.code}
-                      </p>
-                      <p className="mt-0.5 font-semibold">
-                        {m?.businessName ?? "Merchant"}
-                      </p>
-                    </div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm">
-                    {o.deliveryRiderId ? (
-                      <div className="flex items-start gap-3">
-                        <Bike className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">
-                            Delivery rider
-                          </p>
-                          <p className="font-medium leading-snug">
-                            {dr?.name ?? "—"}
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="flex items-start gap-3">
-                      <Package className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.parcelWeightKg} KG · {o.deliveryType}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.deliveryAddress}, {o.deliveryCity}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <p className="leading-snug">
-                        {o.recipientName} · {o.recipientPhone}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Collectible{" "}
-                      <span className="font-medium text-foreground tabular-nums">
-                        {formatTk(o.totalCollectible)}
-                      </span>
-                    </span>
-                    {o.status === "IN_WAREHOUSE" ? (
-                      <Button size="sm" onClick={() => openDispatch(o)}>
-                        <Send className="size-4" />
-                        Assign rider
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            searchable
+            searchPlaceholder="Search code, merchant, rider, city"
+            getSearchText={(o) =>
+              `${o.code} ${merchantName(o.merchantId)} ${
+                rider(o.deliveryRiderId)?.name ?? ""
+              } ${o.deliveryCity} ${o.recipientName}`
+            }
+            emptyMessage={
+              tab === "READY"
+                ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
+                : "Nothing dispatched yet."
+            }
+          />
+        </CardContent>
+      </Card>
 
       <WarehouseDispatchDialog
         order={activeOrder}
