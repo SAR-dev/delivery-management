@@ -49,6 +49,13 @@ interface RiderUpdateInput {
   warehouseId?: string | null
 }
 
+interface PickupLocationInput {
+  label: string
+  address: string
+  mapLink?: string
+  imageLinks?: string[]
+}
+
 interface PlatformContextValue {
   currentUser: User | null
   isReady: boolean
@@ -107,6 +114,17 @@ interface PlatformContextValue {
   // --- Phase 3: orders (merchant-facing) ---
   orders: Order[]
   pickupLocations: PickupLocation[]
+  // Merchant manages their own pickup locations (shops).
+  createPickupLocation: (
+    input: PickupLocationInput,
+  ) => Promise<{ ok: boolean; error?: string }>
+  updatePickupLocation: (
+    id: string,
+    input: PickupLocationInput,
+  ) => Promise<{ ok: boolean; error?: string }>
+  deletePickupLocation: (
+    id: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   // The merchant business for the currently logged-in merchant user.
   currentMerchant: Merchant | null
   createOrder: (
@@ -620,6 +638,54 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  // --- Pickup location (shop) management (merchant) -----------------------
+
+  const createPickupLocation = useCallback<
+    PlatformContextValue["createPickupLocation"]
+  >(async (input) => {
+    const res = await fetch("/api/pickup-locations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return { ok: false, error: data?.error ?? "Could not add the shop." }
+    }
+    setPickupLocations((prev) => [...prev, data])
+    return { ok: true }
+  }, [])
+
+  const updatePickupLocation = useCallback<
+    PlatformContextValue["updatePickupLocation"]
+  >(async (id, input) => {
+    const res = await fetch(`/api/pickup-locations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return { ok: false, error: data?.error ?? "Could not update the shop." }
+    }
+    setPickupLocations((prev) => prev.map((p) => (p.id === id ? data : p)))
+    return { ok: true }
+  }, [])
+
+  const deletePickupLocation = useCallback<
+    PlatformContextValue["deletePickupLocation"]
+  >(async (id) => {
+    const res = await fetch(`/api/pickup-locations/${id}`, {
+      method: "DELETE",
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return { ok: false, error: data?.error ?? "Could not remove the shop." }
+    }
+    setPickupLocations((prev) => prev.filter((p) => p.id !== id))
+    return { ok: true }
+  }, [])
+
   // Shared helper for every order-lifecycle PATCH. We optimistically apply the
   // expected status immediately so the UI feels instant, then reconcile with
   // the authoritative server row on success — or roll back on failure. The
@@ -955,6 +1021,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         updateMerchantProfile,
         orders,
         pickupLocations,
+        createPickupLocation,
+        updatePickupLocation,
+        deletePickupLocation,
         currentMerchant,
         createOrder,
         createOrders,

@@ -203,6 +203,11 @@ export const pickupLocation = pgTable("pickup_location", {
     .references(() => merchant.id, { onDelete: "cascade" }),
   label: text("label").notNull(),
   address: text("address").notNull(),
+  // Optional map link (e.g. Google Maps URL) so riders can pinpoint the shop.
+  mapLink: text("mapLink"),
+  // Optional list of image URLs (shop front / landmark photos) to help riders
+  // find the pickup location.
+  imageLinks: text("imageLinks").array(),
 })
 
 // =============================================================================

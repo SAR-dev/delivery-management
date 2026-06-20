@@ -16,6 +16,7 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/components/pickup-location-modal"
 import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
 import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
 import { TrackingCell } from "@/components/tracking-cell"
@@ -165,12 +166,16 @@ export default function RiderTodoPage() {
       cell: (o) => {
         const p = pickup(o.pickupLocationId)
         return (
-          <div className="flex flex-col">
-            <span>{p?.label ?? "Pickup point"}</span>
-            <span className="text-muted-foreground text-xs">
-              {p?.address ?? ""}
-            </span>
-          </div>
+          <PickupLocationModal location={p ?? null}>
+            <div className="flex flex-col">
+              <span className="underline decoration-dotted underline-offset-4">
+                {p?.label ?? "Pickup point"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {p?.address ?? ""}
+              </span>
+            </div>
+          </PickupLocationModal>
         )
       },
     },
@@ -407,15 +412,8 @@ export default function RiderTodoPage() {
             ? (merchant(pickupTarget.merchantId)?.businessName ?? "Merchant")
             : ""
         }
-        pickupLabel={
-          pickupTarget
-            ? (pickup(pickupTarget.pickupLocationId)?.label ?? "—")
-            : ""
-        }
-        pickupAddress={
-          pickupTarget
-            ? (pickup(pickupTarget.pickupLocationId)?.address ?? "—")
-            : ""
+        pickupLocation={
+          pickupTarget ? (pickup(pickupTarget.pickupLocationId) ?? null) : null
         }
         open={pickupDialogOpen}
         onOpenChange={setPickupDialogOpen}

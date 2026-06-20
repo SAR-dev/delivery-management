@@ -20,6 +20,7 @@ import { CURRENCY_SUFFIX } from "@/lib/constants"
 import type { Order } from "@/lib/types"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { AddressModal } from "@/components/address-modal"
+import { PickupLocationModal } from "@/components/pickup-location-modal"
 import { TrackingTimeline } from "@/components/tracking-timeline"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -71,7 +72,8 @@ function Section({
 
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>()
-  const { isReady, orders, merchants, riders, warehouses } = usePlatform()
+  const { isReady, orders, merchants, riders, warehouses, pickupLocations } =
+    usePlatform()
 
   const order: Order | undefined = orders.find((o) => o.id === params.id)
 
@@ -106,6 +108,9 @@ export default function OrderDetailPage() {
   }
 
   const merchant = merchants.find((m) => m.id === order.merchantId)
+  const pickupLocation = pickupLocations.find(
+    (p) => p.id === order.pickupLocationId,
+  )
   const pickupRider = riders.find((r) => r.id === order.pickupRiderId)
   const deliveryRider = riders.find((r) => r.id === order.deliveryRiderId)
   const warehouse = warehouses.find((w) => w.id === order.warehouseId)
@@ -172,6 +177,25 @@ export default function OrderDetailPage() {
                   icon={Store}
                   label="Merchant"
                   value={merchant?.businessName ?? "Unknown"}
+                />
+                <Field
+                  icon={Store}
+                  label="Pickup location"
+                  value={
+                    pickupLocation ? (
+                      <PickupLocationModal
+                        location={pickupLocation}
+                        className="underline decoration-dotted underline-offset-4"
+                      >
+                        {pickupLocation.label} — {pickupLocation.address}
+                      </PickupLocationModal>
+                    ) : (
+                      <span className="text-muted-foreground font-normal">
+                        Unknown
+                      </span>
+                    )
+                  }
+                  className="sm:col-span-2"
                 />
               </div>
             </Section>

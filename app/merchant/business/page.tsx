@@ -15,6 +15,7 @@ import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import { PageHeader } from "@/components/page-header"
 import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
+import { PickupLocationsManager } from "@/components/pickup-locations-manager"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -251,6 +252,8 @@ export default function MerchantBusinessPage() {
           </Card>
         </div>
       </div>
+
+      <PickupLocationsManager merchantId={currentMerchant.id} />
     </div>
   )
 }

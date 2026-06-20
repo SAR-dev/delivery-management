@@ -73,12 +73,12 @@ export const orderCreateSchema = z.object({
   deliveryCity: requiredString("Delivery city"),
   deliveryMapLink: z
     .url("Map link must be a valid URL")
-    .optional()
-    .or(z.literal("")),
+    .or(z.literal(""))
+    .nullish(),
   deliveryImageLinks: z
     .array(z.url("Each image link must be a valid URL"))
     .max(10, "You can add up to 10 image links")
-    .optional(),
+    .nullish(),
   parcelWeightKg: z.number().positive("Parcel weight must be greater than 0"),
   deliveryType: z.enum(["STANDARD", "FRAGILE"]).optional(),
   productCost: z.number().nonnegative("Product cost cannot be negative"),
@@ -134,6 +134,16 @@ export const riderCreateSchema = z.object({
 
 export const profileUpdateSchema = z.object({
   name: requiredString("Name"),
+})
+
+export const pickupLocationSchema = z.object({
+  label: requiredString("Shop name"),
+  address: requiredString("Address"),
+  mapLink: z.url("Map link must be a valid URL").optional().or(z.literal("")),
+  imageLinks: z
+    .array(z.url("Each image link must be a valid URL"))
+    .max(10, "You can add up to 10 image links")
+    .optional(),
 })
 
 export const merchantProfileSchema = z.object({

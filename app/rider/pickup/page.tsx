@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { TrackingCell } from "@/components/tracking-cell"
 import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -87,12 +88,16 @@ export default function RiderPickupQueuePage() {
       cell: (o) => {
         const p = pickup(o.pickupLocationId)
         return (
-          <div className="flex flex-col">
-            <span className="font-medium">{p?.label ?? "—"}</span>
-            <span className="text-muted-foreground text-xs">
-              {p?.address ?? "—"}
-            </span>
-          </div>
+          <PickupLocationModal location={p ?? null}>
+            <div className="flex flex-col">
+              <span className="font-medium underline decoration-dotted underline-offset-4">
+                {p?.label ?? "—"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {p?.address ?? "—"}
+              </span>
+            </div>
+          </PickupLocationModal>
         )
       },
     },
@@ -175,15 +180,8 @@ export default function RiderPickupQueuePage() {
             ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
             : ""
         }
-        pickupLabel={
-          activeOrder
-            ? (pickup(activeOrder.pickupLocationId)?.label ?? "—")
-            : ""
-        }
-        pickupAddress={
-          activeOrder
-            ? (pickup(activeOrder.pickupLocationId)?.address ?? "—")
-            : ""
+        pickupLocation={
+          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
         }
         open={dialogOpen}
         onOpenChange={setDialogOpen}
