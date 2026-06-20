@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { order } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { order, warehouse } from "@/lib/db/schema"
+import { and, eq, ilike } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function PATCH(
@@ -36,9 +36,29 @@ export async function PATCH(
     )
   }
 
+  // Route the parcel to the active hub serving its destination city. Pickup
+  // riders aren't tied to a warehouse (approve route enforces this), so the
+  // destination is the only reliable signal for which hub should receive it.
+  // If no hub serves the city, leave warehouseId null — the order stays in the
+  // shared incoming queue (orders GET fallback) so it can never disappear.
+  const [destinationWarehouse] = await db
+    .select({ id: warehouse.id })
+    .from(warehouse)
+    .where(
+      and(
+        eq(warehouse.isActive, true),
+        ilike(warehouse.city, orderRow.deliveryCity),
+      ),
+    )
+    .limit(1)
+
   const [updated] = await db
     .update(order)
-    .set({ status: "PICKED_UP", pickedUpAt: new Date().toISOString() })
+    .set({
+      status: "PICKED_UP",
+      pickedUpAt: new Date().toISOString(),
+      warehouseId: destinationWarehouse?.id ?? null,
+    })
     .where(eq(order.id, id))
     .returning()
 

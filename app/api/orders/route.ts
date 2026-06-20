@@ -4,7 +4,7 @@ import { merchant, order, securityConfig } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { eq, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -27,7 +27,13 @@ export async function GET(req: Request) {
       break
     case "WAREHOUSE_ADMIN":
       if (!me.warehouseId) return NextResponse.json([])
-      where = eq(order.warehouseId, me.warehouseId)
+      // Orders already logged into this warehouse, plus picked-up parcels
+      // not yet assigned to any warehouse — these are the incoming
+      // candidates any warehouse admin can receive (see app/warehouse/page.tsx).
+      where = or(
+        eq(order.warehouseId, me.warehouseId),
+        and(isNull(order.warehouseId), eq(order.status, "PICKED_UP")),
+      )
       break
     case "ADMIN":
     case "SUPER_ADMIN":

@@ -18,6 +18,7 @@ import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { AddressModal } from "@/components/address-modal"
+import { PickupLocationModal } from "@/components/pickup-location-modal"
 import { ApproveOrderDialog } from "@/components/dialog/approve-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -29,7 +30,7 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
-  const { orders, merchants, riders } = usePlatform()
+  const { orders, merchants, riders, pickupLocations } = usePlatform()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [query, setQuery] = useState("")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -39,6 +40,8 @@ export default function OrdersPage() {
     merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
   const riderName = (id?: string | null) =>
     id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
+  const pickupLocation = (id: string) =>
+    pickupLocations.find((p) => p.id === id) ?? null
 
   const counts = useMemo(
     () => ({
@@ -103,6 +106,26 @@ export default function OrdersPage() {
       sortable: true,
       sortValue: (o) => merchantName(o.merchantId),
       cell: (o) => merchantName(o.merchantId),
+    },
+    {
+      id: "pickup",
+      header: "Pickup location",
+      sortable: true,
+      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickupLocation(o.pickupLocationId)
+        if (!p) return <span className="text-muted-foreground text-sm">—</span>
+        return (
+          <PickupLocationModal location={p}>
+            <div className="flex flex-col">
+              <span className="underline decoration-dotted underline-offset-4">
+                {p.label}
+              </span>
+              <span className="text-muted-foreground text-xs">{p.address}</span>
+            </div>
+          </PickupLocationModal>
+        )
+      },
     },
     {
       id: "weight",

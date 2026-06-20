@@ -36,7 +36,10 @@ export function CreateAccountDialog() {
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(EMPTY)
 
-  const unassignedWarehouses = warehouses.filter((w) => !w.managedBy)
+  // Show every active warehouse so the Super Admin can always pick one. A
+  // warehouse already managed by someone else is still selectable here, and the
+  // server keeps `managedBy` in sync when the account is created.
+  const selectableWarehouses = warehouses.filter((w) => w.isActive !== false)
 
   function update<K extends keyof typeof form>(
     key: K,
@@ -172,7 +175,7 @@ export function CreateAccountDialog() {
             <SelectTrigger id="warehouse">
               <SelectValue placeholder="Select a warehouse (optional)">
                 {(value) => {
-                  const w = unassignedWarehouses.find((x) => x.id === value)
+                  const w = selectableWarehouses.find((x) => x.id === value)
                   return w
                     ? `${w.name} \u00B7 ${w.city}`
                     : "Select a warehouse (optional)"
@@ -180,14 +183,15 @@ export function CreateAccountDialog() {
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {unassignedWarehouses.length === 0 ? (
+              {selectableWarehouses.length === 0 ? (
                 <SelectItem value="none" disabled>
-                  No unassigned warehouses
+                  No warehouses available
                 </SelectItem>
               ) : (
-                unassignedWarehouses.map((w) => (
+                selectableWarehouses.map((w) => (
                   <SelectItem key={w.id} value={w.id}>
                     {w.name} {"\u00B7"} {w.city}
+                    {w.managedBy ? " (reassign)" : ""}
                   </SelectItem>
                 ))
               )}

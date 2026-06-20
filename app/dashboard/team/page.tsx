@@ -11,8 +11,18 @@ import { CreateAccountDialog } from "@/components/dialog/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+// Sentinel value for the "Unassigned" option, since the Select cannot use an
+// empty string as an item value.
+const UNASSIGNED = "__unassigned__"
 
 function StatusToggle({
   user,
@@ -35,6 +45,44 @@ function StatusToggle({
   )
 }
 
+function WarehouseSelect({
+  user,
+  warehouses,
+  onChange,
+}: {
+  user: User
+  warehouses: { id: string; name: string; city: string }[]
+  onChange: (warehouseId: string | null) => void
+}) {
+  return (
+    <Select
+      value={user.warehouseId ?? UNASSIGNED}
+      onValueChange={(v) => onChange(v === UNASSIGNED ? null : v)}
+    >
+      <SelectTrigger
+        className="w-fit min-w-44"
+        aria-label={`Assigned warehouse for ${user.name}`}
+      >
+        <SelectValue>
+          {(value) => {
+            if (!value || value === UNASSIGNED) return "Unassigned"
+            const w = warehouses.find((x) => x.id === value)
+            return w ? `${w.name} \u00B7 ${w.city}` : "Unknown"
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+        {warehouses.map((w) => (
+          <SelectItem key={w.id} value={w.id}>
+            {w.name} {"\u00B7"} {w.city}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 export default function TeamPage() {
   const router = useRouter()
   const {
@@ -43,6 +91,7 @@ export default function TeamPage() {
     warehouses,
     toggleAccountActive,
     togglePricingPermission,
+    updateAccountWarehouse,
   } = usePlatform()
 
   // Managing Admin accounts is a Super Admin-only capability. Admins who reach
@@ -71,6 +120,16 @@ export default function TeamPage() {
     togglePricingPermission(user.id)
     toast.success(
       `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
+    )
+  }
+
+  async function handleChangeWarehouse(user: User, warehouseId: string | null) {
+    if ((user.warehouseId ?? null) === warehouseId) return
+    await updateAccountWarehouse(user.id, warehouseId)
+    toast.success(
+      warehouseId
+        ? `${user.name} now manages ${warehouseName(warehouseId)}.`
+        : `${user.name} is no longer assigned to a warehouse.`,
     )
   }
 
@@ -150,9 +209,11 @@ export default function TeamPage() {
       sortable: true,
       sortValue: (u) => warehouseName(u.warehouseId),
       cell: (u) => (
-        <Badge variant="secondary" className="font-normal">
-          {warehouseName(u.warehouseId)}
-        </Badge>
+        <WarehouseSelect
+          user={u}
+          warehouses={warehouses}
+          onChange={(warehouseId) => handleChangeWarehouse(u, warehouseId)}
+        />
       ),
     },
     statusColumn,

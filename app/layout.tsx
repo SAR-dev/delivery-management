@@ -15,10 +15,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "ParcelFlow — Super Admin Console",
-  description:
-    "Platform setup and administration for the ParcelFlow B2B delivery network.",
-  generator: "v0.app",
+  title: "ParcelFlow",
+  description: "ParcelFlow B2B delivery network online platform.",
+  generator: "sar.dev",
   icons: {
     icon: [
       {

@@ -91,6 +91,11 @@ interface PlatformContextValue {
   ) => Promise<void>
   toggleAccountActive: (id: string) => Promise<void>
   togglePricingPermission: (id: string) => Promise<void>
+  // Super Admin reassigns the warehouse a Warehouse Admin manages (or clears it).
+  updateAccountWarehouse: (
+    id: string,
+    warehouseId: string | null,
+  ) => Promise<void>
 
   merchants: Merchant[]
   approveMerchant: (id: string) => Promise<void>
@@ -122,9 +127,7 @@ interface PlatformContextValue {
     id: string,
     input: PickupLocationInput,
   ) => Promise<{ ok: boolean; error?: string }>
-  deletePickupLocation: (
-    id: string,
-  ) => Promise<{ ok: boolean; error?: string }>
+  deletePickupLocation: (id: string) => Promise<{ ok: boolean; error?: string }>
   // The merchant business for the currently logged-in merchant user.
   currentMerchant: Merchant | null
   createOrder: (
@@ -491,6 +494,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       if (!res.ok) return
       const newUser = await res.json()
       setTeam((prev) => [newUser, ...prev])
+      // Keep the cached warehouse list in sync with the new manager assignment.
+      if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
+        setWarehouses((prev) =>
+          prev.map((w) =>
+            w.id === newUser.warehouseId ? { ...w, managedBy: newUser.id } : w,
+          ),
+        )
+      }
     },
     [],
   )
@@ -520,6 +531,32 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           ? { ...u, canManagePricing: updatedProfile.canManagePricing }
           : u,
       ),
+    )
+  }, [])
+
+  const updateAccountWarehouse = useCallback<
+    PlatformContextValue["updateAccountWarehouse"]
+  >(async (id, warehouseId) => {
+    const res = await fetch(`/api/team/${id}/warehouse`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ warehouseId }),
+    })
+    if (!res.ok) return
+    const updatedProfile = await res.json()
+    setTeam((prev) =>
+      prev.map((u) =>
+        u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
+      ),
+    )
+    // Reflect the managedBy change on the cached warehouse list so the create
+    // dialog and other views stay consistent without a full refetch.
+    setWarehouses((prev) =>
+      prev.map((w) => {
+        if (w.managedBy === id) return { ...w, managedBy: null }
+        if (warehouseId && w.id === warehouseId) return { ...w, managedBy: id }
+        return w
+      }),
     )
   }, [])
 
@@ -1013,6 +1050,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         createAccount,
         toggleAccountActive,
         togglePricingPermission,
+        updateAccountWarehouse,
         merchants,
         approveMerchant,
         suspendMerchant,

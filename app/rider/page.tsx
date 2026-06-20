@@ -148,14 +148,18 @@ export default function RiderTodoPage() {
   const pickupColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
-      header: "Order",
+      header: "Order ID",
       sortable: true,
       sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
       cell: (o) => (
-        <div className="flex flex-col">
-          <TrackingCell code={o.code} />
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
+        <span className="font-medium">{merchantName(o.merchantId)}</span>
       ),
     },
     {
