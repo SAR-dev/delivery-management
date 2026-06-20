@@ -28,7 +28,7 @@ export function RiderSidebar() {
   const { currentUser, currentRider, logout } = usePlatform()
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border">
+    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border h-screen sticky top-0 overflow-hidden">
       <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
         <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
           <Bike className="size-5" />
@@ -39,7 +39,7 @@ export function RiderSidebar() {
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 p-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {NAV.map((item) => {
           const active = pathname === item.href
           const Icon = item.icon

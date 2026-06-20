@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Loader2, Warehouse as WarehouseIcon, LogOut } from "lucide-react"
 import { usePlatform, homeForRole } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { WarehouseSidebar } from "@/components/warehouse-sidebar"
+import { WarehouseSidebar } from "@/components/sidebar/warehouse-sidebar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

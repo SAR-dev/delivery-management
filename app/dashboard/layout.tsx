@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Loader2, ShieldCheck, LogOut, Coins, Users, LayoutDashboard, Store, Package } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { Sidebar } from "@/components/sidebar"
+import { Sidebar } from "@/components/sidebar/sidebar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
