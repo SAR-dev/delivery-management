@@ -27,6 +27,7 @@ import {
   payoutRequest,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { SEED_CREDENTIALS } from "./seed-credentials";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -307,6 +308,13 @@ async function seedSecurityConfig() {
 // 6. Users + profiles
 // ---------------------------------------------------------------------------
 
+// Shorthand to pull { email, password } from SEED_CREDENTIALS by email.
+function cred(email: string) {
+  const c = SEED_CREDENTIALS.find((u) => u.email === email);
+  if (!c) throw new Error(`No seed credential found for ${email}`);
+  return { email: c.email, password: c.password };
+}
+
 async function seedUsers() {
   log("Seeding users…");
 
@@ -314,8 +322,7 @@ async function seedUsers() {
   await createUser({
     id: "byai6ci02ogt3lnawaro35pj",
     name: "Nadia Rahman",
-    email: "superadmin@parcelflow.io",
-    password: "superadmin123",
+    ...cred("superadmin@parcelflow.io"),
     phone: "+8801711000001",
     role: "SUPER_ADMIN",
     isActive: true,
@@ -326,8 +333,7 @@ async function seedUsers() {
   await createUser({
     id: "u5f1ybhii5mzu2ejkcckusxn",
     name: "Tanvir Hossain",
-    email: "tanvir@parcelflow.io",
-    password: "admin123",
+    ...cred("tanvir@parcelflow.io"),
     phone: "+8801711000010",
     role: "ADMIN",
     isActive: true,
@@ -336,8 +342,7 @@ async function seedUsers() {
   await createUser({
     id: "xr4s7lha6epx9lv9q59n5czu",
     name: "Sadia Karim",
-    email: "sadia@parcelflow.io",
-    password: "admin123",
+    ...cred("sadia@parcelflow.io"),
     phone: "+8801711000011",
     role: "ADMIN",
     isActive: true,
@@ -348,8 +353,7 @@ async function seedUsers() {
   await createUser({
     id: "x60dwd1h0fyp7jxpr86vp8ue",
     name: "Rifat Chowdhury",
-    email: "rifat@parcelflow.io",
-    password: "warehouse123",
+    ...cred("rifat@parcelflow.io"),
     phone: "+8801711000020",
     role: "WAREHOUSE_ADMIN",
     isActive: true,
@@ -359,8 +363,7 @@ async function seedUsers() {
   await createUser({
     id: "q05x0r1u33o482an65id6dsa",
     name: "Maliha Akter",
-    email: "maliha@parcelflow.io",
-    password: "warehouse123",
+    ...cred("maliha@parcelflow.io"),
     phone: "+8801711000021",
     role: "WAREHOUSE_ADMIN",
     isActive: false,
@@ -372,8 +375,7 @@ async function seedUsers() {
   await createUser({
     id: "b7ou67y7wgz52n6h56brvu7a",
     name: "Imran Kabir",
-    email: "imran@threadline.com",
-    password: "merchant123",
+    ...cred("imran@threadline.com"),
     phone: "+8801712345601",
     role: "MERCHANT",
     isActive: true,
@@ -382,8 +384,7 @@ async function seedUsers() {
   await createUser({
     id: "g73o2veh2xe6g1053dgrbs0f",
     name: "Farzana Yasmin",
-    email: "farzana@greenleaf.com",
-    password: "merchant123",
+    ...cred("farzana@greenleaf.com"),
     phone: "+8801712345602",
     role: "MERCHANT",
     isActive: true,
@@ -394,8 +395,7 @@ async function seedUsers() {
   await createUser({
     id: "b1vumrk4al17bfcdrh8sy0fx",
     name: "Jahangir Alam",
-    email: "jahangir@parcelflow.io",
-    password: "rider123",
+    ...cred("jahangir@parcelflow.io"),
     phone: "+8801911000001",
     role: "RIDER",
     isActive: true,
@@ -404,8 +404,7 @@ async function seedUsers() {
   await createUser({
     id: "fqfr9el8wj8vm6daorxq2aab",
     name: "Shahin Mia",
-    email: "shahin@parcelflow.io",
-    password: "rider123",
+    ...cred("shahin@parcelflow.io"),
     phone: "+8801911000002",
     role: "RIDER",
     isActive: true,
@@ -414,8 +413,7 @@ async function seedUsers() {
   await createUser({
     id: "ilqxbvdg73konhlso4w7vqa4",
     name: "Rasel Khan",
-    email: "rasel@parcelflow.io",
-    password: "rider123",
+    ...cred("rasel@parcelflow.io"),
     phone: "+8801911000003",
     role: "RIDER",
     isActive: true,
@@ -426,8 +424,7 @@ async function seedUsers() {
   await createUser({
     id: "aczezx2g544hbgtun37478zq",
     name: "Kamrul Islam",
-    email: "kamrul@parcelflow.io",
-    password: "rider123",
+    ...cred("kamrul@parcelflow.io"),
     phone: "+8801911000010",
     role: "RIDER",
     isActive: true,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import {FormEvent, useState} from "react"
 import Link from "next/link"
 import { CheckCircle2, Loader2, Store, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -42,7 +42,7 @@ export default function RegisterPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
@@ -129,7 +129,7 @@ export default function RegisterPage() {
 
           {submittedName ? (
             <Card className="border-border/70 shadow-sm">
-              <CardHeader className="space-y-3">
+              <CardHeader className="flex flex-col gap-3">
                 <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <CheckCircle2 className="size-6" />
                 </div>
@@ -168,7 +168,7 @@ export default function RegisterPage() {
             </Card>
           ) : (
             <Card className="border-border/70 shadow-sm">
-              <CardHeader className="space-y-1">
+              <CardHeader className="flex flex-col gap-1">
                 <CardTitle className="text-2xl">Create your merchant account</CardTitle>
                 <CardDescription>
                   Tell us about your business. Approval is required before you

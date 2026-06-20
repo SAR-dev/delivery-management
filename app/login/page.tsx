@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import {FormEvent, useEffect, useState} from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Loader2, Lock, ShieldCheck } from "lucide-react"
+import { Loader2, Lock, ShieldCheck, FlaskConical } from "lucide-react"
 import { usePlatform, homeForRole } from "@/lib/platform-context"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -16,6 +16,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { SEED_CREDENTIALS } from "@/lib/db/seed-credentials"
+
+const ROLES_ORDER = ["Super Admin", "Admin", "Warehouse Admin", "Merchant", "Rider"]
+const grouped = ROLES_ORDER.map((role) => ({
+  role,
+  users: SEED_CREDENTIALS.filter((u) => u.role === role),
+}))
 
 export default function LoginPage() {
   const router = useRouter()
@@ -31,7 +47,16 @@ export default function LoginPage() {
     }
   }, [isReady, currentUser, router])
 
-  async function handleSubmit(e: React.FormEvent) {
+  function fillCredentials(value: string | null) {
+    if (!value) return
+    const cred = SEED_CREDENTIALS.find((c) => c.email === value)
+    if (!cred) return
+    setEmail(cred.email)
+    setPassword(cred.password)
+    setError(null)
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
@@ -64,21 +89,19 @@ export default function LoginPage() {
 
         <div className="max-w-md">
           <p className="text-sm font-medium uppercase tracking-widest text-sidebar-primary">
-            Super Admin Console
+            B2B Delivery Platform
           </p>
           <h1 className="mt-4 text-balance text-4xl font-semibold leading-tight">
-            Set up and govern your B2B delivery platform.
+            Everything you need, in one place.
           </h1>
           <p className="mt-4 text-pretty leading-relaxed text-sidebar-foreground/70">
-            Configure security money rules, provision Admin and Warehouse Admin
-            accounts, and control who manages merchant pricing — all from one
-            place.
+            Whether you're managing deliveries, tracking orders, or running
+            operations — sign in to access your workspace.
           </p>
         </div>
 
         <p className="text-xs text-sidebar-foreground/50">
-          {"\u00A9"} {new Date().getFullYear()} ParcelFlow Logistics. Internal
-          use only.
+          {"\u00A9"} {new Date().getFullYear()} ParcelFlow. Internal use only.
         </p>
       </section>
 
@@ -95,13 +118,38 @@ export default function LoginPage() {
           </div>
 
           <Card className="border-border/70 shadow-sm">
-            <CardHeader className="space-y-1">
+            <CardHeader className="flex flex-col gap-1">
               <CardTitle className="text-2xl">Welcome back</CardTitle>
               <CardDescription>
-                Sign in to the Super Admin console to continue.
+                Sign in to access your workspace.
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Dev credentials picker */}
+              <div className="mb-4 rounded-md border border-dashed border-border bg-muted/40 p-3">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <FlaskConical className="size-3.5" />
+                  Dev — fill seed credentials
+                </p>
+                <Select onValueChange={fillCredentials}>
+                  <SelectTrigger className="h-8 text-xs w-full">
+                    <SelectValue placeholder="Pick a user…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {grouped.map(({ role, users }) => (
+                      <SelectGroup key={role}>
+                        <SelectLabel className="text-xs">{role}</SelectLabel>
+                        {users.map((u) => (
+                          <SelectItem key={u.email} value={u.email} className="text-xs">
+                            {u.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Email</Label>
@@ -158,7 +206,7 @@ export default function LoginPage() {
                   href="/register"
                   className="font-medium text-primary hover:underline"
                 >
-                  Register your business
+                  Create an account
                 </Link>
               </p>
             </CardContent>

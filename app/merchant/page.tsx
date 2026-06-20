@@ -17,8 +17,8 @@ import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/order-status-badge"
-import { MerchantStatusBadge } from "@/components/merchant-status-badge"
+import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,

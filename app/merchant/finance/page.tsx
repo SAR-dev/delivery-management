@@ -14,8 +14,8 @@ import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order, PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { PayoutStatusBadge } from "@/components/payout-status-badge"
-import { PayoutRequestDialog } from "@/components/payout-request-dialog"
+import { PayoutStatusBadge } from "@/components/dialog/payout-status-badge"
+import { PayoutRequestDialog } from "@/components/dialog/payout-request-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Card,

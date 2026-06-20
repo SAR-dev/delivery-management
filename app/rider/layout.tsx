@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Loader2, Bike, LogOut } from "lucide-react"
 import { usePlatform, homeForRole } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { RiderSidebar } from "@/components/rider-sidebar"
+import { RiderSidebar } from "@/components/sidebar/rider-sidebar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { MerchantSidebar } from "@/components/merchant-sidebar"
+import { MerchantSidebar } from "@/components/sidebar/merchant-sidebar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

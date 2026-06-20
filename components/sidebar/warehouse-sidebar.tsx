@@ -2,32 +2,18 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  LayoutDashboard,
-  ShieldCheck,
-  Coins,
-  Users,
-  Store,
-  Package,
-  Wallet,
-  LogOut,
-} from "lucide-react"
+import { LogOut, Warehouse as WarehouseIcon, PackagePlus, Truck, AlertTriangle, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { usePlatform } from "@/lib/platform-context"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
-import {
-  Avatar,
-  AvatarFallback,
-} from "@/components/ui/avatar"
 
 const NAV = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/orders", label: "Orders", icon: Package },
-  { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-  { href: "/dashboard/team", label: "Team Accounts", icon: Users },
-  { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-  { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+  { href: "/warehouse", label: "Intake queue", icon: PackagePlus },
+  { href: "/warehouse/dispatch", label: "Dispatch desk", icon: Truck },
+  { href: "/warehouse/exceptions", label: "Exceptions", icon: AlertTriangle },
+  { href: "/warehouse/reconciliation", label: "COD reconciliation", icon: Wallet },
 ]
 
 function initials(name: string) {
@@ -39,28 +25,25 @@ function initials(name: string) {
     .toUpperCase()
 }
 
-export function Sidebar() {
+export function WarehouseSidebar() {
   const pathname = usePathname()
-  const { currentUser, logout } = usePlatform()
+  const { currentUser, currentWarehouse, logout } = usePlatform()
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border">
+    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border h-screen sticky top-0 overflow-hidden">
       <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
         <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-          <ShieldCheck className="size-5" />
+          <WarehouseIcon className="size-5" />
         </div>
         <div className="leading-tight">
           <p className="text-sm font-semibold">ParcelFlow</p>
-          <p className="text-xs text-sidebar-foreground/60">Super Admin</p>
+          <p className="text-xs text-sidebar-foreground/60">Warehouse</p>
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 p-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {NAV.map((item) => {
-          const active =
-            item.href === "/dashboard"
-              ? pathname === "/dashboard"
-              : pathname.startsWith(item.href)
+          const active = pathname === item.href
           const Icon = item.icon
           return (
             <Link
@@ -83,16 +66,14 @@ export function Sidebar() {
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 rounded-md px-2 py-2">
           <Avatar className="size-8">
-            <AvatarFallback className="bg-sidebar-accent text-xs text-sidebar-accent-foreground">
-              {currentUser ? initials(currentUser.name) : "SA"}
+            <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
+              {currentUser ? initials(currentUser.name) : "?"}
             </AvatarFallback>
           </Avatar>
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-sm font-medium">
-              {currentUser?.name ?? "Super Admin"}
-            </p>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-medium">{currentUser?.name}</p>
             <p className="truncate text-xs text-sidebar-foreground/60">
-              {currentUser?.email}
+              {currentWarehouse?.name ?? currentUser?.email}
             </p>
           </div>
         </div>

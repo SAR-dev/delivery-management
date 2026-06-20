@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import {
   AlertTriangle,
-  Bike,
   RotateCcw,
   Undo2,
   Wrench,
@@ -12,8 +11,8 @@ import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/order-status-badge"
-import { FailedDeliveryDialog } from "@/components/failed-delivery-dialog"
+import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { FailedDeliveryDialog } from "@/components/dialog/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -22,11 +21,11 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 type FilterTab = "NEEDS_ACTION" | "RESOLVED"
 
 function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
+                    label,
+                    value,
+                    icon: Icon,
+                    tone,
+                  }: {
   label: string
   value: number
   icon: React.ComponentType<{ className?: string }>
@@ -75,9 +74,9 @@ export default function WarehouseExceptionsPage() {
     () =>
       currentWarehouse
         ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
-          )
+          (o) =>
+            o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+        )
         : [],
     [orders, currentWarehouse],
   )
@@ -110,10 +109,7 @@ export default function WarehouseExceptionsPage() {
       sortable: true,
       sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
       cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="size-4 text-muted-foreground" />
-          {rider(o.deliveryRiderId)?.name ?? "—"}
-        </span>
+        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
       ),
     },
     {
@@ -143,15 +139,14 @@ export default function WarehouseExceptionsPage() {
     {
       id: "note",
       header: "Note",
+      cellClassName: "whitespace-normal align-top",
       cell: (o) =>
         o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-          <span className="flex max-w-56 items-start gap-1.5 text-xs text-destructive">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span className="block w-56 whitespace-normal break-words text-xs text-destructive">
             {o.failureNote}
           </span>
         ) : o.status === "RETURNED" ? (
-          <span className="flex max-w-56 items-start gap-1.5 text-xs text-muted-foreground">
-            <Undo2 className="mt-0.5 size-3.5 shrink-0" />
+          <span className="block w-56 whitespace-normal break-words text-xs text-muted-foreground">
             Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
             {o.returnReason ? ` — ${o.returnReason}` : ""}
           </span>
