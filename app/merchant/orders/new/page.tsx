@@ -238,8 +238,13 @@ export default function NewOrderPage() {
                     value={pickupLocationId}
                     onValueChange={(v) => setPickupLocationId(v ?? "")}
                   >
-                    <SelectTrigger id="pickup">
-                      <SelectValue placeholder="Select a pickup location" />
+                    <SelectTrigger id="pickup" className="min-w-64">
+                      <SelectValue placeholder="Select a pickup location">
+                        {(value) => {
+                          const loc = myLocations.find((l) => l.id === value)
+                          return loc ? loc.label : "Select a pickup location"
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {myLocations.map((loc) => (
