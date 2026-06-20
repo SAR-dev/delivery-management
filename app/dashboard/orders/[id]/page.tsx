@@ -4,13 +4,13 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import {
   ArrowLeft,
+  Bike,
   Loader2,
-  Package,
   MapPin,
-  User,
+  Package,
   Phone,
   Store,
-  Bike,
+  User,
   Warehouse as WarehouseIcon,
   Weight,
 } from "lucide-react"
@@ -20,51 +20,50 @@ import { CURRENCY_SUFFIX } from "@/lib/constants"
 import type { Order } from "@/lib/types"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { TrackingTimeline } from "@/components/tracking-timeline"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 
-function DetailRow({
+function Field({
   icon: Icon,
   label,
   value,
+  className,
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: React.ReactNode
+  className?: string
 }) {
   return (
-    <div className="flex items-start gap-3">
-      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+    <div className={cn("flex items-start gap-3", className)}>
+      <span className="bg-muted mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md">
+        <Icon className="text-muted-foreground size-3.5" />
+      </span>
       <div className="min-w-0">
-        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="text-muted-foreground mb-0.5 text-[11px] font-medium tracking-wide uppercase">
+          {label}
+        </p>
         <p className="text-sm font-medium break-words">{value}</p>
       </div>
     </div>
   )
 }
 
-function MoneyRow({
-  label,
-  amount,
-  emphasis,
+function Section({
+  title,
+  children,
+  className,
 }: {
-  label: string
-  amount: number
-  emphasis?: boolean
+  title: string
+  children: React.ReactNode
+  className?: string
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
-      <span className={emphasis ? "font-medium" : "text-muted-foreground"}>
-        {label}
-      </span>
-      <span
-        className={
-          emphasis ? "text-base font-semibold tabular-nums" : "tabular-nums"
-        }
-      >
-        {formatTk(amount)}
-      </span>
+    <div className={cn("", className)}>
+      <p className="text-muted-foreground mb-4 text-[11px] font-semibold tracking-widest uppercase">
+        {title}
+      </p>
+      {children}
     </div>
   )
 }
@@ -114,22 +113,23 @@ export default function OrderDetailPage() {
     : false
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       {/* Header */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <Link
           href="/dashboard/orders"
-          className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-sm"
+          className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-sm transition-colors"
         >
-          <ArrowLeft className="size-4" />
-          Back to orders
+          <ArrowLeft className="size-3.5" />
+          Orders
         </Link>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
             <h1 className="font-mono text-2xl font-semibold tracking-tight">
               {order.code}
             </h1>
-            <p className="text-muted-foreground text-sm">
+            <p className="text-muted-foreground mt-1 text-sm">
               Placed {new Date(order.createdAt).toLocaleString()}
             </p>
           </div>
@@ -138,108 +138,148 @@ export default function OrderDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left: details */}
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Recipient & delivery</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <DetailRow
-                icon={User}
-                label="Recipient"
-                value={order.recipientName}
-              />
-              <DetailRow
-                icon={Phone}
-                label="Phone"
-                value={order.recipientPhone}
-              />
-              <DetailRow
-                icon={MapPin}
-                label="Delivery address"
-                value={`${order.deliveryAddress}, ${order.deliveryCity}`}
-              />
-              <DetailRow
-                icon={Store}
-                label="Merchant"
-                value={merchant?.businessName ?? "Unknown"}
-              />
-            </CardContent>
-          </Card>
+        {/* Left column */}
+        <div className="space-y-px lg:col-span-2">
+          {/* Recipient & delivery */}
+          <div className="bg-card border-border rounded-t-xl border p-6">
+            <Section title="Recipient & delivery">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field
+                  icon={User}
+                  label="Recipient"
+                  value={order.recipientName}
+                />
+                <Field
+                  icon={Phone}
+                  label="Phone"
+                  value={order.recipientPhone}
+                />
+                <Field
+                  icon={MapPin}
+                  label="Delivery address"
+                  value={`${order.deliveryAddress}, ${order.deliveryCity}`}
+                  className="sm:col-span-2"
+                />
+                <Field
+                  icon={Store}
+                  label="Merchant"
+                  value={merchant?.businessName ?? "Unknown"}
+                />
+              </div>
+            </Section>
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Parcel</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <DetailRow
-                icon={Weight}
-                label="Weight"
-                value={
-                  <span className={exceedsWeight ? "text-destructive" : ""}>
-                    {order.parcelWeightKg} KG
-                    {exceedsWeight ? " (exceeds limit)" : ""}
+          {/* Parcel */}
+          <div className="bg-card border-border border p-6">
+            <Section title="Parcel">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <Field
+                  icon={Weight}
+                  label="Weight"
+                  value={
+                    <span className={exceedsWeight ? "text-destructive" : ""}>
+                      {order.parcelWeightKg} kg
+                      {exceedsWeight ? " · exceeds limit" : ""}
+                    </span>
+                  }
+                />
+                <Field
+                  icon={Package}
+                  label="Delivery type"
+                  value={
+                    order.deliveryType === "FRAGILE" ? "Fragile" : "Standard"
+                  }
+                />
+                <Field
+                  icon={Bike}
+                  label="Pickup rider"
+                  value={
+                    pickupRider ? (
+                      pickupRider.name
+                    ) : (
+                      <span className="text-muted-foreground font-normal">
+                        Not assigned
+                      </span>
+                    )
+                  }
+                />
+                <Field
+                  icon={WarehouseIcon}
+                  label="Delivery rider / hub"
+                  value={
+                    deliveryRider ? (
+                      <>
+                        {deliveryRider.name}
+                        {warehouse && (
+                          <span className="text-muted-foreground font-normal">
+                            {" · "}
+                            {warehouse.name}
+                          </span>
+                        )}
+                      </>
+                    ) : warehouse ? (
+                      warehouse.name
+                    ) : (
+                      <span className="text-muted-foreground font-normal">
+                        Not assigned
+                      </span>
+                    )
+                  }
+                />
+              </div>
+            </Section>
+          </div>
+
+          {/* Payment */}
+          <div className="bg-card border-border rounded-b-xl border p-6 pb-0">
+            <Section title="Payment">
+              <div className="space-y-0">
+                {[
+                  { label: "Product cost (COD)", amount: order.productCost },
+                  {
+                    label: "Delivery charge",
+                    amount: order.deliveryCharge,
+                  },
+                  { label: "Security money", amount: order.securityMoney },
+                ].map(({ label, amount }) => (
+                  <div
+                    key={label}
+                    className="border-border/50 flex items-center justify-between border-b py-3 text-sm last:border-0"
+                  >
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="tabular-nums">{formatTk(amount)}</span>
+                  </div>
+                ))}
+                <div className="bg-muted/50 -mx-6 mt-3 flex items-center justify-between rounded-b-xl px-6 py-3.5">
+                  <span className="text-sm font-medium">Total collectible</span>
+                  <span className="text-base font-semibold tabular-nums">
+                    {formatTk(order.totalCollectible)}
                   </span>
-                }
-              />
-              <DetailRow
-                icon={Package}
-                label="Delivery type"
-                value={
-                  order.deliveryType === "FRAGILE" ? "Fragile" : "Standard"
-                }
-              />
-              <DetailRow
-                icon={Bike}
-                label="Pickup rider"
-                value={pickupRider?.name ?? "Not assigned"}
-              />
-              <DetailRow
-                icon={WarehouseIcon}
-                label="Delivery rider / hub"
-                value={
-                  deliveryRider
-                    ? `${deliveryRider.name}${warehouse ? ` · ${warehouse.name}` : ""}`
-                    : (warehouse?.name ?? "Not assigned")
-                }
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Payment breakdown</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <MoneyRow label="Product cost (COD)" amount={order.productCost} />
-              <MoneyRow label="Delivery charge" amount={order.deliveryCharge} />
-              <MoneyRow label="Security money" amount={order.securityMoney} />
-              <Separator />
-              <MoneyRow
-                label="Total collectible"
-                amount={order.totalCollectible}
-                emphasis
-              />
-              {order.amountCollected != null ? (
-                <p className="text-muted-foreground text-xs">
+                </div>
+              </div>
+              {order.amountCollected != null && (
+                <p className="text-muted-foreground mt-3 text-xs">
                   Collected: {order.amountCollected} {CURRENCY_SUFFIX}
                   {order.codSettledAt ? " · COD settled" : ""}
                 </p>
-              ) : null}
-            </CardContent>
-          </Card>
+              )}
+            </Section>
+          </div>
         </div>
 
         {/* Right: tracking */}
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-base">Tracking</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TrackingTimeline order={order} />
-          </CardContent>
-        </Card>
+        <div className="bg-card border-border h-fit rounded-xl border p-6">
+          <p className="text-muted-foreground mb-5 text-[11px] font-semibold tracking-widest uppercase">
+            Tracking
+          </p>
+          <TrackingTimeline
+            order={order}
+            pickupRider={pickupRider}
+            warehouse={warehouse}
+            deliveryRider={deliveryRider}
+            merchant={merchant}
+          />
+        </div>
       </div>
     </div>
   )

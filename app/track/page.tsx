@@ -8,7 +8,6 @@ import {
   Search,
   MapPin,
   Store,
-  PackageX,
   ArrowRight,
   CheckCircle2,
   XCircle,
@@ -191,17 +190,19 @@ export default function TrackPage() {
 }
 
 function TrackContent() {
-  const { orders, merchants, riders, warehouses } = usePlatform()
+  const { orders, merchants, riders, warehouses, isReady, dataError } =
+    usePlatform()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialCode = (searchParams.get("code") ?? "").trim()
 
   const [query, setQuery] = useState(initialCode)
-  const [searched, setSearched] = useState(Boolean(initialCode))
+  const [searched, setSearched] = useState(false)
 
-  const submittedCode = searched ? initialCode || query : ""
+  const submittedCode = searched ? query : ""
 
   const order = useMemo(() => {
+    if (!isReady) return null
     const normalized = submittedCode.trim().toUpperCase()
     if (!normalized) return null
     return (
@@ -212,7 +213,7 @@ function TrackContent() {
           o.id.toUpperCase() === normalized,
       ) ?? null
     )
-  }, [orders])
+  }, [orders, isReady, submittedCode])
 
   const merchant = useMemo(
     () =>
@@ -247,20 +248,18 @@ function TrackContent() {
   function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault()
     const trimmed = query.trim()
+    if (!trimmed) return
     setSearched(true)
-    router.replace(
-      trimmed ? `/track?code=${encodeURIComponent(trimmed)}` : "/track",
-    )
+    router.replace(`/track?code=${encodeURIComponent(trimmed)}`)
   }
 
-  const notFound = searched && submittedCode.trim() !== "" && !order
+  const isLoading = searched && !isReady
+  const notFound = isReady && searched && submittedCode.trim() !== "" && !order
+
   const statusInfo = order ? STATUS_COPY[order.status] : null
 
   return (
-    <main
-      className="min-h-screen"
-      style={{ background: "var(--track-bg, oklch(0.985 0.002 247))" }}
-    >
+    <main className="bg-background min-h-screen">
       {/* Header */}
       <header className="border-border/60 bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-5 py-3.5">
@@ -322,30 +321,37 @@ function TrackContent() {
           </button>
         </form>
 
+        {/* Not found */}
+        {notFound && (
+          <p className="text-muted-foreground mx-auto mt-4 max-w-sm text-center text-sm">
+            No parcel found for{" "}
+            <span className="text-foreground font-mono">{submittedCode}</span>.
+            Double-check your tracking code and try again.
+          </p>
+        )}
+
         {/* Hint */}
-        {!order && !notFound && !searched && (
+        {!order && !notFound && !isLoading && !searched && (
           <p className="text-muted-foreground mt-4 text-center text-xs">
             Your code is printed on the delivery note — it starts with{" "}
             <span className="text-foreground font-mono">PF-</span>
           </p>
         )}
 
-        {/* Not found */}
-        {notFound && (
-          <div className="mx-auto mt-2 max-w-sm">
-            <div className="border-border bg-card rounded-xl border p-8 text-center shadow-sm">
-              <div className="bg-muted mb-4 inline-flex size-12 items-center justify-center rounded-full">
-                <PackageX className="text-muted-foreground size-5" />
-              </div>
-              <p className="text-sm font-medium">No parcel found</p>
-              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
-                We couldn&apos;t find a parcel for{" "}
-                <span className="text-foreground font-mono">
-                  {submittedCode}
-                </span>
-                . Double-check your tracking code and try again.
-              </p>
-            </div>
+        {/* Data error */}
+        {isReady && dataError && searched && (
+          <p className="text-destructive mx-auto mt-4 max-w-sm text-center text-sm">
+            Couldn&apos;t load tracking data: {dataError}
+          </p>
+        )}
+
+        {/* Loading */}
+        {isLoading && !dataError && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <span className="border-muted border-t-primary size-6 animate-spin rounded-full border-2" />
+            <p className="text-muted-foreground text-xs">
+              Looking up your parcel…
+            </p>
           </div>
         )}
 
@@ -416,64 +422,17 @@ function TrackContent() {
               </div>
             </div>
 
-            {/* Who's handling the parcel */}
-            {(pickupRider || warehouse || deliveryRider) && (
-              <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
-                <p className="text-muted-foreground mb-4 text-xs font-semibold tracking-widest uppercase">
-                  Who&apos;s handling your parcel
-                </p>
-                <ul className="space-y-3">
-                  {pickupRider && (
-                    <HandlerRow
-                      icon={Bike}
-                      role="Pickup rider"
-                      name={pickupRider.name}
-                      detail={[maskPhone(pickupRider.phone), pickupRider.zone]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.pickedUpAt)}
-                    />
-                  )}
-                  {warehouse && (
-                    <HandlerRow
-                      icon={Warehouse}
-                      role="Sorting hub"
-                      name={warehouse.name}
-                      detail={[
-                        warehouse.city,
-                        order.receivedByWarehouse
-                          ? `Logged by ${order.receivedByWarehouse}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.receivedAtWarehouseAt)}
-                    />
-                  )}
-                  {deliveryRider && (
-                    <HandlerRow
-                      icon={Truck}
-                      role="Delivery rider"
-                      name={deliveryRider.name}
-                      detail={[
-                        maskPhone(deliveryRider.phone),
-                        deliveryRider.zone,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.deliveredAt)}
-                    />
-                  )}
-                </ul>
-              </div>
-            )}
-
             {/* Timeline card */}
             <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
               <p className="text-muted-foreground mb-5 text-xs font-semibold tracking-widest uppercase">
                 Delivery progress
               </p>
-              <InlineTimeline order={order} />
+              <InlineTimeline
+                order={order}
+                pickupRider={pickupRider}
+                warehouse={warehouse}
+                deliveryRider={deliveryRider}
+              />
             </div>
           </div>
         )}
@@ -482,48 +441,63 @@ function TrackContent() {
   )
 }
 
-function HandlerRow({
-  icon: Icon,
-  role,
-  name,
-  detail,
-  done,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  role: string
-  name: string
-  detail?: string
-  done?: boolean
-}) {
-  return (
-    <li className="flex items-center gap-3">
-      <span
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-full border",
-          done
-            ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
-            : "border-border bg-muted text-muted-foreground",
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-          {role}
-        </p>
-        <p className="truncate text-sm font-medium">{name}</p>
-        {detail && (
-          <p className="text-muted-foreground truncate text-xs">{detail}</p>
-        )}
-      </div>
-    </li>
-  )
-}
+type HandlerInfo = { name: string; detail?: string } | null
 
-function InlineTimeline({ order }: { order: Order }) {
+function InlineTimeline({
+  order,
+  pickupRider,
+  warehouse,
+  deliveryRider,
+}: {
+  order: Order
+  pickupRider: { name: string; phone: string; zone: string } | null
+  warehouse: { name: string; city: string } | null
+  deliveryRider: { name: string; phone: string; zone: string } | null
+}) {
   const currentRank = STATUS_RANK[order.status]
   const isReturned = order.status === "RETURNED"
   const isFailed = order.status === "FAILED_ATTEMPT"
+
+  // Map step keys to their handler info
+  const stepHandlers: Partial<Record<StepKey, HandlerInfo>> = {
+    PICKED_UP: pickupRider
+      ? {
+          name: pickupRider.name,
+          detail: [maskPhone(pickupRider.phone), pickupRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
+    IN_WAREHOUSE: warehouse
+      ? {
+          name: warehouse.name,
+          detail: [
+            warehouse.city,
+            order.receivedByWarehouse
+              ? `Logged by ${order.receivedByWarehouse}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
+    OUT_FOR_DELIVERY: deliveryRider
+      ? {
+          name: deliveryRider.name,
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
+    DELIVERED: deliveryRider
+      ? {
+          name: deliveryRider.name,
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
+  }
 
   return (
     <ol className="relative space-y-0">
@@ -537,6 +511,7 @@ function InlineTimeline({ order }: { order: Order }) {
         const isCompleted = reached && !isCurrent
         const Icon = step.icon
         const stamp = formatStamp(step.timestamp(order))
+        const handler = stepHandlers[step.key] ?? null
 
         // After OUT_FOR_DELIVERY, inject exception nodes before DELIVERED
         const showFailedAfter = step.key === "OUT_FOR_DELIVERY" && isFailed
@@ -550,20 +525,20 @@ function InlineTimeline({ order }: { order: Order }) {
               <div className="flex flex-col items-center">
                 <span
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                    "flex size-9 shrink-0 items-center justify-center rounded-full border transition-all",
                     isCompleted
-                      ? "border-chart-2 bg-chart-2 text-white"
+                      ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
                       : isCurrent
-                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                        : "border-border bg-muted/50 text-muted-foreground/50",
+                        ? "border-primary/30 bg-primary/15 text-primary"
+                        : "border-border bg-muted text-muted-foreground/50",
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  <Icon className="size-4" />
                 </span>
                 {(!isLast || hasExceptionAfter) && (
                   <span
                     className={cn(
-                      "my-1 min-h-7 w-0.5 flex-1 rounded-full",
+                      "mt-1 mb-0 w-0.5 flex-1 rounded-full",
                       isCompleted || (isCurrent && currentRank > step.rank)
                         ? "bg-chart-2/50"
                         : "bg-border",
@@ -576,9 +551,9 @@ function InlineTimeline({ order }: { order: Order }) {
               {/* Content */}
               <div
                 className={cn(
-                  "pb-7",
-                  isLast && !hasExceptionAfter && "pb-0",
-                  "pt-0.5",
+                  "pb-6",
+                  isLast && !hasExceptionAfter && "pb-1",
+                  "min-w-0 flex-1 pt-0.5",
                 )}
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -606,14 +581,29 @@ function InlineTimeline({ order }: { order: Order }) {
                     {step.description}
                   </p>
                 )}
+                {handler && reached && (
+                  <div className="mt-2">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      {step.key === "IN_WAREHOUSE" ? "Sorting hub" : "Rider"}
+                    </p>
+                    <p className="text-foreground text-xs font-medium">
+                      {handler.name}
+                    </p>
+                    {handler.detail && (
+                      <p className="text-muted-foreground text-xs">
+                        {handler.detail}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </li>
 
             {showFailedAfter && (
               <li key="FAILED_ATTEMPT" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="border-destructive/40 bg-destructive/10 text-destructive flex size-8 shrink-0 items-center justify-center rounded-full border-2">
-                    <XCircle className="size-3.5" />
+                  <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-full border">
+                    <XCircle className="size-4" />
                   </span>
                   {/* Connector down to Delivered */}
                   <span
@@ -636,8 +626,8 @@ function InlineTimeline({ order }: { order: Order }) {
             {showReturnedAfter && (
               <li key="RETURNED" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="border-border bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full border-2">
-                    <Undo2 className="size-3.5" />
+                  <span className="border-border bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full border">
+                    <Undo2 className="size-4" />
                   </span>
                   {/* Connector down to Delivered */}
                   <span
