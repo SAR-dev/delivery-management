@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   PackageCheck,
   Bike,
+  ListChecks,
   ShieldCheck,
   Shield,
   Warehouse as WarehouseIcon,
@@ -134,9 +135,15 @@ export const RIDER_SIDEBAR: SidebarConfig = {
   brandIcon: Bike,
   roleLabel: "Rider",
   items: [
-    { href: "/rider", label: "Pickup queue", icon: PackageCheck, exact: true },
+    { href: "/rider", label: "To-do", icon: ListChecks, exact: true },
     {
-      href: "/rider/deliveries",
+      href: "/rider/pickup",
+      label: "Pickup queue",
+      icon: PackageCheck,
+      exact: true,
+    },
+    {
+      href: "/rider/delivery",
       label: "Delivery queue",
       icon: Truck,
       exact: true,

@@ -1,31 +1,28 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { PackageOpen, CheckCircle2, Clock, Navigation } from "lucide-react"
+import { CheckCircle2, Navigation } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
+import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { toast } from "sonner"
-import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
 export default function RiderDeliveryQueuePage() {
-  const { currentUser, currentRider, orders, merchants, markOutForDelivery } =
-    usePlatform()
+  const { currentUser, currentRider, orders } = usePlatform()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const [startTarget, setStartTarget] = useState<Order | null>(null)
+  const [startDialogOpen, setStartDialogOpen] = useState(false)
 
   // All orders dispatched to this rider for delivery.
   const myDeliveries = useMemo(
@@ -50,15 +47,14 @@ export default function RiderDeliveryQueuePage() {
     setDialogOpen(true)
   }
 
-  async function startDelivery(order: Order) {
-    const result = await markOutForDelivery(order.id)
-    if (result.ok) {
-      toast.success(`${order.code} is now out for delivery.`)
-    } else {
-      toast.error(result.error ?? "Unable to start delivery.")
-    }
+  function openStartDelivery(order: Order) {
+    setStartTarget(order)
+    setStartDialogOpen(true)
   }
 
+  // Delivery is a recipient-facing step — the rider only needs to know who
+  // they're delivering to and where. Merchant/pickup details aren't
+  // relevant anymore, so they're left off this view entirely.
   const columns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -66,12 +62,9 @@ export default function RiderDeliveryQueuePage() {
       sortable: true,
       sortValue: (o) => o.code,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
+        <span className="text-muted-foreground font-mono text-xs">
+          {o.code}
+        </span>
       ),
     },
     {
@@ -144,7 +137,7 @@ export default function RiderDeliveryQueuePage() {
       headClassName: "w-12",
       cell: (o) =>
         o.status === "IN_TRANSIT" ? (
-          <Button size="sm" onClick={() => startDelivery(o)}>
+          <Button size="sm" onClick={() => openStartDelivery(o)}>
             <Navigation className="size-4" />
             Out for delivery
           </Button>
@@ -162,29 +155,6 @@ export default function RiderDeliveryQueuePage() {
       <PageHeader
         title={`Delivery queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
         description="Take dispatched parcels out for delivery and record the outcome."
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "To deliver",
-            value: toDeliver.length,
-            icon: Clock,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-          {
-            label: "Completed",
-            value: completed.length,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Total assigned",
-            value: myDeliveries.length,
-            icon: PackageOpen,
-            tone: "bg-primary/10 text-primary",
-          },
-        ]}
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
@@ -206,9 +176,9 @@ export default function RiderDeliveryQueuePage() {
             getRowKey={(o) => o.id}
             initialSortId="order"
             searchable
-            searchPlaceholder="Search code, merchant, recipient, city"
+            searchPlaceholder="Search code, recipient, city"
             getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
+              `${o.code} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
             }
             emptyMessage={
               tab === "TO_DELIVER"
@@ -218,6 +188,12 @@ export default function RiderDeliveryQueuePage() {
           />
         </CardContent>
       </Card>
+
+      <OutForDeliveryDialog
+        order={startTarget}
+        open={startDialogOpen}
+        onOpenChange={setStartDialogOpen}
+      />
 
       <DeliveryAttemptDialog
         order={activeOrder}

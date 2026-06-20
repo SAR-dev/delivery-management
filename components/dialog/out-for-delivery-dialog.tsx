@@ -1,13 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import {
-  Loader2,
-  PackageCheck,
-  MapPin,
-  Package,
-  Store,
-} from "lucide-react"
+import { Loader2, Navigation, MapPin, User, Phone } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order } from "@/lib/types"
@@ -23,10 +17,10 @@ import {
 } from "@/components/ui/dialog"
 
 function InfoRow({
-  icon: Icon,
-  label,
-  value,
-}: {
+                   icon: Icon,
+                   label,
+                   value,
+                 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: string
@@ -42,22 +36,16 @@ function InfoRow({
   )
 }
 
-export function PickupConfirmDialog({
-  order,
-  merchantName,
-  pickupLabel,
-  pickupAddress,
-  open,
-  onOpenChange,
-}: {
+export function OutForDeliveryDialog({
+                                       order,
+                                       open,
+                                       onOpenChange,
+                                     }: {
   order: Order | null
-  merchantName: string
-  pickupLabel: string
-  pickupAddress: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { markOrderPickedUp } = usePlatform()
+  const { markOutForDelivery } = usePlatform()
   const [submitting, setSubmitting] = useState(false)
 
   if (!order) return null
@@ -65,12 +53,12 @@ export function PickupConfirmDialog({
   async function handleConfirm() {
     setSubmitting(true)
     try {
-      const result = await markOrderPickedUp(order!.id)
+      const result = await markOutForDelivery(order!.id)
       if (result.ok) {
-        toast.success(`${order!.code} marked as picked up.`)
+        toast.success(`${order!.code} is now out for delivery.`)
         onOpenChange(false)
       } else {
-        toast.error(result.error ?? "Unable to update pickup.")
+        toast.error(result.error ?? "Unable to start delivery.")
       }
     } finally {
       setSubmitting(false)
@@ -81,25 +69,21 @@ export function PickupConfirmDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Confirm pickup of {order.code}</DialogTitle>
+          <DialogTitle>Start delivery for {order.code}</DialogTitle>
           <DialogDescription>
-            Collect the parcel from the merchant, then confirm to update the
-            status to Picked up. The merchant sees this change in real time.
+            Confirm you have the parcel with you and are heading out now.
+            This updates the status to Out for delivery.
           </DialogDescription>
         </DialogHeader>
 
         <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
-          <InfoRow icon={Store} label="Merchant" value={merchantName} />
-          <InfoRow
-            icon={MapPin}
-            label="Pickup location"
-            value={`${pickupLabel} — ${pickupAddress}`}
-          />
+          <InfoRow icon={User} label="Recipient" value={order.recipientName} />
+          <InfoRow icon={Phone} label="Phone" value={order.recipientPhone} />
           <Separator className="my-1" />
           <InfoRow
-            icon={Package}
-            label="Parcel"
-            value={`${order.parcelWeightKg} KG · ${order.deliveryType}`}
+            icon={MapPin}
+            label="Destination"
+            value={`${order.deliveryAddress}, ${order.deliveryCity}`}
           />
         </div>
 
@@ -119,8 +103,8 @@ export function PickupConfirmDialog({
               </>
             ) : (
               <>
-                <PackageCheck className="size-4" />
-                Confirm pickup
+                <Navigation className="size-4" />
+                Confirm, out for delivery
               </>
             )}
           </Button>

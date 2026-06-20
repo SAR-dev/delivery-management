@@ -14,20 +14,23 @@ import { createId } from "@paralleldrive/cuid2"
 // =============================================================================
 
 // All timestamp columns use `mode: "string"` so Drizzle decodes them as ISO
-// strings instead of `Date` objects. This matches how the rest of the app
-// (mock data, React state, anything crossing a server/client boundary) has
-// always represented dates, and means the inferred row types below need no
-// extra conversion layer to be used directly as app-level types.
+// strings instead of `Date` objects. Inferred row types can be used directly
+// as app-level types with no conversion layer — consistent with how dates are
+// represented everywhere else (React state, server/client boundaries, etc.).
 const ts = (name: string) =>
   timestamp(name, { mode: "string", withTimezone: true })
 
 // =============================================================================
-// Better Auth tables (camelCase column names required by Better Auth)
-// Better Auth talks to Postgres directly (see lib/auth.ts: `database: pool`),
-// so it doesn't read these definitions. They exist purely so the app can
-// query/join these tables through Drizzle with full type safety — the SQL
-// shape must still match whatever Better Auth's own migrations create.
-// Better Auth generates and passes its own IDs — no $defaultFn needed here.
+// Better Auth tables
+//
+// Better Auth manages its own migrations and talks to Postgres directly
+// (see lib/auth.ts: `database: pool`), so it never reads these Drizzle
+// definitions. They exist solely to give the app typed access for queries and
+// joins. The SQL shape here MUST stay in sync with whatever Better Auth
+// creates in the database — if Better Auth changes a column, update it here.
+//
+// Column names are camelCase because that is what Better Auth requires.
+// Better Auth generates and injects its own IDs, so no $defaultFn is needed.
 // =============================================================================
 
 export const user = pgTable("user", {
@@ -90,10 +93,10 @@ export const verification = pgTable("verification", {
 // userId is the PK and comes from Better Auth — no $defaultFn needed.
 // =============================================================================
 
-// `enum` here doesn't create a Postgres enum type or check runtime values —
-// it's a Drizzle-only hint so $inferSelect/$inferInsert narrow `role` to this
-// literal union instead of plain `string`. The column stays a normal `text`
-// column in the database; nothing to migrate.
+// `enum` here is a Drizzle-only hint — it narrows the inferred TypeScript type
+// for `role` to this literal union instead of `string`. No Postgres enum type
+// is created; the column remains plain `text` in the database and no migration
+// is needed when this list changes. Runtime validation is the caller's job.
 export const profileRoles = [
   "SUPER_ADMIN",
   "ADMIN",
@@ -111,10 +114,12 @@ export const profile = pgTable("profile", {
   isActive: boolean("isActive").notNull().default(true),
   // Only meaningful for ADMIN users.
   canManagePricing: boolean("canManagePricing").notNull().default(false),
-  // FK-like references; kept as plain text to avoid circular deps.
+  // Domain entity references. Stored as plain text (no FK constraint) to avoid
+  // circular dependencies between the profile table and its referents.
+  // Only the field matching the user's role is expected to be populated.
   warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
-  merchantId: text("merchantId"), // MERCHANT: their merchant business
-  riderId: text("riderId"), // RIDER: their rider profile
+  merchantId: text("merchantId"),   // MERCHANT: their merchant business
+  riderId: text("riderId"),         // RIDER: their rider profile
   createdAt: ts("createdAt").notNull().defaultNow(),
 })
 
@@ -147,7 +152,8 @@ export const rider = pgTable("rider", {
   // Service zone the rider primarily covers.
   zone: text("zone").notNull(),
   isActive: boolean("isActive").notNull().default(true),
-  // Home warehouse for delivery riders; null for pickup-only riders.
+  // Home warehouse this rider dispatches from. Null means the rider handles
+  // pickups only and is not associated with any warehouse.
   warehouseId: text("warehouseId").references(() => warehouse.id, {
     onDelete: "set null",
   }),
@@ -177,7 +183,8 @@ export const merchant = pgTable("merchant", {
   extraRatePerKg: doublePrecision("extraRatePerKg").notNull().default(0),
   maxWeightKg: doublePrecision("maxWeightKg").notNull().default(3),
   freeWeightKg: doublePrecision("freeWeightKg").notNull().default(1),
-  // Soft reference to the admin user who approved this merchant.
+  // Soft reference (user id) to the admin who approved this merchant.
+  // Null until an admin acts on the PENDING application.
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
   createdAt: ts("createdAt").notNull().defaultNow(),
@@ -199,8 +206,11 @@ export const pickupLocation = pgTable("pickup_location", {
 })
 
 // =============================================================================
-// Security money config (single-row table; row id = 'default')
-// No $defaultFn — the seed always inserts with id = 'default' explicitly.
+// Security money config
+//
+// Single-row configuration table. The one row always has id = 'default' and
+// is inserted by the seed script. No $defaultFn is used because the id value
+// must be the literal string 'default', not a generated cuid.
 // =============================================================================
 
 export const securityConfig = pgTable("security_config", {
@@ -237,8 +247,9 @@ export const payoutRequest = pgTable("payout_request", {
   merchantId: text("merchantId")
     .notNull()
     .references(() => merchant.id),
-  // Array of order ids included in this request, stored as jsonb so Drizzle
-  // reads/writes a real string[] — no manual JSON.stringify/parse needed.
+  // Order IDs bundled into this payout request, stored as jsonb. The
+  // .$type<string[]>() call tells Drizzle the inferred type without altering
+  // the column — no manual JSON.stringify / JSON.parse is needed at runtime.
   orderIds: jsonb("orderIds").$type<string[]>().notNull(),
   amount: doublePrecision("amount").notNull(),
   status: text("status", { enum: payoutRequestStatuses })
@@ -256,7 +267,10 @@ export const payoutRequest = pgTable("payout_request", {
 })
 
 // =============================================================================
-// Orders (lifecycle timestamps embedded; replaces separate audit log)
+// Orders
+//
+// All lifecycle timestamps are embedded directly on the order row rather than
+// in a separate audit log table. Fields are null until their stage is reached.
 // =============================================================================
 
 export const orderDeliveryTypes = ["STANDARD", "FRAGILE"] as const
@@ -300,28 +314,28 @@ export const order = pgTable("order", {
   status: text("status", { enum: orderStatuses }).notNull().default("PENDING"),
   createdAt: ts("createdAt").notNull().defaultNow(),
 
-  // Phase 4: Admin approves order and assigns pickup rider.
+  // Admin approval and pickup rider assignment.
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
   pickupRiderId: text("pickupRiderId").references(() => rider.id),
   assignedAt: ts("assignedAt"),
 
-  // Phase 5: Pickup rider collects parcel from merchant.
+  // Pickup rider collects parcel from merchant.
   pickedUpAt: ts("pickedUpAt"),
 
-  // Phase 6: Parcel received at warehouse.
+  // Parcel received at warehouse.
   warehouseId: text("warehouseId").references(() => warehouse.id),
   receivedAtWarehouseAt: ts("receivedAtWarehouseAt"),
   // Name of the Warehouse Admin who logged the parcel in.
   receivedByWarehouse: text("receivedByWarehouse"),
 
-  // Phase 7: Warehouse Admin assigns delivery rider and dispatches parcel.
+  // Warehouse Admin assigns delivery rider and dispatches parcel.
   deliveryRiderId: text("deliveryRiderId").references(() => rider.id),
   dispatchedAt: ts("dispatchedAt"),
   // Name of the Warehouse Admin who dispatched.
   dispatchedBy: text("dispatchedBy"),
 
-  // Phase 8: Delivery rider heads out and attempts delivery.
+  // Delivery rider heads out and attempts delivery.
   outForDeliveryAt: ts("outForDeliveryAt"),
   // Successful delivery.
   deliveredAt: ts("deliveredAt"),
@@ -333,7 +347,7 @@ export const order = pgTable("order", {
   failureNote: text("failureNote"),
   deliveryAttempts: integer("deliveryAttempts").notNull().default(0),
 
-  // Phase 8B: Warehouse Admin resolves a failed attempt.
+  // Warehouse Admin resolves a failed delivery attempt.
   failedResolvedAt: ts("failedResolvedAt"),
   // Name of the Warehouse Admin who resolved the exception.
   failedResolvedBy: text("failedResolvedBy"),
@@ -341,10 +355,11 @@ export const order = pgTable("order", {
   returnedAt: ts("returnedAt"),
   returnReason: text("returnReason"),
 
-  // Phase 9: COD reconciliation — rider settles cash with Warehouse Admin.
+  // COD reconciliation — rider settles cash with Warehouse Admin.
   codSettledAt: ts("codSettledAt"),
   codSettledBy: text("codSettledBy"),
-  // Payout request this order is attached to. While set (and not REJECTED)
-  // the order is locked and cannot be added to another request.
+  // Payout request this order is attached to. Presence of this field (combined
+  // with a non-REJECTED request status) locks the order so it cannot be
+  // included in a second payout request.
   payoutRequestId: text("payoutRequestId").references(() => payoutRequest.id),
 })
