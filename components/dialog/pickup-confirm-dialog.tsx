@@ -5,7 +5,6 @@ import {
   Loader2,
   PackageCheck,
   MapPin,
-  Phone,
   Package,
   Store,
 } from "lucide-react"
@@ -101,11 +100,6 @@ export function PickupConfirmDialog({
             icon={Package}
             label="Parcel"
             value={`${order.parcelWeightKg} KG · ${order.deliveryType}`}
-          />
-          <InfoRow
-            icon={Phone}
-            label="Recipient"
-            value={`${order.recipientName} · ${order.recipientPhone}`}
           />
         </div>
 

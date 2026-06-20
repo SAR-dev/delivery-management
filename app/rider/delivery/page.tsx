@@ -18,14 +18,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
 export default function RiderDeliveryQueuePage() {
-  const { currentUser, currentRider, orders, merchants, markOutForDelivery } =
+  const { currentUser, currentRider, orders, markOutForDelivery } =
     usePlatform()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
 
   // All orders dispatched to this rider for delivery.
   const myDeliveries = useMemo(
@@ -59,6 +56,9 @@ export default function RiderDeliveryQueuePage() {
     }
   }
 
+  // Delivery is a recipient-facing step — the rider only needs to know who
+  // they're delivering to and where. Merchant/pickup details aren't
+  // relevant anymore, so they're left off this view entirely.
   const columns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -66,12 +66,9 @@ export default function RiderDeliveryQueuePage() {
       sortable: true,
       sortValue: (o) => o.code,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
+        <span className="text-muted-foreground font-mono text-xs">
+          {o.code}
+        </span>
       ),
     },
     {
@@ -206,9 +203,9 @@ export default function RiderDeliveryQueuePage() {
             getRowKey={(o) => o.id}
             initialSortId="order"
             searchable
-            searchPlaceholder="Search code, merchant, recipient, city"
+            searchPlaceholder="Search code, recipient, city"
             getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
+              `${o.code} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
             }
             emptyMessage={
               tab === "TO_DELIVER"
