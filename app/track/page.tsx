@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, Suspense, useEffect, useMemo, useState } from "react"
+import { Fragment, Suspense, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -213,7 +213,7 @@ function TrackContent() {
           o.id.toUpperCase() === normalized,
       ) ?? null
     )
-  }, [orders, isReady])
+  }, [orders, isReady, submittedCode])
 
   const merchant = useMemo(
     () =>
@@ -257,14 +257,7 @@ function TrackContent() {
   const notFound =
     isReady && searched && submittedCode.trim() !== "" && !order
 
-  // Show a simple alert when parcel is not found
-  useEffect(() => {
-    if (notFound) {
-      alert(`No parcel found for "${submittedCode}".\nDouble-check your tracking code and try again.`)
-      setSearched(false)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notFound])
+
 
   const statusInfo = order ? STATUS_COPY[order.status] : null
 
@@ -330,6 +323,15 @@ function TrackContent() {
             Track <ArrowRight className="size-3.5" />
           </button>
         </form>
+
+        {/* Not found */}
+        {notFound && (
+          <p className="text-muted-foreground mx-auto mt-4 max-w-sm text-center text-sm">
+            No parcel found for{" "}
+            <span className="text-foreground font-mono">{submittedCode}</span>.
+            Double-check your tracking code and try again.
+          </p>
+        )}
 
         {/* Hint */}
         {!order && !notFound && !isLoading && !searched && (
@@ -423,64 +425,17 @@ function TrackContent() {
               </div>
             </div>
 
-            {/* Who's handling the parcel */}
-            {(pickupRider || warehouse || deliveryRider) && (
-              <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
-                <p className="text-muted-foreground mb-4 text-xs font-semibold tracking-widest uppercase">
-                  Who&apos;s handling your parcel
-                </p>
-                <ul className="space-y-3">
-                  {pickupRider && (
-                    <HandlerRow
-                      icon={Bike}
-                      role="Pickup rider"
-                      name={pickupRider.name}
-                      detail={[maskPhone(pickupRider.phone), pickupRider.zone]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.pickedUpAt)}
-                    />
-                  )}
-                  {warehouse && (
-                    <HandlerRow
-                      icon={Warehouse}
-                      role="Sorting hub"
-                      name={warehouse.name}
-                      detail={[
-                        warehouse.city,
-                        order.receivedByWarehouse
-                          ? `Logged by ${order.receivedByWarehouse}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.receivedAtWarehouseAt)}
-                    />
-                  )}
-                  {deliveryRider && (
-                    <HandlerRow
-                      icon={Truck}
-                      role="Delivery rider"
-                      name={deliveryRider.name}
-                      detail={[
-                        maskPhone(deliveryRider.phone),
-                        deliveryRider.zone,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      done={Boolean(order.deliveredAt)}
-                    />
-                  )}
-                </ul>
-              </div>
-            )}
-
             {/* Timeline card */}
             <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
               <p className="text-muted-foreground mb-5 text-xs font-semibold tracking-widest uppercase">
                 Delivery progress
               </p>
-              <InlineTimeline order={order} />
+              <InlineTimeline
+                order={order}
+                pickupRider={pickupRider}
+                warehouse={warehouse}
+                deliveryRider={deliveryRider}
+              />
             </div>
           </div>
         )}
@@ -489,48 +444,63 @@ function TrackContent() {
   )
 }
 
-function HandlerRow({
-                      icon: Icon,
-                      role,
-                      name,
-                      detail,
-                      done,
-                    }: {
-  icon: React.ComponentType<{ className?: string }>
-  role: string
-  name: string
-  detail?: string
-  done?: boolean
-}) {
-  return (
-    <li className="flex items-center gap-3">
-      <span
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-full border",
-          done
-            ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
-            : "border-border bg-muted text-muted-foreground",
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-          {role}
-        </p>
-        <p className="truncate text-sm font-medium">{name}</p>
-        {detail && (
-          <p className="text-muted-foreground truncate text-xs">{detail}</p>
-        )}
-      </div>
-    </li>
-  )
-}
+type HandlerInfo = { name: string; detail?: string } | null
 
-function InlineTimeline({ order }: { order: Order }) {
+function InlineTimeline({
+                          order,
+                          pickupRider,
+                          warehouse,
+                          deliveryRider,
+                        }: {
+  order: Order
+  pickupRider: { name: string; phone: string; zone: string } | null
+  warehouse: { name: string; city: string } | null
+  deliveryRider: { name: string; phone: string; zone: string } | null
+}) {
   const currentRank = STATUS_RANK[order.status]
   const isReturned = order.status === "RETURNED"
   const isFailed = order.status === "FAILED_ATTEMPT"
+
+  // Map step keys to their handler info
+  const stepHandlers: Partial<Record<StepKey, HandlerInfo>> = {
+    PICKED_UP: pickupRider
+      ? {
+        name: pickupRider.name,
+        detail: [maskPhone(pickupRider.phone), pickupRider.zone]
+          .filter(Boolean)
+          .join(" · "),
+      }
+      : null,
+    IN_WAREHOUSE: warehouse
+      ? {
+        name: warehouse.name,
+        detail: [
+          warehouse.city,
+          order.receivedByWarehouse
+            ? `Logged by ${order.receivedByWarehouse}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      }
+      : null,
+    OUT_FOR_DELIVERY: deliveryRider
+      ? {
+        name: deliveryRider.name,
+        detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+          .filter(Boolean)
+          .join(" · "),
+      }
+      : null,
+    DELIVERED: deliveryRider
+      ? {
+        name: deliveryRider.name,
+        detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+          .filter(Boolean)
+          .join(" · "),
+      }
+      : null,
+  }
 
   return (
     <ol className="relative space-y-0">
@@ -544,6 +514,7 @@ function InlineTimeline({ order }: { order: Order }) {
         const isCompleted = reached && !isCurrent
         const Icon = step.icon
         const stamp = formatStamp(step.timestamp(order))
+        const handler = stepHandlers[step.key] ?? null
 
         // After OUT_FOR_DELIVERY, inject exception nodes before DELIVERED
         const showFailedAfter = step.key === "OUT_FOR_DELIVERY" && isFailed
@@ -570,7 +541,7 @@ function InlineTimeline({ order }: { order: Order }) {
                 {(!isLast || hasExceptionAfter) && (
                   <span
                     className={cn(
-                      "my-1 min-h-7 w-0.5 flex-1 rounded-full",
+                      "mt-1 mb-0 w-0.5 flex-1 rounded-full",
                       isCompleted || (isCurrent && currentRank > step.rank)
                         ? "bg-chart-2/50"
                         : "bg-border",
@@ -581,13 +552,7 @@ function InlineTimeline({ order }: { order: Order }) {
               </div>
 
               {/* Content */}
-              <div
-                className={cn(
-                  "pb-7",
-                  isLast && !hasExceptionAfter && "pb-0",
-                  "pt-0.5",
-                )}
-              >
+              <div className={cn("pb-6", isLast && !hasExceptionAfter && "pb-1", "pt-0.5 min-w-0 flex-1")}>
                 <div className="flex flex-wrap items-center gap-2">
                   <p
                     className={cn(
@@ -612,6 +577,17 @@ function InlineTimeline({ order }: { order: Order }) {
                   <p className="text-muted-foreground/50 mt-1 text-xs">
                     {step.description}
                   </p>
+                )}
+                {handler && reached && (
+                  <div className="mt-2">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      {step.key === "IN_WAREHOUSE" ? "Sorting hub" : "Rider"}
+                    </p>
+                    <p className="text-foreground text-xs font-medium">{handler.name}</p>
+                    {handler.detail && (
+                      <p className="text-muted-foreground text-xs">{handler.detail}</p>
+                    )}
+                  </div>
                 )}
               </div>
             </li>
