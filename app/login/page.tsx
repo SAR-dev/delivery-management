@@ -1,6 +1,6 @@
 "use client"
 
-import {FormEvent, useEffect, useState} from "react"
+import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2, Lock, ShieldCheck, FlaskConical } from "lucide-react"
@@ -27,7 +27,13 @@ import {
 } from "@/components/ui/select"
 import { SEED_CREDENTIALS } from "@/lib/db/seed-credentials"
 
-const ROLES_ORDER = ["Super Admin", "Admin", "Warehouse Admin", "Merchant", "Rider"]
+const ROLES_ORDER = [
+  "Super Admin",
+  "Admin",
+  "Warehouse Admin",
+  "Merchant",
+  "Rider",
+]
 const grouped = ROLES_ORDER.map((role) => ({
   role,
   users: SEED_CREDENTIALS.filter((u) => u.role === role),
@@ -73,13 +79,13 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen flex-col lg:flex-row">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute top-4 right-4 z-10">
         <ThemeToggle className="bg-background/80 backdrop-blur" />
       </div>
       {/* Brand panel */}
-      <section className="relative hidden flex-1 flex-col justify-between bg-sidebar p-12 text-sidebar-foreground lg:flex">
+      <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
         <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
             <ShieldCheck className="size-5" />
           </div>
           <span className="text-lg font-semibold tracking-tight">
@@ -88,19 +94,19 @@ export default function LoginPage() {
         </div>
 
         <div className="max-w-md">
-          <p className="text-sm font-medium uppercase tracking-widest text-sidebar-primary">
+          <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
             B2B Delivery Platform
           </p>
-          <h1 className="mt-4 text-balance text-4xl font-semibold leading-tight">
+          <h1 className="mt-4 text-4xl leading-tight font-semibold text-balance">
             Everything you need, in one place.
           </h1>
-          <p className="mt-4 text-pretty leading-relaxed text-sidebar-foreground/70">
+          <p className="text-sidebar-foreground/70 mt-4 leading-relaxed text-pretty">
             Whether you're managing deliveries, tracking orders, or running
             operations — sign in to access your workspace.
           </p>
         </div>
 
-        <p className="text-xs text-sidebar-foreground/50">
+        <p className="text-sidebar-foreground/50 text-xs">
           {"\u00A9"} {new Date().getFullYear()} ParcelFlow. Internal use only.
         </p>
       </section>
@@ -109,7 +115,7 @@ export default function LoginPage() {
       <section className="flex flex-1 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
               <ShieldCheck className="size-5" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
@@ -126,13 +132,13 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent>
               {/* Dev credentials picker */}
-              <div className="mb-4 rounded-md border border-dashed border-border bg-muted/40 p-3">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <div className="border-border bg-muted/40 mb-4 rounded-md border border-dashed p-3">
+                <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
                   <FlaskConical className="size-3.5" />
                   Dev — fill seed credentials
                 </p>
                 <Select onValueChange={fillCredentials}>
-                  <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue placeholder="Pick a user…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -140,7 +146,11 @@ export default function LoginPage() {
                       <SelectGroup key={role}>
                         <SelectLabel className="text-xs">{role}</SelectLabel>
                         {users.map((u) => (
-                          <SelectItem key={u.email} value={u.email} className="text-xs">
+                          <SelectItem
+                            key={u.email}
+                            value={u.email}
+                            className="text-xs"
+                          >
                             {u.label}
                           </SelectItem>
                         ))}
@@ -179,7 +189,7 @@ export default function LoginPage() {
                 {error ? (
                   <p
                     role="alert"
-                    className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                    className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm"
                   >
                     {error}
                   </p>
@@ -200,11 +210,11 @@ export default function LoginPage() {
                 </Button>
               </form>
 
-              <p className="mt-6 text-center text-sm text-muted-foreground">
+              <p className="text-muted-foreground mt-6 text-center text-sm">
                 Are you a merchant?{" "}
                 <Link
                   href="/register"
-                  className="font-medium text-primary hover:underline"
+                  className="text-primary font-medium hover:underline"
                 >
                   Create an account
                 </Link>

@@ -1,6 +1,6 @@
 "use client"
 
-import {Fragment, Suspense, useMemo, useState} from "react"
+import { Fragment, Suspense, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -32,7 +32,10 @@ function maskPhone(phone: string) {
 }
 
 function generalArea(order: Order) {
-  const parts = order.deliveryAddress.split(",").map((p) => p.trim()).filter(Boolean)
+  const parts = order.deliveryAddress
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean)
   const area = parts.length > 1 ? parts[parts.length - 2] : parts[0]
   return [area, order.deliveryCity].filter(Boolean).join(", ")
 }
@@ -62,7 +65,13 @@ const STATUS_RANK: Record<OrderStatus, number> = {
   RETURNED: 4,
 }
 
-type StepKey = "PLACED" | "APPROVED" | "PICKED_UP" | "IN_WAREHOUSE" | "OUT_FOR_DELIVERY" | "DELIVERED"
+type StepKey =
+  | "PLACED"
+  | "APPROVED"
+  | "PICKED_UP"
+  | "IN_WAREHOUSE"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
 
 const STEPS: {
   key: StepKey
@@ -122,7 +131,10 @@ const STEPS: {
   },
 ]
 
-const STATUS_COPY: Record<OrderStatus, { headline: string; sub: string; color: string }> = {
+const STATUS_COPY: Record<
+  OrderStatus,
+  { headline: string; sub: string; color: string }
+> = {
   PENDING: {
     headline: "Awaiting approval",
     sub: "Your order is in the queue — we'll pick it up shortly.",
@@ -203,22 +215,32 @@ function TrackContent() {
   }, [orders])
 
   const merchant = useMemo(
-    () => (order ? merchants.find((m) => m.id === order.merchantId) ?? null : null),
+    () =>
+      order ? (merchants.find((m) => m.id === order.merchantId) ?? null) : null,
     [merchants, order],
   )
 
   const pickupRider = useMemo(
-    () => (order?.pickupRiderId ? riders.find((r) => r.id === order.pickupRiderId) ?? null : null),
+    () =>
+      order?.pickupRiderId
+        ? (riders.find((r) => r.id === order.pickupRiderId) ?? null)
+        : null,
     [riders, order],
   )
 
   const deliveryRider = useMemo(
-    () => (order?.deliveryRiderId ? riders.find((r) => r.id === order.deliveryRiderId) ?? null : null),
+    () =>
+      order?.deliveryRiderId
+        ? (riders.find((r) => r.id === order.deliveryRiderId) ?? null)
+        : null,
     [riders, order],
   )
 
   const warehouse = useMemo(
-    () => (order?.warehouseId ? warehouses.find((w) => w.id === order.warehouseId) ?? null : null),
+    () =>
+      order?.warehouseId
+        ? (warehouses.find((w) => w.id === order.warehouseId) ?? null)
+        : null,
     [warehouses, order],
   )
 
@@ -226,63 +248,75 @@ function TrackContent() {
     e.preventDefault()
     const trimmed = query.trim()
     setSearched(true)
-    router.replace(trimmed ? `/track?code=${encodeURIComponent(trimmed)}` : "/track")
+    router.replace(
+      trimmed ? `/track?code=${encodeURIComponent(trimmed)}` : "/track",
+    )
   }
 
   const notFound = searched && submittedCode.trim() !== "" && !order
   const statusInfo = order ? STATUS_COPY[order.status] : null
 
   return (
-    <main className="min-h-screen" style={{ background: "var(--track-bg, oklch(0.985 0.002 247))" }}>
+    <main
+      className="min-h-screen"
+      style={{ background: "var(--track-bg, oklch(0.985 0.002 247))" }}
+    >
       {/* Header */}
-      <header className="border-b border-border/60 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+      <header className="border-border/60 bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-5 py-3.5">
-          <Link href="/track" className="flex items-center gap-2.5 group">
-            <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm group-hover:shadow-md transition-shadow">
+          <Link href="/track" className="group flex items-center gap-2.5">
+            <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md shadow-sm transition-shadow group-hover:shadow-md">
               <Package className="size-3.5" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">ParcelFlow</span>
+            <span className="text-sm font-semibold tracking-tight">
+              ParcelFlow
+            </span>
           </Link>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-muted-foreground sm:inline font-medium">Order Tracking</span>
+            <span className="text-muted-foreground hidden text-xs font-medium sm:inline">
+              Order Tracking
+            </span>
             <ThemeToggle />
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-2xl px-5 py-12">
-
         {/* Hero */}
         {!order && (
           <div className="mb-10 text-center">
-            <div className="inline-flex size-14 items-center justify-center rounded-2xl bg-primary/8 mb-5 ring-1 ring-primary/15">
-              <Package className="size-6 text-primary" />
+            <div className="bg-primary/8 ring-primary/15 mb-5 inline-flex size-14 items-center justify-center rounded-2xl ring-1">
+              <Package className="text-primary size-6" />
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight mb-2.5">
+            <h1 className="mb-2.5 text-3xl font-semibold tracking-tight">
               Track your parcel
             </h1>
-            <p className="text-muted-foreground text-sm max-w-xs mx-auto leading-relaxed">
-              Enter your tracking code for live delivery updates — no account needed.
+            <p className="text-muted-foreground mx-auto max-w-xs text-sm leading-relaxed">
+              Enter your tracking code for live delivery updates — no account
+              needed.
             </p>
           </div>
         )}
 
         {/* Search */}
-        <form onSubmit={handleSubmit} className={cn("mx-auto flex max-w-lg gap-2.5", order && "mb-8")}>
+        <form
+          onSubmit={handleSubmit}
+          className={cn("mx-auto flex max-w-lg gap-2.5", order && "mb-8")}
+        >
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Tracking code — e.g. PF-100231"
-              className="flex h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
+              className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-lg border pr-3.5 pl-9 text-sm transition-shadow focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none"
               aria-label="Tracking code"
               autoFocus
             />
           </div>
           <button
             type="submit"
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring inline-flex h-10 items-center gap-1.5 rounded-lg px-4 text-sm font-medium shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Track <ArrowRight className="size-3.5" />
           </button>
@@ -290,24 +324,26 @@ function TrackContent() {
 
         {/* Hint */}
         {!order && !notFound && !searched && (
-          <p className="mt-4 text-center text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-4 text-center text-xs">
             Your code is printed on the delivery note — it starts with{" "}
-            <span className="font-mono text-foreground">PF-</span>
+            <span className="text-foreground font-mono">PF-</span>
           </p>
         )}
 
         {/* Not found */}
         {notFound && (
-          <div className="mx-auto max-w-sm mt-2">
-            <div className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
-              <div className="inline-flex size-12 items-center justify-center rounded-full bg-muted mb-4">
-                <PackageX className="size-5 text-muted-foreground" />
+          <div className="mx-auto mt-2 max-w-sm">
+            <div className="border-border bg-card rounded-xl border p-8 text-center shadow-sm">
+              <div className="bg-muted mb-4 inline-flex size-12 items-center justify-center rounded-full">
+                <PackageX className="text-muted-foreground size-5" />
               </div>
-              <p className="font-medium text-sm">No parcel found</p>
-              <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+              <p className="text-sm font-medium">No parcel found</p>
+              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
                 We couldn&apos;t find a parcel for{" "}
-                <span className="font-mono text-foreground">{submittedCode}</span>.{" "}
-                Double-check your tracking code and try again.
+                <span className="text-foreground font-mono">
+                  {submittedCode}
+                </span>
+                . Double-check your tracking code and try again.
               </p>
             </div>
           </div>
@@ -316,47 +352,65 @@ function TrackContent() {
         {/* Result */}
         {order && statusInfo && (
           <div className="space-y-4">
-
             {/* Status hero card */}
-            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-
+            <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
               <div className="p-5 pb-4">
-                <div className="flex items-start justify-between gap-4 mb-1">
+                <div className="mb-1 flex items-start justify-between gap-4">
                   <div>
-                    <p className={cn("text-lg font-semibold tracking-tight", statusInfo.color)}>
+                    <p
+                      className={cn(
+                        "text-lg font-semibold tracking-tight",
+                        statusInfo.color,
+                      )}
+                    >
                       {statusInfo.headline}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{statusInfo.sub}</p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      {statusInfo.sub}
+                    </p>
                   </div>
-                  <span className="font-mono text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-md shrink-0 mt-0.5">
+                  <span className="text-muted-foreground bg-muted mt-0.5 shrink-0 rounded-md px-2.5 py-1 font-mono text-xs">
                     {order.code}
                   </span>
                 </div>
               </div>
 
               {/* Meta strip */}
-              <div className="border-t border-border/60 px-5 py-3.5 flex flex-wrap gap-x-6 gap-y-2.5">
+              <div className="border-border/60 flex flex-wrap gap-x-6 gap-y-2.5 border-t px-5 py-3.5">
                 {merchant && (
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Store className="size-3.5 text-muted-foreground shrink-0" />
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Store className="text-muted-foreground size-3.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">From</p>
-                      <p className="text-xs font-medium truncate">{merchant.businessName}</p>
+                      <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                        From
+                      </p>
+                      <p className="truncate text-xs font-medium">
+                        {merchant.businessName}
+                      </p>
                     </div>
                   </div>
                 )}
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <MapPin className="size-3.5 text-muted-foreground shrink-0" />
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <MapPin className="text-muted-foreground size-3.5 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">To</p>
-                    <p className="text-xs font-medium truncate">{generalArea(order)}</p>
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      To
+                    </p>
+                    <p className="truncate text-xs font-medium">
+                      {generalArea(order)}
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <User className="size-3.5 text-muted-foreground shrink-0" />
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <User className="text-muted-foreground size-3.5 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Customer</p>
-                    <p className="text-xs font-medium truncate">{order.recipientName.split(" ")[0]} · {maskPhone(order.recipientPhone)}</p>
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      Customer
+                    </p>
+                    <p className="truncate text-xs font-medium">
+                      {order.recipientName.split(" ")[0]} ·{" "}
+                      {maskPhone(order.recipientPhone)}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -364,8 +418,8 @@ function TrackContent() {
 
             {/* Who's handling the parcel */}
             {(pickupRider || warehouse || deliveryRider) && (
-              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
-                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
+              <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
+                <p className="text-muted-foreground mb-4 text-xs font-semibold tracking-widest uppercase">
                   Who&apos;s handling your parcel
                 </p>
                 <ul className="space-y-3">
@@ -374,7 +428,9 @@ function TrackContent() {
                       icon={Bike}
                       role="Pickup rider"
                       name={pickupRider.name}
-                      detail={[maskPhone(pickupRider.phone), pickupRider.zone].filter(Boolean).join(" · ")}
+                      detail={[maskPhone(pickupRider.phone), pickupRider.zone]
+                        .filter(Boolean)
+                        .join(" · ")}
                       done={Boolean(order.pickedUpAt)}
                     />
                   )}
@@ -383,7 +439,12 @@ function TrackContent() {
                       icon={Warehouse}
                       role="Sorting hub"
                       name={warehouse.name}
-                      detail={[warehouse.city, order.receivedByWarehouse ? `Logged by ${order.receivedByWarehouse}` : null]
+                      detail={[
+                        warehouse.city,
+                        order.receivedByWarehouse
+                          ? `Logged by ${order.receivedByWarehouse}`
+                          : null,
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                       done={Boolean(order.receivedAtWarehouseAt)}
@@ -394,7 +455,12 @@ function TrackContent() {
                       icon={Truck}
                       role="Delivery rider"
                       name={deliveryRider.name}
-                      detail={[maskPhone(deliveryRider.phone), deliveryRider.zone].filter(Boolean).join(" · ")}
+                      detail={[
+                        maskPhone(deliveryRider.phone),
+                        deliveryRider.zone,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                       done={Boolean(order.deliveredAt)}
                     />
                   )}
@@ -403,13 +469,12 @@ function TrackContent() {
             )}
 
             {/* Timeline card */}
-            <div className="rounded-xl border border-border bg-card shadow-sm p-5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-5">
+            <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
+              <p className="text-muted-foreground mb-5 text-xs font-semibold tracking-widest uppercase">
                 Delivery progress
               </p>
               <InlineTimeline order={order} />
             </div>
-
           </div>
         )}
       </div>
@@ -443,9 +508,13 @@ function HandlerRow({
         <Icon className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">{role}</p>
-        <p className="text-sm font-medium truncate">{name}</p>
-        {detail && <p className="text-xs text-muted-foreground truncate">{detail}</p>}
+        <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+          {role}
+        </p>
+        <p className="truncate text-sm font-medium">{name}</p>
+        {detail && (
+          <p className="text-muted-foreground truncate text-xs">{detail}</p>
+        )}
       </div>
     </li>
   )
@@ -494,7 +563,7 @@ function InlineTimeline({ order }: { order: Order }) {
                 {(!isLast || hasExceptionAfter) && (
                   <span
                     className={cn(
-                      "w-0.5 flex-1 min-h-7 my-1 rounded-full",
+                      "my-1 min-h-7 w-0.5 flex-1 rounded-full",
                       isCompleted || (isCurrent && currentRank > step.rank)
                         ? "bg-chart-2/50"
                         : "bg-border",
@@ -505,27 +574,37 @@ function InlineTimeline({ order }: { order: Order }) {
               </div>
 
               {/* Content */}
-              <div className={cn("pb-7", isLast && !hasExceptionAfter && "pb-0", "pt-0.5")}>
-                <div className="flex items-center gap-2 flex-wrap">
+              <div
+                className={cn(
+                  "pb-7",
+                  isLast && !hasExceptionAfter && "pb-0",
+                  "pt-0.5",
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-2">
                   <p
                     className={cn(
-                      "text-sm font-medium leading-none",
+                      "text-sm leading-none font-medium",
                       reached ? "text-foreground" : "text-muted-foreground/60",
                     )}
                   >
                     {step.label}
                   </p>
                   {isCurrent && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                      <span className="size-1.5 rounded-full bg-primary inline-block animate-pulse" />
+                    <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                      <span className="bg-primary inline-block size-1.5 animate-pulse rounded-full" />
                       Live
                     </span>
                   )}
                 </div>
                 {stamp ? (
-                  <p className="mt-1 text-xs tabular-nums text-muted-foreground">{stamp}</p>
+                  <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                    {stamp}
+                  </p>
                 ) : (
-                  <p className="mt-1 text-xs text-muted-foreground/50">{step.description}</p>
+                  <p className="text-muted-foreground/50 mt-1 text-xs">
+                    {step.description}
+                  </p>
                 )}
               </div>
             </li>
@@ -533,16 +612,22 @@ function InlineTimeline({ order }: { order: Order }) {
             {showFailedAfter && (
               <li key="FAILED_ATTEMPT" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-destructive/40 bg-destructive/10 text-destructive">
+                  <span className="border-destructive/40 bg-destructive/10 text-destructive flex size-8 shrink-0 items-center justify-center rounded-full border-2">
                     <XCircle className="size-3.5" />
                   </span>
                   {/* Connector down to Delivered */}
-                  <span className="w-0.5 flex-1 min-h-7 my-1 rounded-full bg-border" aria-hidden="true" />
+                  <span
+                    className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full"
+                    aria-hidden="true"
+                  />
                 </div>
                 <div className="pt-0.5 pb-7">
-                  <p className="text-sm font-medium text-destructive">Delivery attempt failed</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {formatStamp(order.failedAttemptAt) ?? "A new attempt will be scheduled."}
+                  <p className="text-destructive text-sm font-medium">
+                    Delivery attempt failed
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {formatStamp(order.failedAttemptAt) ??
+                      "A new attempt will be scheduled."}
                   </p>
                 </div>
               </li>
@@ -551,16 +636,20 @@ function InlineTimeline({ order }: { order: Order }) {
             {showReturnedAfter && (
               <li key="RETURNED" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-border bg-muted text-muted-foreground">
+                  <span className="border-border bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full border-2">
                     <Undo2 className="size-3.5" />
                   </span>
                   {/* Connector down to Delivered */}
-                  <span className="w-0.5 flex-1 min-h-7 my-1 rounded-full bg-border" aria-hidden="true" />
+                  <span
+                    className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full"
+                    aria-hidden="true"
+                  />
                 </div>
                 <div className="pt-0.5 pb-7">
                   <p className="text-sm font-medium">Returned to merchant</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {formatStamp(order.returnedAt) ?? "This parcel was returned and will not be delivered."}
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {formatStamp(order.returnedAt) ??
+                      "This parcel was returned and will not be delivered."}
                   </p>
                 </div>
               </li>

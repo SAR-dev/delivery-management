@@ -6,8 +6,8 @@ import {
   doublePrecision,
   integer,
   jsonb,
-} from "drizzle-orm/pg-core";
-import { createId } from "@paralleldrive/cuid2";
+} from "drizzle-orm/pg-core"
+import { createId } from "@paralleldrive/cuid2"
 
 // =============================================================================
 // Shared column helpers
@@ -18,7 +18,8 @@ import { createId } from "@paralleldrive/cuid2";
 // (mock data, React state, anything crossing a server/client boundary) has
 // always represented dates, and means the inferred row types below need no
 // extra conversion layer to be used directly as app-level types.
-const ts = (name: string) => timestamp(name, { mode: "string", withTimezone: true });
+const ts = (name: string) =>
+  timestamp(name, { mode: "string", withTimezone: true })
 
 // =============================================================================
 // Better Auth tables (camelCase column names required by Better Auth)
@@ -42,7 +43,7 @@ export const user = pgTable("user", {
   banned: boolean("banned"),
   banReason: text("banReason"),
   banExpires: ts("banExpires"),
-});
+})
 
 export const session = pgTable("session", {
   id: text("id").primaryKey(),
@@ -55,7 +56,7 @@ export const session = pgTable("session", {
   userId: text("userId")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
-});
+})
 
 export const account = pgTable("account", {
   id: text("id").primaryKey(),
@@ -73,7 +74,7 @@ export const account = pgTable("account", {
   password: text("password"),
   createdAt: ts("createdAt").notNull().defaultNow(),
   updatedAt: ts("updatedAt").notNull().defaultNow(),
-});
+})
 
 export const verification = pgTable("verification", {
   id: text("id").primaryKey(),
@@ -82,7 +83,7 @@ export const verification = pgTable("verification", {
   expiresAt: ts("expiresAt").notNull(),
   createdAt: ts("createdAt").defaultNow(),
   updatedAt: ts("updatedAt").defaultNow(),
-});
+})
 
 // =============================================================================
 // Platform profile (extends a Better Auth user with role + domain links)
@@ -99,7 +100,7 @@ export const profileRoles = [
   "WAREHOUSE_ADMIN",
   "MERCHANT",
   "RIDER",
-] as const;
+] as const
 
 export const profile = pgTable("profile", {
   userId: text("userId")
@@ -112,31 +113,35 @@ export const profile = pgTable("profile", {
   canManagePricing: boolean("canManagePricing").notNull().default(false),
   // FK-like references; kept as plain text to avoid circular deps.
   warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
-  merchantId: text("merchantId"),   // MERCHANT: their merchant business
-  riderId: text("riderId"),         // RIDER: their rider profile
+  merchantId: text("merchantId"), // MERCHANT: their merchant business
+  riderId: text("riderId"), // RIDER: their rider profile
   createdAt: ts("createdAt").notNull().defaultNow(),
-});
+})
 
 // =============================================================================
 // Warehouses
 // =============================================================================
 
 export const warehouse = pgTable("warehouse", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   name: text("name").notNull(),
   address: text("address").notNull(),
   city: text("city").notNull(),
   // Soft reference to a WAREHOUSE_ADMIN user id; no FK to avoid tight coupling.
   managedBy: text("managedBy"),
   isActive: boolean("isActive").notNull().default(true),
-});
+})
 
 // =============================================================================
 // Riders (standalone entity — not tightly coupled to a user row)
 // =============================================================================
 
 export const rider = pgTable("rider", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
   // Service zone the rider primarily covers.
@@ -146,23 +151,27 @@ export const rider = pgTable("rider", {
   warehouseId: text("warehouseId").references(() => warehouse.id, {
     onDelete: "set null",
   }),
-});
+})
 
 // =============================================================================
 // Merchants (standalone entity — owner contact info stored here directly)
 // =============================================================================
 
-export const merchantStatuses = ["PENDING", "ACTIVE", "SUSPENDED"] as const;
+export const merchantStatuses = ["PENDING", "ACTIVE", "SUSPENDED"] as const
 
 export const merchant = pgTable("merchant", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   businessName: text("businessName").notNull(),
   // Owner contact details captured at registration.
   ownerName: text("ownerName").notNull(),
   email: text("email").notNull(),
   phone: text("phone").notNull(),
   address: text("address").notNull(),
-  status: text("status", { enum: merchantStatuses }).notNull().default("PENDING"),
+  status: text("status", { enum: merchantStatuses })
+    .notNull()
+    .default("PENDING"),
   // Delivery pricing — set by an Admin after approval.
   baseRate: doublePrecision("baseRate").notNull().default(0),
   extraRatePerKg: doublePrecision("extraRatePerKg").notNull().default(0),
@@ -172,20 +181,22 @@ export const merchant = pgTable("merchant", {
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
   createdAt: ts("createdAt").notNull().defaultNow(),
-});
+})
 
 // =============================================================================
 // Pickup locations (simplified: no city, no is_default)
 // =============================================================================
 
 export const pickupLocation = pgTable("pickup_location", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   merchantId: text("merchantId")
     .notNull()
     .references(() => merchant.id, { onDelete: "cascade" }),
   label: text("label").notNull(),
   address: text("address").notNull(),
-});
+})
 
 // =============================================================================
 // Security money config (single-row table; row id = 'default')
@@ -204,7 +215,7 @@ export const securityConfig = pgTable("security_config", {
   updatedAt: ts("updatedAt").notNull().defaultNow(),
   // Name (not id) of the admin who last updated, matching frontend display.
   updatedBy: text("updatedBy").notNull(),
-});
+})
 
 // =============================================================================
 // Payout requests
@@ -215,10 +226,12 @@ export const payoutRequestStatuses = [
   "APPROVED",
   "PAID",
   "REJECTED",
-] as const;
+] as const
 
 export const payoutRequest = pgTable("payout_request", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   // Short human-friendly reference shown in the UI (e.g. PR-0001).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
@@ -240,13 +253,13 @@ export const payoutRequest = pgTable("payout_request", {
   reviewedAt: ts("reviewedAt"),
   rejectReason: text("rejectReason"),
   paidAt: ts("paidAt"),
-});
+})
 
 // =============================================================================
 // Orders (lifecycle timestamps embedded; replaces separate audit log)
 // =============================================================================
 
-export const orderDeliveryTypes = ["STANDARD", "FRAGILE"] as const;
+export const orderDeliveryTypes = ["STANDARD", "FRAGILE"] as const
 
 export const orderStatuses = [
   "PENDING",
@@ -258,10 +271,12 @@ export const orderStatuses = [
   "DELIVERED",
   "FAILED_ATTEMPT",
   "RETURNED",
-] as const;
+] as const
 
 export const order = pgTable("order", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
   // Short human-friendly tracking code (e.g. PF-000123).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
@@ -332,4 +347,4 @@ export const order = pgTable("order", {
   // Payout request this order is attached to. While set (and not REJECTED)
   // the order is locked and cannot be added to another request.
   payoutRequestId: text("payoutRequestId").references(() => payoutRequest.id),
-});
+})

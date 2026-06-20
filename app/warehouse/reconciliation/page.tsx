@@ -19,36 +19,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "UNSETTLED" | "SETTLED"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: string | number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function WarehouseReconciliationPage() {
   const {
@@ -119,7 +92,7 @@ export default function WarehouseReconciliationPage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -133,7 +106,7 @@ export default function WarehouseReconciliationPage() {
       sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
       cell: (o) => (
         <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="size-4 text-muted-foreground" />
+          <Bike className="text-muted-foreground size-4" />
           {rider(o.deliveryRiderId)?.name ?? "—"}
         </span>
       ),
@@ -157,7 +130,7 @@ export default function WarehouseReconciliationPage() {
       sortable: true,
       sortValue: (o) => o.deliveryCharge + o.securityMoney,
       cell: (o) => (
-        <span className="tabular-nums text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {formatTk(o.deliveryCharge + o.securityMoney)}
         </span>
       ),
@@ -169,7 +142,7 @@ export default function WarehouseReconciliationPage() {
       sortable: true,
       sortValue: (o) => o.productCost,
       cell: (o) => (
-        <span className="tabular-nums text-primary">
+        <span className="text-primary tabular-nums">
           {formatTk(o.productCost)}
         </span>
       ),
@@ -181,7 +154,7 @@ export default function WarehouseReconciliationPage() {
       sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
       cell: (o) =>
         o.codSettledAt ? (
-          <span className="flex items-center gap-1.5 text-sm text-chart-2">
+          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
             <CheckCircle2 className="size-4" />
             Settled by {o.codSettledBy ?? "Admin"}
           </span>
@@ -224,26 +197,28 @@ export default function WarehouseReconciliationPage() {
         description={`The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Awaiting settlement"
-          value={unsettled.length}
-          icon={HandCoins}
-          tone="bg-chart-3/15 text-chart-3"
-        />
-        <StatCard
-          label="Cash to collect"
-          value={formatTk(unsettledCash)}
-          icon={Banknote}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="Settled cash"
-          value={formatTk(settledCash)}
-          icon={Wallet}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Awaiting settlement",
+            value: unsettled.length,
+            icon: HandCoins,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Cash to collect",
+            value: formatTk(unsettledCash),
+            icon: Banknote,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Settled cash",
+            value: formatTk(settledCash),
+            icon: Wallet,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

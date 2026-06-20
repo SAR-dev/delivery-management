@@ -26,7 +26,7 @@ function StatusToggle({
         onCheckedChange={onToggle}
         aria-label={`Toggle active state for ${user.name}`}
       />
-      <span className="text-xs text-muted-foreground">
+      <span className="text-muted-foreground text-xs">
         {user.isActive ? "Active" : "Disabled"}
       </span>
     </div>
@@ -47,9 +47,7 @@ export default function TeamPage() {
 
   function handleToggleActive(user: User) {
     toggleAccountActive(user.id)
-    toast.success(
-      `${user.name} ${user.isActive ? "disabled" : "enabled"}.`,
-    )
+    toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
   }
 
   function handleTogglePricing(user: User) {
@@ -67,7 +65,7 @@ export default function TeamPage() {
     cell: (u) => (
       <div className="flex flex-col">
         <span className="font-medium">{u.name}</span>
-        <span className="text-xs text-muted-foreground sm:hidden">
+        <span className="text-muted-foreground text-xs sm:hidden">
           {u.email}
         </span>
       </div>
@@ -84,7 +82,7 @@ export default function TeamPage() {
     cell: (u) => (
       <div className="flex flex-col text-sm">
         <span>{u.email}</span>
-        <span className="text-xs text-muted-foreground">{u.phone}</span>
+        <span className="text-muted-foreground text-xs">{u.phone}</span>
       </div>
     ),
   }
@@ -117,7 +115,7 @@ export default function TeamPage() {
             onCheckedChange={() => handleTogglePricing(u)}
             aria-label={`Toggle pricing permission for ${u.name}`}
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {u.canManagePricing ? "Granted" : "Denied"}
           </span>
         </div>
@@ -191,7 +189,7 @@ export default function TeamPage() {
         </TabsContent>
       </Tabs>
 
-      <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+      <p className="text-muted-foreground mt-4 flex items-center gap-2 text-xs">
         <RoleBadge role="ADMIN" />
         Admins approve orders and assign pickup riders.
         <RoleBadge role="WAREHOUSE_ADMIN" />

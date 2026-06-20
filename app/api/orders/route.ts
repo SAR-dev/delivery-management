@@ -92,12 +92,17 @@ export async function POST(req: Request) {
   }
   if (parcelWeightKg > merchantRow.maxWeightKg) {
     return NextResponse.json(
-      { error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit.` },
+      {
+        error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit.`,
+      },
       { status: 400 },
     )
   }
 
-  const { total: deliveryCharge } = calcDeliveryCharge(merchantRow, parcelWeightKg)
+  const { total: deliveryCharge } = calcDeliveryCharge(
+    merchantRow,
+    parcelWeightKg,
+  )
 
   const [configRow] = await db
     .select()

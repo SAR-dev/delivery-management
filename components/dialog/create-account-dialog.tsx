@@ -46,7 +46,10 @@ export function CreateAccountDialog() {
 
   const unassignedWarehouses = warehouses.filter((w) => !w.managedBy)
 
-  function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+  function update<K extends keyof typeof form>(
+    key: K,
+    value: (typeof form)[K],
+  ) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -195,12 +198,12 @@ export function CreateAccountDialog() {
               </Select>
             </div>
           ) : (
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+            <div className="border-border flex items-start justify-between gap-4 rounded-lg border p-3">
               <div className="space-y-0.5">
                 <Label htmlFor="pricing" className="text-sm">
                   Can manage merchant pricing
                 </Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   Allow this Admin to set merchant base rates after approval.
                 </p>
               </div>
@@ -213,7 +216,11 @@ export function CreateAccountDialog() {
           )}
 
           <DialogFooter>
-            <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="w-full sm:w-auto"
+            >
               {submitting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (

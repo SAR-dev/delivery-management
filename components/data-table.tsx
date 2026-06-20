@@ -112,14 +112,16 @@ export function DataTable<T>({
   filters,
   toolbarActions,
 }: DataTableProps<T>) {
-  const [sortId, setSortId] = React.useState<string | null>(initialSortId ?? null)
+  const [sortId, setSortId] = React.useState<string | null>(
+    initialSortId ?? null,
+  )
   const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
   const [size, setSize] = React.useState(pageSize)
   const [page, setPage] = React.useState(1)
   const [query, setQuery] = React.useState("")
-  const [filterValues, setFilterValues] = React.useState<Record<string, string>>(
-    {},
-  )
+  const [filterValues, setFilterValues] = React.useState<
+    Record<string, string>
+  >({})
 
   const paginated = size > 0
 
@@ -175,7 +177,9 @@ export function DataTable<T>({
     return copy
   }, [filtered, columns, sortId, sortDir])
 
-  const totalPages = paginated ? Math.max(1, Math.ceil(sorted.length / size)) : 1
+  const totalPages = paginated
+    ? Math.max(1, Math.ceil(sorted.length / size))
+    : 1
 
   // Keep the current page within range when data or page size changes.
   React.useEffect(() => {
@@ -215,11 +219,11 @@ export function DataTable<T>({
   return (
     <div className={cn("flex flex-col", className)}>
       {showToolbar ? (
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="border-border flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
             {hasSearch ? (
               <div className="relative w-full sm:max-w-xs">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -240,7 +244,7 @@ export function DataTable<T>({
                           [f.id]: e.target.value,
                         }))
                       }
-                      className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                      className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
                     >
                       <option value="__all__">{f.label}: All</option>
                       {f.options.map((opt) => (
@@ -283,7 +287,7 @@ export function DataTable<T>({
                       type="button"
                       onClick={() => toggleSort(col)}
                       className={cn(
-                        "inline-flex cursor-pointer select-none items-center gap-1 rounded-sm font-medium transition-colors hover:text-foreground",
+                        "hover:text-foreground inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium transition-colors select-none",
                         isSorted ? "text-foreground" : "text-muted-foreground",
                         justifyClass[align],
                       )}
@@ -312,7 +316,7 @@ export function DataTable<T>({
             <TableRow>
               <TableCell
                 colSpan={columns.length}
-                className="py-10 text-center text-sm text-muted-foreground"
+                className="text-muted-foreground py-10 text-center text-sm"
               >
                 {emptyMessage}
               </TableCell>
@@ -342,8 +346,8 @@ export function DataTable<T>({
       </Table>
 
       {paginated && sorted.length > 0 ? (
-        <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3 text-muted-foreground">
+        <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-muted-foreground flex items-center gap-3">
             <span className="tabular-nums">
               {from}–{to} of {sorted.length}
             </span>
@@ -356,7 +360,7 @@ export function DataTable<T>({
                     setSize(Number(e.target.value))
                     setPage(1)
                   }}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                  className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
                 >
                   {pageSizeOptions.map((opt) => (
                     <option key={opt} value={opt}>

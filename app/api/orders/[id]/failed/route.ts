@@ -20,8 +20,13 @@ export async function PATCH(
   if (parsed.error) return parsed.error
   const { note } = parsed.data
 
-  const [orderRow] = await db.select().from(order).where(eq(order.id, id)).limit(1)
-  if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+  const [orderRow] = await db
+    .select()
+    .from(order)
+    .where(eq(order.id, id))
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
   if (orderRow.deliveryRiderId !== me.riderId) {
     return NextResponse.json(
       { error: "This delivery is not assigned to you." },

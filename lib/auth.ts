@@ -1,6 +1,6 @@
-import { betterAuth } from 'better-auth'
-import { admin } from 'better-auth/plugins'
-import { pool } from '@/lib/db'
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+import { pool } from "@/lib/db"
 
 export const auth = betterAuth({
   database: pool,
@@ -14,10 +14,12 @@ export const auth = betterAuth({
     autoSignIn: true,
   },
   trustedOrigins: [
-    ...(process.env.NODE_ENV === 'development'
-      ? ['http://localhost:3000']
+    ...(process.env.NODE_ENV === "development"
+      ? ["http://localhost:3000"]
       : []),
-    ...(process.env.BETTER_AUTH_DEV_URL ? [process.env.BETTER_AUTH_DEV_URL] : []),
+    ...(process.env.BETTER_AUTH_DEV_URL
+      ? [process.env.BETTER_AUTH_DEV_URL]
+      : []),
     ...(process.env.BETTER_AUTH_PRD_URL
       ? [process.env.BETTER_AUTH_PRD_URL]
       : []),

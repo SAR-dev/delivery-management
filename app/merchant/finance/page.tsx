@@ -25,44 +25,11 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: string | number
-  hint?: string
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+import { StatCardList } from "@/components/stat-card-list"
 
 export default function MerchantFinancePage() {
-  const {
-    currentMerchant,
-    merchantPayableOrders,
-    merchantPayoutRequests,
-  } = usePlatform()
+  const { currentMerchant, merchantPayableOrders, merchantPayoutRequests } =
+    usePlatform()
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const available = merchantPayableOrders.reduce(
@@ -97,7 +64,7 @@ export default function MerchantFinancePage() {
       cell: (o) => (
         <div className="leading-tight">
           <p className="font-medium">{o.recipientName}</p>
-          <p className="text-xs text-muted-foreground">{o.deliveryCity}</p>
+          <p className="text-muted-foreground text-xs">{o.deliveryCity}</p>
         </div>
       ),
     },
@@ -146,7 +113,7 @@ export default function MerchantFinancePage() {
       cell: (p) => (
         <div className="leading-tight">
           <p>{p.payoutMethod}</p>
-          <p className="text-xs text-muted-foreground">{p.payoutDetails}</p>
+          <p className="text-muted-foreground text-xs">{p.payoutDetails}</p>
         </div>
       ),
     },
@@ -189,7 +156,7 @@ export default function MerchantFinancePage() {
         <div className="flex flex-col gap-1">
           <PayoutStatusBadge status={p.status} />
           {p.status === "REJECTED" && p.rejectReason ? (
-            <span className="flex max-w-48 items-start gap-1 text-xs text-destructive">
+            <span className="text-destructive flex max-w-48 items-start gap-1 text-xs">
               <AlertCircle className="mt-0.5 size-3 shrink-0" />
               {p.rejectReason}
             </span>
@@ -211,43 +178,46 @@ export default function MerchantFinancePage() {
         </Button>
       </PageHeader>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Available funds"
-          value={formatTk(available)}
-          hint={`${merchantPayableOrders.length} settled order${
-            merchantPayableOrders.length === 1 ? "" : "s"
-          }`}
-          icon={Banknote}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-        <StatCard
-          label="In review"
-          value={formatTk(inReview)}
-          hint={`${pendingRequests.length} request${
-            pendingRequests.length === 1 ? "" : "s"
-          }`}
-          icon={Clock}
-          tone="bg-chart-3/15 text-chart-3"
-        />
-        <StatCard
-          label="Paid out"
-          value={formatTk(paidOut)}
-          icon={CheckCircle2}
-          tone="bg-primary/10 text-primary"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Available funds",
+            value: formatTk(available),
+            hint: `${merchantPayableOrders.length} settled order${
+              merchantPayableOrders.length === 1 ? "" : "s"
+            }`,
+            icon: Banknote,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "In review",
+            value: formatTk(inReview),
+            hint: `${pendingRequests.length} request${
+              pendingRequests.length === 1 ? "" : "s"
+            }`,
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Paid out",
+            value: formatTk(paidOut),
+            icon: CheckCircle2,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
 
       {/* Available funds breakdown */}
       <Card className="mt-6">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Coins className="size-5 text-primary" />
+              <Coins className="text-primary size-5" />
               Available for payout
             </CardTitle>
             <CardDescription>
-              Delivered orders whose cash has been settled and not yet requested.
+              Delivered orders whose cash has been settled and not yet
+              requested.
             </CardDescription>
           </div>
           {canRequest ? (
@@ -260,12 +230,12 @@ export default function MerchantFinancePage() {
         <CardContent>
           {merchantPayableOrders.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full">
                 <Package className="size-6" />
               </div>
               <div className="space-y-1">
                 <p className="font-medium">No funds available yet</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   Funds become available once an order is delivered and the
                   warehouse settles the collected cash.
                 </p>
@@ -293,12 +263,12 @@ export default function MerchantFinancePage() {
         <CardContent>
           {merchantPayoutRequests.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full">
                 <Wallet className="size-6" />
               </div>
               <div className="space-y-1">
                 <p className="font-medium">No payout requests yet</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   Submit a request once you have available funds.
                 </p>
               </div>

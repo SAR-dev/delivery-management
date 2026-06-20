@@ -43,25 +43,25 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 
 ## Scripts
 
-| Command            | What it does                       |
-| ------------------ | ---------------------------------- |
-| `pnpm dev`         | Start the development server       |
-| `pnpm build`       | Production build                   |
-| `pnpm start`       | Run the production build           |
-| `pnpm lint`        | Lint the codebase                  |
-| `pnpm typecheck`   | Type-check with TypeScript         |
-| `pnpm db:push`     | Push the schema to the database    |
-| `pnpm db:seed`     | Seed the database with sample data |
-| `pnpm db:studio`   | Open Drizzle Studio                |
+| Command          | What it does                       |
+| ---------------- | ---------------------------------- |
+| `pnpm dev`       | Start the development server       |
+| `pnpm build`     | Production build                   |
+| `pnpm start`     | Run the production build           |
+| `pnpm lint`      | Lint the codebase                  |
+| `pnpm typecheck` | Type-check with TypeScript         |
+| `pnpm db:push`   | Push the schema to the database    |
+| `pnpm db:seed`   | Seed the database with sample data |
+| `pnpm db:studio` | Open Drizzle Studio                |
 
 ## Roles & Areas
 
-| Role      | Area          | What they do                                      |
-| --------- | ------------- | ------------------------------------------------- |
-| Admin     | `/dashboard`  | Orders, merchants, payouts, team, reconciliation  |
-| Merchant  | `/merchant`   | Create orders, track deliveries, request payouts  |
-| Warehouse | `/warehouse`  | Intake, dispatch, exceptions, cash reconciliation |
-| Rider     | `/rider`      | Pickup queue and delivery queue                   |
+| Role      | Area         | What they do                                      |
+| --------- | ------------ | ------------------------------------------------- |
+| Admin     | `/dashboard` | Orders, merchants, payouts, team, reconciliation  |
+| Merchant  | `/merchant`  | Create orders, track deliveries, request payouts  |
+| Warehouse | `/warehouse` | Intake, dispatch, exceptions, cash reconciliation |
+| Rider     | `/rider`     | Pickup queue and delivery queue                   |
 
 Public order tracking is available at `/track`.
 
@@ -73,7 +73,7 @@ Public order tracking is available at `/track`.
 After seeding, sign in at `/login` with any of the following:
 
 | Role            | Name            | Email                      | Password        |
-|-----------------|-----------------|----------------------------|-----------------|
+| --------------- | --------------- | -------------------------- | --------------- |
 | Super Admin     | Nadia Rahman    | `superadmin@parcelflow.io` | `superadmin123` |
 | Admin           | Tanvir Hossain  | `tanvir@parcelflow.io`     | `admin123`      |
 | Admin           | Sadia Karim     | `sadia@parcelflow.io`      | `admin123`      |

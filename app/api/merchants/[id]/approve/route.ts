@@ -22,7 +22,8 @@ export async function PATCH(
     .where(eq(merchant.id, id))
     .limit(1)
 
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (current.status !== "PENDING") {
     return NextResponse.json(
       { error: "Only PENDING merchants can be approved" },

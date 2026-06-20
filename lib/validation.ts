@@ -1,21 +1,13 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
+import { MAX_BULK_ORDERS } from "@/lib/constants"
 
-/**
- * Parse and validate a request JSON body against a zod schema.
- *
- * On success returns `{ data }` with the typed, parsed value.
- * On failure (bad JSON or schema mismatch) returns `{ error }`, a ready-to-send
- * 400 NextResponse including per-field issues. Routes should do:
- *
- *   const parsed = await parseBody(req, someSchema)
- *   if (parsed.error) return parsed.error
- *   const { ... } = parsed.data
- */
 export async function parseBody<T extends z.ZodType>(
   req: Request,
   schema: T,
-): Promise<{ data: z.infer<T>; error: null } | { data: null; error: NextResponse }> {
+): Promise<
+  { data: z.infer<T>; error: null } | { data: null; error: NextResponse }
+> {
   let raw: unknown
   try {
     raw = await req.json()
@@ -40,20 +32,17 @@ export async function parseBody<T extends z.ZodType>(
   return { data: result.data, error: null }
 }
 
-// --- Shared field helpers ---------------------------------------------------
-
 const requiredString = (label: string) =>
-  z.string({ error: `${label} is required` }).trim().min(1, `${label} is required`)
-
-// --- Security config --------------------------------------------------------
+  z
+    .string({ error: `${label} is required` })
+    .trim()
+    .min(1, `${label} is required`)
 
 export const securityConfigSchema = z.object({
   lowValueThreshold: z.number().nonnegative(),
   lowValueFlatFee: z.number().nonnegative(),
   highValuePercentage: z.number().nonnegative(),
 })
-
-// --- Merchants --------------------------------------------------------------
 
 export const merchantRegisterSchema = z.object({
   businessName: requiredString("Business name"),
@@ -76,8 +65,6 @@ export const merchantPricingSchema = z
     path: ["freeWeightKg"],
   })
 
-// --- Orders -----------------------------------------------------------------
-
 export const orderCreateSchema = z.object({
   pickupLocationId: requiredString("Pickup location"),
   recipientName: requiredString("Recipient name"),
@@ -93,7 +80,10 @@ export const orderBulkCreateSchema = z.object({
   orders: z
     .array(orderCreateSchema)
     .min(1, "At least one order is required")
-    .max(50, "You can create up to 50 orders at a time"),
+    .max(
+      MAX_BULK_ORDERS,
+      `You can create up to ${MAX_BULK_ORDERS} orders at a time`,
+    ),
 })
 
 export const orderApproveSchema = z.object({
@@ -116,8 +106,6 @@ export const orderReturnSchema = z.object({
   reason: requiredString("A return reason"),
 })
 
-// --- Payouts ----------------------------------------------------------------
-
 export const payoutCreateSchema = z.object({
   payoutMethod: requiredString("Payout method"),
   payoutDetails: requiredString("Account details"),
@@ -126,8 +114,6 @@ export const payoutCreateSchema = z.object({
 export const payoutRejectSchema = z.object({
   reason: requiredString("A rejection reason"),
 })
-
-// --- Team -------------------------------------------------------------------
 
 export const teamCreateSchema = z.object({
   name: requiredString("Name"),

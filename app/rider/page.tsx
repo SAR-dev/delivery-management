@@ -1,12 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  PackageCheck,
-  PackageOpen,
-  CheckCircle2,
-  Clock,
-} from "lucide-react"
+import { PackageCheck, PackageOpen, CheckCircle2, Clock } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
@@ -17,36 +12,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "TO_COLLECT" | "COLLECTED"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function RiderPickupQueuePage() {
   const { currentUser, currentRider, orders, merchants, pickupLocations } =
@@ -70,9 +38,13 @@ export default function RiderPickupQueuePage() {
 
   const toCollect = myPickups.filter((o) => o.status === "APPROVED")
   const collected = myPickups.filter((o) =>
-    ["PICKED_UP", "IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-      o.status,
-    ),
+    [
+      "PICKED_UP",
+      "IN_WAREHOUSE",
+      "IN_TRANSIT",
+      "OUT_FOR_DELIVERY",
+      "DELIVERED",
+    ].includes(o.status),
   )
 
   const visible = tab === "TO_COLLECT" ? toCollect : collected
@@ -90,7 +62,7 @@ export default function RiderPickupQueuePage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -107,7 +79,7 @@ export default function RiderPickupQueuePage() {
         return (
           <div className="flex flex-col">
             <span className="font-medium">{p?.label ?? "—"}</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground text-xs">
               {p?.address ?? "—"}
             </span>
           </div>
@@ -118,7 +90,7 @@ export default function RiderPickupQueuePage() {
       id: "parcel",
       header: "Parcel",
       cell: (o) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
         </span>
       ),
@@ -131,7 +103,7 @@ export default function RiderPickupQueuePage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span>{o.recipientName}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientPhone}
           </span>
         </div>
@@ -176,26 +148,28 @@ export default function RiderPickupQueuePage() {
         description="Collect approved parcels from merchants and mark them picked up."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="To collect"
-          value={toCollect.length}
-          icon={Clock}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="Collected"
-          value={collected.length}
-          icon={CheckCircle2}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-        <StatCard
-          label="Total assigned"
-          value={myPickups.length}
-          icon={PackageOpen}
-          tone="bg-primary/10 text-primary"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "To collect",
+            value: toCollect.length,
+            icon: Clock,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Collected",
+            value: collected.length,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Total assigned",
+            value: myPickups.length,
+            icon: PackageOpen,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>
@@ -239,7 +213,9 @@ export default function RiderPickupQueuePage() {
             : ""
         }
         pickupLabel={
-          activeOrder ? (pickup(activeOrder.pickupLocationId)?.label ?? "—") : ""
+          activeOrder
+            ? (pickup(activeOrder.pickupLocationId)?.label ?? "—")
+            : ""
         }
         pickupAddress={
           activeOrder

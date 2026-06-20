@@ -13,7 +13,8 @@ export async function PATCH(
   if (!me) return NextResponse.json(null, { status: 401 })
   const canWrite =
     me.role === "SUPER_ADMIN" || (me.role === "ADMIN" && me.canManagePricing)
-  if (!canWrite) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canWrite)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const { id } = await params
   const parsed = await parseBody(req, merchantPricingSchema)
@@ -26,6 +27,7 @@ export async function PATCH(
     .where(eq(merchant.id, id))
     .returning()
 
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!updated)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json(updated)
 }

@@ -79,7 +79,7 @@ export function PricingDialog({
           <DialogTitle>Set delivery pricing</DialogTitle>
           <DialogDescription>
             Assign rates for{" "}
-            <span className="font-medium text-foreground">
+            <span className="text-foreground font-medium">
               {merchant.businessName}
             </span>
             . The merchant&apos;s live calculator reflects these instantly.
@@ -137,14 +137,17 @@ export function PricingDialog({
           <Separator />
 
           {/* Live calculator */}
-          <div className="rounded-lg border border-border bg-muted/40 p-4">
+          <div className="border-border bg-muted/40 rounded-lg border p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Calculator className="size-4 text-primary" />
+              <Calculator className="text-primary size-4" />
               Live charge preview
             </div>
             <div className="mt-3 flex items-end gap-3">
               <div className="flex flex-1 flex-col gap-2">
-                <Label htmlFor="previewWeight" className="text-xs text-muted-foreground">
+                <Label
+                  htmlFor="previewWeight"
+                  className="text-muted-foreground text-xs"
+                >
                   Sample parcel weight (KG)
                 </Label>
                 <Input
@@ -159,7 +162,7 @@ export function PricingDialog({
             </div>
 
             {breakdown.exceedsMax ? (
-              <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p className="bg-destructive/10 text-destructive mt-3 rounded-md px-3 py-2 text-sm">
                 Parcel exceeds the {pricing.maxWeightKg} KG maximum — this order
                 would be rejected.
               </p>
@@ -169,7 +172,9 @@ export function PricingDialog({
                   <dt className="text-muted-foreground">
                     Base ({pricing.freeWeightKg} KG included)
                   </dt>
-                  <dd className="tabular-nums">{formatTk(breakdown.baseRate)}</dd>
+                  <dd className="tabular-nums">
+                    {formatTk(breakdown.baseRate)}
+                  </dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">
@@ -183,7 +188,7 @@ export function PricingDialog({
                 <Separator className="my-1" />
                 <div className="flex justify-between font-semibold">
                   <dt>Delivery charge</dt>
-                  <dd className="tabular-nums text-primary">
+                  <dd className="text-primary tabular-nums">
                     {formatTk(breakdown.total)}
                   </dd>
                 </div>

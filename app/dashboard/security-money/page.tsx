@@ -33,7 +33,9 @@ export default function SecurityMoneyPage() {
   const [threshold, setThreshold] = useState(
     String(securityConfig?.lowValueThreshold ?? ""),
   )
-  const [flatFee, setFlatFee] = useState(String(securityConfig?.lowValueFlatFee ?? ""))
+  const [flatFee, setFlatFee] = useState(
+    String(securityConfig?.lowValueFlatFee ?? ""),
+  )
   const [percentage, setPercentage] = useState(
     String(securityConfig?.highValuePercentage ?? ""),
   )
@@ -54,11 +56,11 @@ export default function SecurityMoneyPage() {
     percentage: Number(percentage) || 0,
   }
 
-  const dirty = securityConfig != null && (
-    parsed.threshold !== securityConfig.lowValueThreshold ||
-    parsed.flatFee !== securityConfig.lowValueFlatFee ||
-    parsed.percentage !== securityConfig.highValuePercentage
-  )
+  const dirty =
+    securityConfig != null &&
+    (parsed.threshold !== securityConfig.lowValueThreshold ||
+      parsed.flatFee !== securityConfig.lowValueFlatFee ||
+      parsed.percentage !== securityConfig.highValuePercentage)
 
   const invalid =
     parsed.threshold <= 0 || parsed.flatFee < 0 || parsed.percentage <= 0
@@ -106,12 +108,14 @@ export default function SecurityMoneyPage() {
         <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Coins className="size-5 text-primary" />
+              <Coins className="text-primary size-5" />
               Calculation rules
             </CardTitle>
             <CardDescription>
               {securityConfig
-                ? `Last updated ${new Date(securityConfig.updatedAt).toLocaleDateString(undefined, {
+                ? `Last updated ${new Date(
+                    securityConfig.updatedAt,
+                  ).toLocaleDateString(undefined, {
                     year: "numeric",
                     month: "short",
                     day: "numeric",
@@ -129,7 +133,7 @@ export default function SecurityMoneyPage() {
                   value={threshold}
                   onChange={(e) => setThreshold(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   Orders at or below this product cost use the flat fee.
                 </p>
               </div>
@@ -143,7 +147,7 @@ export default function SecurityMoneyPage() {
                     value={flatFee}
                     onChange={(e) => setFlatFee(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Charged when {"\u2264"} threshold.
                   </p>
                 </div>
@@ -155,7 +159,7 @@ export default function SecurityMoneyPage() {
                     value={percentage}
                     onChange={(e) => setPercentage(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Charged when {">"} threshold.
                   </p>
                 </div>
@@ -163,19 +167,19 @@ export default function SecurityMoneyPage() {
 
               <Separator />
 
-              <div className="rounded-lg bg-muted/50 p-4 text-sm leading-relaxed">
+              <div className="bg-muted/50 rounded-lg p-4 text-sm leading-relaxed">
                 <p className="font-medium">Resulting rule</p>
-                <p className="mt-1 text-muted-foreground">
+                <p className="text-muted-foreground mt-1">
                   Orders up to{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {parsed.threshold} TK
                   </span>{" "}
                   are charged a flat{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {parsed.flatFee} TK
                   </span>
                   . Orders above that are charged{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {parsed.percentage}%
                   </span>{" "}
                   of product cost.
@@ -205,7 +209,7 @@ export default function SecurityMoneyPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Calculator className="size-5 text-primary" />
+              <Calculator className="text-primary size-5" />
               Preview
             </CardTitle>
             <CardDescription>
@@ -223,20 +227,20 @@ export default function SecurityMoneyPage() {
               />
             </div>
 
-            <div className="rounded-lg border border-border bg-card p-5 text-center">
-              <p className="text-sm text-muted-foreground">Security money</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums text-primary">
+            <div className="border-border bg-card rounded-lg border p-5 text-center">
+              <p className="text-muted-foreground text-sm">Security money</p>
+              <p className="text-primary mt-1 text-3xl font-semibold tabular-nums">
                 {previewResult.toFixed(2)}
-                <span className="ml-1 text-base font-normal text-muted-foreground">
+                <span className="text-muted-foreground ml-1 text-base font-normal">
                   TK
                 </span>
               </p>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="text-muted-foreground mt-2 text-xs">
                 Using the {previewTier} tier
               </p>
             </div>
 
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className="text-muted-foreground text-xs leading-relaxed">
               Security money is collected from the recipient at delivery and is
               retained by the platform as revenue. It is not part of the
               merchant payout.

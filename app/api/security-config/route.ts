@@ -23,11 +23,13 @@ export async function PATCH(req: Request) {
   if (!me) return NextResponse.json(null, { status: 401 })
   const canWrite =
     me.role === "SUPER_ADMIN" || (me.role === "ADMIN" && me.canManagePricing)
-  if (!canWrite) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canWrite)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const parsed = await parseBody(req, securityConfigSchema)
   if (parsed.error) return parsed.error
-  const { lowValueThreshold, lowValueFlatFee, highValuePercentage } = parsed.data
+  const { lowValueThreshold, lowValueFlatFee, highValuePercentage } =
+    parsed.data
 
   const [updated] = await db
     .update(securityConfig)

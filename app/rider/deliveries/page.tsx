@@ -1,12 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  PackageOpen,
-  CheckCircle2,
-  Clock,
-  Navigation,
-} from "lucide-react"
+import { PackageOpen, CheckCircle2, Clock, Navigation } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
@@ -18,36 +13,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { toast } from "sonner"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function RiderDeliveryQueuePage() {
   const { currentUser, currentRider, orders, merchants, markOutForDelivery } =
@@ -99,7 +67,7 @@ export default function RiderDeliveryQueuePage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -114,7 +82,7 @@ export default function RiderDeliveryQueuePage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span className="font-medium">{o.recipientName}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientPhone}
           </span>
         </div>
@@ -128,7 +96,7 @@ export default function RiderDeliveryQueuePage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span>{o.deliveryCity}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.deliveryAddress}
           </span>
         </div>
@@ -138,7 +106,7 @@ export default function RiderDeliveryQueuePage() {
       id: "parcel",
       header: "Parcel",
       cell: (o) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           {o.parcelWeightKg} KG · {o.deliveryType}
         </span>
       ),
@@ -162,7 +130,7 @@ export default function RiderDeliveryQueuePage() {
         <div className="flex flex-col gap-1">
           <OrderStatusBadge status={o.status} />
           {o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-            <span className="max-w-48 text-xs text-destructive">
+            <span className="text-destructive max-w-48 text-xs">
               {o.failureNote}
             </span>
           ) : null}
@@ -196,26 +164,28 @@ export default function RiderDeliveryQueuePage() {
         description="Take dispatched parcels out for delivery and record the outcome."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="To deliver"
-          value={toDeliver.length}
-          icon={Clock}
-          tone="bg-chart-4/15 text-chart-4"
-        />
-        <StatCard
-          label="Completed"
-          value={completed.length}
-          icon={CheckCircle2}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-        <StatCard
-          label="Total assigned"
-          value={myDeliveries.length}
-          icon={PackageOpen}
-          tone="bg-primary/10 text-primary"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "To deliver",
+            value: toDeliver.length,
+            icon: Clock,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Completed",
+            value: completed.length,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Total assigned",
+            value: myDeliveries.length,
+            icon: PackageOpen,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

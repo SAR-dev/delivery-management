@@ -55,7 +55,9 @@ interface PlatformContextValue {
   ) => Promise<void>
 
   team: User[]
-  createAccount: (input: NewAccountInput & { password: string }) => Promise<void>
+  createAccount: (
+    input: NewAccountInput & { password: string },
+  ) => Promise<void>
   toggleAccountActive: (id: string) => Promise<void>
   togglePricingPermission: (id: string) => Promise<void>
 
@@ -172,9 +174,7 @@ interface PlatformContextValue {
   }) => Promise<{ ok: boolean; request?: PayoutRequest; error?: string }>
 
   // Super Admin approves a PENDING payout request.
-  approvePayout: (
-    requestId: string,
-  ) => Promise<{ ok: boolean; error?: string }>
+  approvePayout: (requestId: string) => Promise<{ ok: boolean; error?: string }>
   // Super Admin rejects a PENDING payout request (unlocks its orders). A
   // `reason` is required.
   rejectPayout: (
@@ -216,7 +216,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
-  const [securityConfig, setSecurityConfig] = useState<SecurityMoneyConfig | null>(null)
+  const [securityConfig, setSecurityConfig] =
+    useState<SecurityMoneyConfig | null>(null)
   const [team, setTeam] = useState<User[]>([])
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [orders, setOrders] = useState<Order[]>([])
@@ -345,7 +346,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     })
 
     if (error || !data) {
-      return { ok: false, error: error?.message ?? "Invalid email or password." }
+      return {
+        ok: false,
+        error: error?.message ?? "Invalid email or password.",
+      }
     }
 
     const res = await fetch("/api/users/me")
@@ -431,23 +435,29 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   // posts directly to /api/merchants and signs the new owner in.
 
   // Super Admin / Admin approves a pending merchant -> ACTIVE.
-  const approveMerchant = useCallback<
-    PlatformContextValue["approveMerchant"]
-  >(async (id) => {
-    const res = await fetch(`/api/merchants/${id}/approve`, { method: "PATCH" })
-    if (!res.ok) return
-    const updated = await res.json()
-    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
-  }, [])
+  const approveMerchant = useCallback<PlatformContextValue["approveMerchant"]>(
+    async (id) => {
+      const res = await fetch(`/api/merchants/${id}/approve`, {
+        method: "PATCH",
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
+    },
+    [],
+  )
 
-  const suspendMerchant = useCallback<
-    PlatformContextValue["suspendMerchant"]
-  >(async (id) => {
-    const res = await fetch(`/api/merchants/${id}/suspend`, { method: "PATCH" })
-    if (!res.ok) return
-    const updated = await res.json()
-    setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
-  }, [])
+  const suspendMerchant = useCallback<PlatformContextValue["suspendMerchant"]>(
+    async (id) => {
+      const res = await fetch(`/api/merchants/${id}/suspend`, {
+        method: "PATCH",
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
+    },
+    [],
+  )
 
   const reactivateMerchant = useCallback<
     PlatformContextValue["reactivateMerchant"]
@@ -493,8 +503,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { ok: false, error: data.error ?? "Failed to create order." }
       }
-    setOrders((prev) => [data, ...prev])
-    return { ok: true, order: data }
+      setOrders((prev) => [data, ...prev])
+      return { ok: true, order: data }
     },
     [],
   )
@@ -616,9 +626,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   // Active delivery riders based at the logged-in admin's warehouse. A
   // Warehouse Admin can only dispatch parcels to riders at their own hub.
   const warehouseDeliveryRiders = currentWarehouse
-    ? riders.filter(
-        (r) => r.warehouseId === currentWarehouse.id && r.isActive,
-      )
+    ? riders.filter((r) => r.warehouseId === currentWarehouse.id && r.isActive)
     : []
 
   const assignDeliveryRider = useCallback<
@@ -662,7 +670,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const returnFailedOrder = useCallback<
     PlatformContextValue["returnFailedOrder"]
-  >((orderId, reason) => patchOrder(orderId, "return", { reason }), [patchOrder])
+  >(
+    (orderId, reason) => patchOrder(orderId, "return", { reason }),
+    [patchOrder],
+  )
 
   // --- Phase 9: COD reconciliation & merchant payout ----------------------
 
@@ -795,10 +806,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         setMerchantPricing,
         orders,
         pickupLocations,
-          currentMerchant,
-          createOrder,
-          createOrders,
-          riders,
+        currentMerchant,
+        createOrder,
+        createOrders,
+        riders,
         approveAndAssignOrder,
         currentRider,
         markOrderPickedUp,

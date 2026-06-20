@@ -1,13 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  PackagePlus,
-  PackageOpen,
-  Bike,
-  Boxes,
-  Clock,
-} from "lucide-react"
+import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
@@ -18,36 +12,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "INCOMING" | "RECEIVED"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function WarehouseIntakePage() {
   const { currentUser, currentWarehouse, orders, merchants, riders } =
@@ -75,9 +42,12 @@ export default function WarehouseIntakePage() {
         ? orders.filter(
             (o) =>
               o.warehouseId === currentWarehouse.id &&
-              ["IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-                o.status,
-              ),
+              [
+                "IN_WAREHOUSE",
+                "IN_TRANSIT",
+                "OUT_FOR_DELIVERY",
+                "DELIVERED",
+              ].includes(o.status),
           )
         : [],
     [orders, currentWarehouse],
@@ -98,7 +68,7 @@ export default function WarehouseIntakePage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -112,7 +82,7 @@ export default function WarehouseIntakePage() {
       sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
       cell: (o) => (
         <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="size-4 text-muted-foreground" />
+          <Bike className="text-muted-foreground size-4" />
           {rider(o.pickupRiderId)?.name ?? "—"}
         </span>
       ),
@@ -121,7 +91,7 @@ export default function WarehouseIntakePage() {
       id: "parcel",
       header: "Parcel",
       cell: (o) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           {o.parcelWeightKg} KG · {o.deliveryType}
         </span>
       ),
@@ -134,7 +104,7 @@ export default function WarehouseIntakePage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span>{o.deliveryCity}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientName} · {o.recipientPhone}
           </span>
         </div>
@@ -181,26 +151,28 @@ export default function WarehouseIntakePage() {
         } and log them in.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Incoming"
-          value={incoming.length}
-          icon={Clock}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="Received"
-          value={received.length}
-          icon={Boxes}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-        <StatCard
-          label="Held in warehouse"
-          value={received.filter((o) => o.status === "IN_WAREHOUSE").length}
-          icon={PackageOpen}
-          tone="bg-primary/10 text-primary"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Incoming",
+            value: incoming.length,
+            icon: Clock,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Received",
+            value: received.length,
+            icon: Boxes,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Held in warehouse",
+            value: received.filter((o) => o.status === "IN_WAREHOUSE").length,
+            icon: PackageOpen,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

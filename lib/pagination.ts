@@ -1,6 +1,3 @@
-// Shared parser for optional `limit` / `offset` query params on list routes.
-// Both are optional: when absent (or invalid) the route returns the full set,
-// keeping existing callers backward-compatible. Apply them once row counts grow.
 export function parsePagination(req: Request): {
   limit?: number
   offset?: number
@@ -10,7 +7,8 @@ export function parsePagination(req: Request): {
   const offsetRaw = url.searchParams.get("offset")
 
   const limit = limitRaw !== null ? Number.parseInt(limitRaw, 10) : Number.NaN
-  const offset = offsetRaw !== null ? Number.parseInt(offsetRaw, 10) : Number.NaN
+  const offset =
+    offsetRaw !== null ? Number.parseInt(offsetRaw, 10) : Number.NaN
 
   return {
     limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,

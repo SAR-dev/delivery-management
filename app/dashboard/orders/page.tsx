@@ -22,36 +22,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function OrdersPage() {
   const { orders, merchants, riders } = usePlatform()
@@ -105,7 +78,7 @@ export default function OrdersPage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span className="font-medium">{o.code}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientName} · {o.deliveryCity}
           </span>
         </div>
@@ -133,7 +106,7 @@ export default function OrdersPage() {
           <span
             className={cn(
               "tabular-nums",
-              exceedsWeight && "font-medium text-destructive",
+              exceedsWeight && "text-destructive font-medium",
             )}
           >
             {o.parcelWeightKg} KG
@@ -166,11 +139,11 @@ export default function OrdersPage() {
       cell: (o) =>
         o.pickupRiderId ? (
           <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="size-4 text-muted-foreground" />
+            <Bike className="text-muted-foreground size-4" />
             {riderName(o.pickupRiderId)}
           </span>
         ) : (
-          <span className="text-sm text-muted-foreground">—</span>
+          <span className="text-muted-foreground text-sm">—</span>
         ),
     },
     {
@@ -196,32 +169,34 @@ export default function OrdersPage() {
       />
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Pending approval"
-          value={counts.pending}
-          icon={Clock}
-          tone="bg-chart-3/15 text-chart-3"
-        />
-        <StatCard
-          label="Approved"
-          value={counts.approved}
-          icon={CheckCircle2}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="In progress"
-          value={counts.inProgress}
-          icon={Truck}
-          tone="bg-chart-4/15 text-chart-4"
-        />
-        <StatCard
-          label="Total orders"
-          value={counts.total}
-          icon={Package}
-          tone="bg-primary/10 text-primary"
-        />
-      </div>
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Pending approval",
+            value: counts.pending,
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Approved",
+            value: counts.approved,
+            icon: CheckCircle2,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "In progress",
+            value: counts.inProgress,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Total orders",
+            value: counts.total,
+            icon: Package,
+          },
+        ]}
+      />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -233,7 +208,7 @@ export default function OrdersPage() {
           </TabsList>
         </Tabs>
         <div className="relative w-full sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
             placeholder="Search code, recipient, merchant"
             value={query}
