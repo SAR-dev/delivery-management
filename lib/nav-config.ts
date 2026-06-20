@@ -11,9 +11,11 @@ import {
   PackageCheck,
   Bike,
   ShieldCheck,
+  Shield,
   Warehouse as WarehouseIcon,
   type LucideIcon,
 } from "lucide-react"
+import type { Role } from "@/lib/types"
 
 export interface SidebarNavItem {
   href: string
@@ -30,7 +32,9 @@ export interface SidebarConfig {
   mobileItems?: SidebarNavItem[]
 }
 
-export const ADMIN_SIDEBAR: SidebarConfig = {
+// Super Admins oversee the whole platform and are the only role that can
+// provision Admin / Warehouse Admin accounts (the "Admins" page).
+export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
   brandIcon: ShieldCheck,
   roleLabel: "Super Admin",
   items: [
@@ -42,7 +46,7 @@ export const ADMIN_SIDEBAR: SidebarConfig = {
     },
     { href: "/dashboard/orders", label: "Orders", icon: Package },
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-    { href: "/dashboard/team", label: "Team Accounts", icon: Users },
+    { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
   ],
@@ -50,9 +54,34 @@ export const ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
     { href: "/dashboard/orders", label: "Orders", icon: Package },
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-    { href: "/dashboard/team", label: "Team Accounts", icon: Users },
+    { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
   ],
+}
+
+// Admins handle day-to-day operations: order approval, merchant pricing, and
+// managing the rider roster (the "Riders" page).
+export const ADMIN_SIDEBAR: SidebarConfig = {
+  brandIcon: Shield,
+  roleLabel: "Admin",
+  items: [
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/dashboard/orders", label: "Orders", icon: Package },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
+    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+  ],
+}
+
+// Picks the correct console sidebar for the two admin-tier roles. Defaults to
+// the Super Admin layout for any other role that reaches the dashboard shell.
+export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
+  return role === "ADMIN" ? ADMIN_SIDEBAR : SUPER_ADMIN_SIDEBAR
 }
 
 export const MERCHANT_SIDEBAR: SidebarConfig = {

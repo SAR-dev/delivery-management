@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
   Package,
@@ -77,7 +78,12 @@ export default function OrdersPage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-medium">{o.code}</span>
+          <Link
+            href={`/dashboard/orders/${o.id}`}
+            className="text-primary font-medium hover:underline"
+          >
+            {o.code}
+          </Link>
           <span className="text-muted-foreground text-xs">
             {o.recipientName} · {o.deliveryCity}
           </span>

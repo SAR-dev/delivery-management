@@ -1,14 +1,18 @@
 "use client"
 
 import { RoleSidebar } from "@/components/sidebar/role-sidebar"
-import { ADMIN_SIDEBAR } from "@/lib/nav-config"
+import { usePlatform } from "@/lib/platform-context"
+import { dashboardSidebarForRole } from "@/lib/nav-config"
 
 export function Sidebar() {
+  const { currentUser } = usePlatform()
+  const isAdmin = currentUser?.role === "ADMIN"
+
   return (
     <RoleSidebar
-      config={ADMIN_SIDEBAR}
-      fallbackName="Super Admin"
-      fallbackInitials="SA"
+      config={dashboardSidebarForRole(currentUser?.role)}
+      fallbackName={isAdmin ? "Admin" : "Super Admin"}
+      fallbackInitials={isAdmin ? "AD" : "SA"}
     />
   )
 }

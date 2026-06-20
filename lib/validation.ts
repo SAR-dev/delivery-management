@@ -115,6 +115,15 @@ export const payoutRejectSchema = z.object({
   reason: requiredString("A rejection reason"),
 })
 
+export const riderCreateSchema = z.object({
+  name: requiredString("Name"),
+  email: z.email("A valid email is required"),
+  phone: requiredString("Phone"),
+  zone: requiredString("Zone"),
+  // Home warehouse for delivery riders; null/omitted for pickup-only riders.
+  warehouseId: z.string().nullish(),
+})
+
 export const teamCreateSchema = z.object({
   name: requiredString("Name"),
   email: z.email("A valid email is required"),

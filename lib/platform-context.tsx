@@ -33,6 +33,22 @@ interface NewAccountInput {
   canManagePricing?: boolean
 }
 
+interface RiderCreateInput {
+  name: string
+  email: string
+  phone: string
+  zone: string
+  warehouseId?: string | null
+}
+
+interface RiderUpdateInput {
+  name?: string
+  email?: string
+  phone?: string
+  zone?: string
+  warehouseId?: string | null
+}
+
 interface PlatformContextValue {
   currentUser: User | null
   isReady: boolean
@@ -85,6 +101,12 @@ interface PlatformContextValue {
 
   // --- Phase 4: order approval & pickup assignment (admin) ---
   riders: Rider[]
+  // Admin provisions a new rider (pickup or warehouse-based delivery rider).
+  createRider: (input: RiderCreateInput) => Promise<void>
+  // Admin updates rider details (name, phone, zone, warehouse assignment).
+  updateRider: (id: string, input: RiderUpdateInput) => Promise<void>
+  // Admin enables/disables a rider account.
+  toggleRiderActive: (id: string) => Promise<void>
   // Approve a PENDING order and assign a pickup rider in one step.
   approveAndAssignOrder: (
     orderId: string,
@@ -597,6 +619,48 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     [patchOrder],
   )
 
+  // Admin provisions a new rider and prepends it to the roster.
+  const createRider = useCallback<PlatformContextValue["createRider"]>(
+    async (input) => {
+      const res = await fetch("/api/riders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const newRider = await res.json()
+      setRiders((prev) => [newRider, ...prev])
+    },
+    [],
+  )
+
+  // Admin updates rider details.
+  const updateRider = useCallback<PlatformContextValue["updateRider"]>(
+    async (id, input) => {
+      const res = await fetch(`/api/riders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      setRiders((prev) => prev.map((r) => (r.id === id ? updated : r)))
+    },
+    [],
+  )
+
+  // Admin enables/disables a rider account.
+  const toggleRiderActive = useCallback<
+    PlatformContextValue["toggleRiderActive"]
+  >(async (id) => {
+    const res = await fetch(`/api/riders/${id}/active`, { method: "PATCH" })
+    if (!res.ok) return
+    const updated = await res.json()
+    setRiders((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, isActive: updated.isActive } : r)),
+    )
+  }, [])
+
   // --- Phase 5: Pickup from merchant (rider) ------------------------------
 
   // The rider profile for the logged-in rider user (if any).
@@ -810,6 +874,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         createOrder,
         createOrders,
         riders,
+        createRider,
+        updateRider,
+        toggleRiderActive,
         approveAndAssignOrder,
         currentRider,
         markOrderPickedUp,

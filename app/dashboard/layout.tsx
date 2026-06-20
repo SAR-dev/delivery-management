@@ -7,7 +7,7 @@ import { usePlatform } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
 import { Sidebar } from "@/components/sidebar/sidebar"
 import { MobileHeader } from "@/components/layout/mobile-header"
-import { ADMIN_SIDEBAR } from "@/lib/nav-config"
+import { dashboardSidebarForRole } from "@/lib/nav-config"
 
 export default function DashboardLayout({
   children,
@@ -49,7 +49,7 @@ export default function DashboardLayout({
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={ADMIN_SIDEBAR} />
+        <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
 
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">
