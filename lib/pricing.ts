@@ -1,4 +1,5 @@
 import type { Merchant, SecurityMoneyConfig } from "@/lib/types"
+import { CURRENCY_SUFFIX } from "@/lib/constants"
 
 export interface DeliveryChargeBreakdown {
   baseRate: number
@@ -40,7 +41,7 @@ export function formatTk(amount: number): string {
   return `${amount.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  })} TK`
+  })} ${CURRENCY_SUFFIX}`
 }
 
 /**

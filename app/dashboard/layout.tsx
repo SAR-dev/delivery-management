@@ -2,26 +2,12 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Loader2, ShieldCheck, LogOut, Coins, Users, LayoutDashboard, Store, Package } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { DataErrorBanner } from "@/components/data-error-banner"
 import { Sidebar } from "@/components/sidebar/sidebar"
-import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-
-const MOBILE_NAV = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/orders", label: "Orders", icon: Package },
-  { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-  { href: "/dashboard/team", label: "Team Accounts", icon: Users },
-  { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-]
+import { MobileHeader } from "@/components/layout/mobile-header"
+import { ADMIN_SIDEBAR } from "@/lib/nav-config"
 
 export default function DashboardLayout({
   children,
@@ -29,7 +15,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { currentUser, isReady, logout } = usePlatform()
+  const { currentUser, isReady } = usePlatform()
 
   useEffect(() => {
     if (!isReady) return
@@ -57,42 +43,7 @@ export default function DashboardLayout({
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile header */}
-        <header className="flex h-16 items-center justify-between border-b border-border px-4 md:hidden">
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <ShieldCheck className="size-5" />
-            </div>
-            <span className="font-semibold">ParcelFlow</span>
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm">
-                  Menu
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-48">
-              {MOBILE_NAV.map((item) => {
-                const Icon = item.icon
-                return (
-                  <DropdownMenuItem
-                    key={item.href}
-                    render={<Link href={item.href} />}
-                  >
-                    <Icon className="size-4" />
-                    {item.label}
-                  </DropdownMenuItem>
-                )
-              })}
-              <DropdownMenuItem onClick={logout}>
-                <LogOut className="size-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </header>
+        <MobileHeader config={ADMIN_SIDEBAR} />
 
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-6xl">
