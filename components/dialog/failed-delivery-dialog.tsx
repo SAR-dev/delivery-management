@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import {
-  Loader2,
   RotateCcw,
   Undo2,
   MapPin,
@@ -16,18 +15,10 @@ import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
-import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { FormDialog } from "@/components/dialog/form-dialog"
 
 function InfoRow({
   icon: Icon,
@@ -111,134 +102,109 @@ export function FailedDeliveryDialog({
   const returnNeedsReason = decision === "RETURN" && !reason.trim()
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Resolve failed delivery — {order.code}</DialogTitle>
-          <DialogDescription>
-            Decide whether to send this parcel back out for another attempt or
-            close it as a return.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
-          <InfoRow
-            icon={Package}
-            label="Parcel"
-            value={`${order.parcelWeightKg} KG · ${order.deliveryType} · from ${merchantName}`}
-          />
-          <InfoRow icon={Bike} label="Delivery rider" value={riderName} />
-          <InfoRow icon={User} label="Recipient" value={order.recipientName} />
-          <InfoRow icon={Phone} label="Phone" value={order.recipientPhone} />
-          <InfoRow
-            icon={MapPin}
-            label="Deliver to"
-            value={`${order.deliveryAddress}, ${order.deliveryCity}`}
-          />
-        </div>
-
-        {order.failureNote ? (
-          <div className="bg-destructive/10 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-sm">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <div className="leading-snug">
-              <p className="font-medium">
-                Attempt {order.deliveryAttempts ?? 1} failed
-              </p>
-              <p>{order.failureNote}</p>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setDecision("REATTEMPT")}
-            className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors ${
-              decision === "REATTEMPT"
-                ? "border-chart-4 bg-chart-4/10 text-chart-4"
-                : "border-border text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            <RotateCcw className="size-4" />
-            Re-attempt
-          </button>
-          <button
-            type="button"
-            onClick={() => setDecision("RETURN")}
-            className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors ${
-              decision === "RETURN"
-                ? "border-destructive bg-destructive/10 text-destructive"
-                : "border-border text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            <Undo2 className="size-4" />
-            Return
-          </button>
-        </div>
-
-        {decision === "REATTEMPT" ? (
-          <p className="text-muted-foreground text-sm">
-            The parcel goes back to {riderName} as{" "}
-            <span className="text-foreground font-medium">
-              Out for delivery
-            </span>
-            . They&apos;ll attempt to collect {formatTk(order.totalCollectible)}{" "}
-            again.
-          </p>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Resolve failed delivery — ${order.code}`}
+      description="Decide whether to send this parcel back out for another attempt or close it as a return."
+      onConfirm={handleSubmit}
+      submitting={submitting}
+      submittingLabel="Saving"
+      submitDisabled={returnNeedsReason}
+      submitVariant={decision === "RETURN" ? "destructive" : "default"}
+      submitLabel={
+        decision === "REATTEMPT" ? "Send back out" : "Confirm return"
+      }
+      submitIcon={
+        decision === "REATTEMPT" ? (
+          <RotateCcw className="size-4" />
         ) : (
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="return-reason">
-              Reason for return <span className="text-destructive">*</span>
-            </Label>
-            <Textarea
-              id="return-reason"
-              placeholder="e.g. Recipient refused delivery, unreachable after repeated attempts…"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-            />
-            <p className="text-muted-foreground text-xs">
-              The parcel is closed as Returned — no COD is collected and no
-              merchant payout is issued.
+          <Undo2 className="size-4" />
+        )
+      }
+    >
+      <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
+        <InfoRow
+          icon={Package}
+          label="Parcel"
+          value={`${order.parcelWeightKg} KG · ${order.deliveryType} · from ${merchantName}`}
+        />
+        <InfoRow icon={Bike} label="Delivery rider" value={riderName} />
+        <InfoRow icon={User} label="Recipient" value={order.recipientName} />
+        <InfoRow icon={Phone} label="Phone" value={order.recipientPhone} />
+        <InfoRow
+          icon={MapPin}
+          label="Deliver to"
+          value={`${order.deliveryAddress}, ${order.deliveryCity}`}
+        />
+      </div>
+
+      {order.failureNote ? (
+        <div className="bg-destructive/10 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div className="leading-snug">
+            <p className="font-medium">
+              Attempt {order.deliveryAttempts ?? 1} failed
             </p>
+            <p>{order.failureNote}</p>
           </div>
-        )}
+        </div>
+      ) : null}
 
-        <Separator />
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => setDecision("REATTEMPT")}
+          className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors ${
+            decision === "REATTEMPT"
+              ? "border-chart-4 bg-chart-4/10 text-chart-4"
+              : "border-border text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <RotateCcw className="size-4" />
+          Re-attempt
+        </button>
+        <button
+          type="button"
+          onClick={() => setDecision("RETURN")}
+          className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors ${
+            decision === "RETURN"
+              ? "border-destructive bg-destructive/10 text-destructive"
+              : "border-border text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <Undo2 className="size-4" />
+          Return
+        </button>
+      </div>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting || returnNeedsReason}
-            variant={decision === "RETURN" ? "destructive" : "default"}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Saving
-              </>
-            ) : decision === "REATTEMPT" ? (
-              <>
-                <RotateCcw className="size-4" />
-                Send back out
-              </>
-            ) : (
-              <>
-                <Undo2 className="size-4" />
-                Confirm return
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {decision === "REATTEMPT" ? (
+        <p className="text-muted-foreground text-sm">
+          The parcel goes back to {riderName} as{" "}
+          <span className="text-foreground font-medium">Out for delivery</span>.
+          They&apos;ll attempt to collect {formatTk(order.totalCollectible)}{" "}
+          again.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="return-reason">
+            Reason for return <span className="text-destructive">*</span>
+          </Label>
+          <Textarea
+            id="return-reason"
+            placeholder="e.g. Recipient refused delivery, unreachable after repeated attempts…"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+          />
+          <p className="text-muted-foreground text-xs">
+            The parcel is closed as Returned — no COD is collected and no
+            merchant payout is issued.
+          </p>
+        </div>
+      )}
+
+      <Separator />
+    </FormDialog>
   )
 }

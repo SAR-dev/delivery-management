@@ -1,26 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import {
-  Loader2,
-  PackageCheck,
-  MapPin,
-  Package,
-  Store,
-} from "lucide-react"
+import { PackageCheck, MapPin, Package, Store } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order } from "@/lib/types"
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { FormDialog } from "@/components/dialog/form-dialog"
 
 function InfoRow({
   icon: Icon,
@@ -78,54 +64,31 @@ export function PickupConfirmDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Confirm pickup of {order.code}</DialogTitle>
-          <DialogDescription>
-            Collect the parcel from the merchant, then confirm to update the
-            status to Picked up. The merchant sees this change in real time.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
-          <InfoRow icon={Store} label="Merchant" value={merchantName} />
-          <InfoRow
-            icon={MapPin}
-            label="Pickup location"
-            value={`${pickupLabel} — ${pickupAddress}`}
-          />
-          <Separator className="my-1" />
-          <InfoRow
-            icon={Package}
-            label="Parcel"
-            value={`${order.parcelWeightKg} KG · ${order.deliveryType}`}
-          />
-        </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleConfirm} disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Updating
-              </>
-            ) : (
-              <>
-                <PackageCheck className="size-4" />
-                Confirm pickup
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Confirm pickup of ${order.code}`}
+      description="Collect the parcel from the merchant, then confirm to update the status to Picked up. The merchant sees this change in real time."
+      onConfirm={handleConfirm}
+      submitting={submitting}
+      submittingLabel="Updating"
+      submitLabel="Confirm pickup"
+      submitIcon={<PackageCheck className="size-4" />}
+    >
+      <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
+        <InfoRow icon={Store} label="Merchant" value={merchantName} />
+        <InfoRow
+          icon={MapPin}
+          label="Pickup location"
+          value={`${pickupLabel} — ${pickupAddress}`}
+        />
+        <Separator className="my-1" />
+        <InfoRow
+          icon={Package}
+          label="Parcel"
+          value={`${order.parcelWeightKg} KG · ${order.deliveryType}`}
+        />
+      </div>
+    </FormDialog>
   )
 }

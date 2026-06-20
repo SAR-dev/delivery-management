@@ -11,6 +11,8 @@ import {
   PackageCheck,
   Plus,
   Trash2,
+  MapPin,
+  ImageIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
@@ -42,6 +44,8 @@ interface ParcelState {
   recipientPhone: string
   deliveryAddress: string
   deliveryCity: string
+  deliveryMapLink: string
+  deliveryImageLinks: string[]
   parcelWeightKg: string
   deliveryType: DeliveryType
   productCost: string
@@ -54,6 +58,8 @@ function emptyParcel(): ParcelState {
     recipientPhone: "",
     deliveryAddress: "",
     deliveryCity: "",
+    deliveryMapLink: "",
+    deliveryImageLinks: [""],
     parcelWeightKg: "1",
     deliveryType: "STANDARD",
     productCost: "",
@@ -94,6 +100,47 @@ export default function NewOrderPage() {
   function removeParcel(id: string) {
     setParcels((prev) =>
       prev.length === 1 ? prev : prev.filter((p) => p.id !== id),
+    )
+  }
+
+  function updateImageLink(parcelId: string, index: number, value: string) {
+    setParcels((prev) =>
+      prev.map((p) =>
+        p.id === parcelId
+          ? {
+              ...p,
+              deliveryImageLinks: p.deliveryImageLinks.map((link, i) =>
+                i === index ? value : link,
+              ),
+            }
+          : p,
+      ),
+    )
+  }
+
+  function addImageLink(parcelId: string) {
+    setParcels((prev) =>
+      prev.map((p) =>
+        p.id === parcelId
+          ? { ...p, deliveryImageLinks: [...p.deliveryImageLinks, ""] }
+          : p,
+      ),
+    )
+  }
+
+  function removeImageLink(parcelId: string, index: number) {
+    setParcels((prev) =>
+      prev.map((p) =>
+        p.id === parcelId
+          ? {
+              ...p,
+              deliveryImageLinks:
+                p.deliveryImageLinks.length === 1
+                  ? [""]
+                  : p.deliveryImageLinks.filter((_, i) => i !== index),
+            }
+          : p,
+      ),
     )
   }
 
@@ -173,6 +220,10 @@ export default function NewOrderPage() {
       recipientPhone: p.recipientPhone.trim(),
       deliveryAddress: p.deliveryAddress.trim(),
       deliveryCity: p.deliveryCity.trim(),
+      deliveryMapLink: p.deliveryMapLink.trim() || null,
+      deliveryImageLinks: p.deliveryImageLinks
+        .map((link) => link.trim())
+        .filter((link) => link.length > 0),
       parcelWeightKg: Number(p.parcelWeightKg) || 0,
       deliveryType: p.deliveryType,
       productCost: Number(p.productCost) || 0,
@@ -194,8 +245,8 @@ export default function NewOrderPage() {
   return (
     <>
       <PageHeader
-        title="Create orders"
-        description="Add one or more parcels. Charges update live as you type."
+        title="New delivery order"
+        description="Add one or more parcels and watch delivery charges update live as you enter details."
       >
         <Button
           variant="outline"
@@ -402,6 +453,89 @@ export default function NewOrderPage() {
                               </SelectContent>
                             </Select>
                           </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor={`map-${p.id}`}>
+                            <span className="flex items-center gap-1.5">
+                              <MapPin className="text-muted-foreground size-3.5" />
+                              Map link
+                              <span className="text-muted-foreground font-normal">
+                                (optional)
+                              </span>
+                            </span>
+                          </Label>
+                          <Input
+                            id={`map-${p.id}`}
+                            type="url"
+                            value={p.deliveryMapLink}
+                            onChange={(e) =>
+                              updateParcel(
+                                p.id,
+                                "deliveryMapLink",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="https://maps.google.com/?q=..."
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <Label>
+                            <span className="flex items-center gap-1.5">
+                              <ImageIcon className="text-muted-foreground size-3.5" />
+                              Image links
+                              <span className="text-muted-foreground font-normal">
+                                (optional)
+                              </span>
+                            </span>
+                          </Label>
+                          <div className="flex flex-col gap-2">
+                            {p.deliveryImageLinks.map((link, linkIndex) => (
+                              <div
+                                key={linkIndex}
+                                className="flex items-center gap-2"
+                              >
+                                <Input
+                                  type="url"
+                                  value={link}
+                                  onChange={(e) =>
+                                    updateImageLink(
+                                      p.id,
+                                      linkIndex,
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="https://example.com/location-photo.jpg"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    removeImageLink(p.id, linkIndex)
+                                  }
+                                  aria-label={`Remove image link ${linkIndex + 1}`}
+                                  disabled={
+                                    p.deliveryImageLinks.length === 1 &&
+                                    link.trim() === ""
+                                  }
+                                >
+                                  <Trash2 className="text-muted-foreground size-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="self-start"
+                            onClick={() => addImageLink(p.id)}
+                          >
+                            <Plus className="size-3.5" />
+                            Add image link
+                          </Button>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">

@@ -213,7 +213,7 @@ export default function MerchantsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Merchants"
-        description="Review registrations, approve businesses, and assign each merchant's delivery pricing."
+        description="Review new registrations, approve businesses, and set each merchant's delivery pricing."
       />
 
       {/* Stats */}

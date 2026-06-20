@@ -1,12 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2, Wallet, Package } from "lucide-react"
+import { Wallet, Package } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
@@ -17,14 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { FormDialog } from "@/components/dialog/form-dialog"
 
 const PAYOUT_METHODS = ["bKash", "Nagad", "Rocket", "Bank transfer"]
 
@@ -78,99 +70,72 @@ export function PayoutRequestDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Request payout</DialogTitle>
-          <DialogDescription>
-            Request the product cost from your delivered, settled orders.
-            Delivery charge and security money are platform revenue and are not
-            paid out.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="border-border bg-muted/40 rounded-lg border p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Package className="size-4" />
-              {payableOrders.length} order
-              {payableOrders.length === 1 ? "" : "s"} included
-            </span>
-            <span className="text-muted-foreground text-sm">Payout amount</span>
-          </div>
-          <div className="mt-2 flex items-end justify-between">
-            <p className="text-muted-foreground font-mono text-xs">
-              {payableOrders.map((o) => o.code).join(", ")}
-            </p>
-            <p className="text-primary text-2xl font-semibold tabular-nums">
-              {formatTk(total)}
-            </p>
-          </div>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Request payout"
+      description="Request the product cost from your delivered, settled orders. Delivery charge and security money are platform revenue and are not paid out."
+      onConfirm={handleSubmit}
+      submitting={submitting}
+      submittingLabel="Submitting"
+      submitLabel="Submit request"
+      submitIcon={<Wallet className="size-4" />}
+      submitDisabled={payableOrders.length === 0}
+    >
+      <div className="border-border bg-muted/40 rounded-lg border p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Package className="size-4" />
+            {payableOrders.length} order
+            {payableOrders.length === 1 ? "" : "s"} included
+          </span>
+          <span className="text-muted-foreground text-sm">Payout amount</span>
         </div>
-
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="payout-method">Payout method</Label>
-            <Select
-              value={method}
-              onValueChange={(value) => setMethod(value ?? "bKash")}
-            >
-              <SelectTrigger id="payout-method">
-                <SelectValue placeholder="Select method" />
-              </SelectTrigger>
-              <SelectContent>
-                {PAYOUT_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="payout-details">{detailsLabel}</Label>
-            <Input
-              id="payout-details"
-              placeholder={
-                method === "Bank transfer"
-                  ? "Bank · A/C number"
-                  : "+8801XXXXXXXXX"
-              }
-              value={details}
-              onChange={(e) => setDetails(e.target.value)}
-            />
-          </div>
+        <div className="mt-2 flex items-end justify-between">
+          <p className="text-muted-foreground font-mono text-xs">
+            {payableOrders.map((o) => o.code).join(", ")}
+          </p>
+          <p className="text-primary text-2xl font-semibold tabular-nums">
+            {formatTk(total)}
+          </p>
         </div>
+      </div>
 
-        <Separator />
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="payout-method">Payout method</Label>
+          <Select
+            value={method}
+            onValueChange={(value) => setMethod(value ?? "bKash")}
+          >
+            <SelectTrigger id="payout-method">
+              <SelectValue placeholder="Select method" />
+            </SelectTrigger>
+            <SelectContent>
+              {PAYOUT_METHODS.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="payout-details">{detailsLabel}</Label>
+          <Input
+            id="payout-details"
+            placeholder={
+              method === "Bank transfer"
+                ? "Bank · A/C number"
+                : "+8801XXXXXXXXX"
+            }
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+          />
+        </div>
+      </div>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting || payableOrders.length === 0}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Submitting
-              </>
-            ) : (
-              <>
-                <Wallet className="size-4" />
-                Submit request
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <Separator />
+    </FormDialog>
   )
 }

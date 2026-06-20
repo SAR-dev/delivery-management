@@ -62,6 +62,14 @@ interface PlatformContextValue {
   ) => Promise<{ ok: boolean; user?: User; error?: string }>
   logout: () => Promise<void>
 
+  // Update the signed-in user's own display name.
+  updateProfileName: (name: string) => Promise<{ ok: boolean; error?: string }>
+  // Change the signed-in user's password (verifies the current one).
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+
   securityConfig: SecurityMoneyConfig | null
   updateSecurityConfig: (
     next: Pick<
@@ -85,6 +93,16 @@ interface PlatformContextValue {
     id: string,
     pricing: MerchantPricingInput,
   ) => Promise<void>
+  // Merchant updates their own business contact details.
+  updateMerchantProfile: (
+    id: string,
+    input: {
+      businessName: string
+      email: string
+      phone: string
+      address: string
+    },
+  ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Phase 3: orders (merchant-facing) ---
   orders: Order[]
@@ -397,6 +415,41 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     router.push("/login")
   }, [router])
 
+  const updateProfileName = useCallback<
+    PlatformContextValue["updateProfileName"]
+  >(async (name) => {
+    const res = await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return { ok: false, error: data?.error ?? "Could not update your name." }
+    }
+    setCurrentUser(data)
+    return { ok: true }
+  }, [])
+
+  const changePassword = useCallback<PlatformContextValue["changePassword"]>(
+    async (currentPassword, newPassword) => {
+      const { error } = await authClient.changePassword({
+        currentPassword,
+        newPassword,
+        // Keep this session alive but sign out everywhere else for safety.
+        revokeOtherSessions: true,
+      })
+      if (error) {
+        return {
+          ok: false,
+          error: error.message ?? "Could not change your password.",
+        }
+      }
+      return { ok: true }
+    },
+    [],
+  )
+
   const updateSecurityConfig = useCallback<
     PlatformContextValue["updateSecurityConfig"]
   >(async (next) => {
@@ -506,6 +559,25 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     setMerchants((prev) => prev.map((m) => (m.id === id ? updated : m)))
   }, [])
 
+  const updateMerchantProfile = useCallback<
+    PlatformContextValue["updateMerchantProfile"]
+  >(async (id, input) => {
+    const res = await fetch(`/api/merchants/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data?.error ?? "Could not update your business details.",
+      }
+    }
+    setMerchants((prev) => prev.map((m) => (m.id === id ? data : m)))
+    return { ok: true }
+  }, [])
+
   // --- Phase 3: Order creation (merchant) ---------------------------------
 
   // The merchant business owned by the logged-in merchant user (if any).
@@ -586,26 +658,36 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         )
       }
 
-      const res = await fetch(`/api/orders/${orderId}/${path}`, {
-        method: "PATCH",
-        ...(body
-          ? {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            }
-          : {}),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
+      const rollback = () => {
         // Roll back to the snapshot we took before the optimistic update.
         if (snapshot) {
           const prevRow = snapshot
           setOrders((prev) => prev.map((o) => (o.id === orderId ? prevRow : o)))
         }
-        return { ok: false, error: data?.error ?? "Action failed." }
       }
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? data : o)))
-      return { ok: true }
+
+      try {
+        const res = await fetch(`/api/orders/${orderId}/${path}`, {
+          method: "PATCH",
+          ...(body
+            ? {
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              }
+            : {}),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          rollback()
+          return { ok: false, error: data?.error ?? "Action failed." }
+        }
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? data : o)))
+        return { ok: true }
+      } catch {
+        // Network/transport failure: roll back the optimistic update too.
+        rollback()
+        return { ok: false, error: "Network error. Please try again." }
+      }
     },
     [],
   )
@@ -857,6 +939,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         refreshData,
         login,
         logout,
+        updateProfileName,
+        changePassword,
         securityConfig,
         updateSecurityConfig,
         team,
@@ -868,6 +952,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         suspendMerchant,
         reactivateMerchant,
         setMerchantPricing,
+        updateMerchantProfile,
         orders,
         pickupLocations,
         currentMerchant,

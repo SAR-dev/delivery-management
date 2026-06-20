@@ -7,6 +7,7 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { AddressModal } from "@/components/address-modal"
 import { WarehouseReceiveDialog } from "@/components/dialog/warehouse-receive-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -102,12 +103,16 @@ export default function WarehouseIntakePage() {
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span>{o.deliveryCity}</span>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} · {o.recipientPhone}
-          </span>
-        </div>
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -148,7 +153,7 @@ export default function WarehouseIntakePage() {
         title={`Warehouse intake, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
         description={`Receive picked-up parcels into ${
           currentWarehouse?.name ?? "your warehouse"
-        } and log them in.`}
+        } and log them into inventory.`}
       />
 
       <StatCardList

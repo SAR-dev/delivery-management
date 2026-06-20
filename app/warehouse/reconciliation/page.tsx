@@ -194,7 +194,7 @@ export default function WarehouseReconciliationPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`COD reconciliation, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`The platform retains delivery charge + security money; product cost becomes payable to the merchant.`}
+        description="Match collected cash against delivered orders. The platform keeps delivery charge and security money; product cost becomes payable to the merchant."
       />
 
       <StatCardList

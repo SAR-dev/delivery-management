@@ -6,6 +6,7 @@ import { usePlatform } from "@/lib/platform-context"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { TrackingCell } from "@/components/tracking-cell"
 import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -61,11 +62,7 @@ export default function RiderPickupQueuePage() {
       header: "Order",
       sortable: true,
       sortValue: (o) => o.code,
-      cell: (o) => (
-        <span className="text-muted-foreground font-mono text-xs">
-          {o.code}
-        </span>
-      ),
+      cell: (o) => <TrackingCell code={o.code} />,
     },
     {
       id: "merchant",
@@ -76,9 +73,7 @@ export default function RiderPickupQueuePage() {
         const m = merchant(o.merchantId)
         return (
           <div className="flex flex-col">
-            <span className="font-medium">
-              {m?.businessName ?? "Merchant"}
-            </span>
+            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
             <span className="text-muted-foreground text-xs">{m?.phone}</span>
           </div>
         )
@@ -136,7 +131,7 @@ export default function RiderPickupQueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Pickup queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Collect approved parcels from merchants and mark them picked up."
+        description="Collect approved parcels from merchants and confirm each pickup as you go."
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>

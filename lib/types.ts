@@ -87,6 +87,8 @@ export interface CreateOrderInput {
   recipientPhone: string
   deliveryAddress: string
   deliveryCity: string
+  deliveryMapLink?: string | null
+  deliveryImageLinks?: string[] | null
   parcelWeightKg: number
   deliveryType: DeliveryType
   productCost: number

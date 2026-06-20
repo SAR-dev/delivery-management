@@ -19,6 +19,7 @@ import { formatTk } from "@/lib/pricing"
 import { CURRENCY_SUFFIX } from "@/lib/constants"
 import type { Order } from "@/lib/types"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { AddressModal } from "@/components/address-modal"
 import { TrackingTimeline } from "@/components/tracking-timeline"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -157,7 +158,14 @@ export default function OrderDetailPage() {
                 <Field
                   icon={MapPin}
                   label="Delivery address"
-                  value={`${order.deliveryAddress}, ${order.deliveryCity}`}
+                  value={
+                    <AddressModal
+                      order={order}
+                      className="underline decoration-dotted underline-offset-4"
+                    >
+                      {order.deliveryAddress}, {order.deliveryCity}
+                    </AddressModal>
+                  }
                   className="sm:col-span-2"
                 />
                 <Field

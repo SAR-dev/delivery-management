@@ -7,8 +7,6 @@ import {
   Navigation,
   CheckCircle2,
   Truck,
-  Store,
-  User,
   PartyPopper,
   Phone,
 } from "lucide-react"
@@ -20,10 +18,13 @@ import { PageHeader } from "@/components/page-header"
 import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
 import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
 import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
+import { TrackingCell } from "@/components/tracking-cell"
+import { AddressModal } from "@/components/address-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { StatCardList } from "@/components/stat-card-list"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function isToday(iso?: string | null) {
   if (!iso) return false
@@ -36,77 +37,28 @@ function isToday(iso?: string | null) {
   )
 }
 
-function TaskRow({
-                   icon: Icon,
-                   tone,
-                   title,
-                   subtitle,
-                   phone,
-                   meta,
-                   actionLabel,
-                   actionIcon: ActionIcon,
-                   onAction,
-                 }: {
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-  title: string
-  subtitle: string
-  phone?: string
-  meta?: string
-  actionLabel: string
-  actionIcon: React.ComponentType<{ className?: string }>
-  onAction: () => void
-}) {
+function PhoneLink({ phone }: { phone?: string }) {
+  if (!phone) return null
   return (
-    <div className="border-border flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 sm:px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        <div
-          className={`flex size-9 shrink-0 items-center justify-center rounded-full ${tone}`}
-        >
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{title}</p>
-          <p className="text-muted-foreground truncate text-xs">
-            {subtitle}
-          </p>
-          {phone ? (
-            <a
-              href={`tel:${phone}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs tabular-nums"
-            >
-              <Phone className="size-3" />
-              {phone}
-            </a>
-          ) : null}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        {meta ? (
-          <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
-            {meta}
-          </span>
-        ) : null}
-        <Button size="sm" onClick={onAction}>
-          <ActionIcon className="size-4" />
-          {actionLabel}
-        </Button>
-      </div>
-    </div>
+    <a
+      href={`tel:${phone}`}
+      onClick={(e) => e.stopPropagation()}
+      className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs tabular-nums"
+    >
+      <Phone className="size-3" />
+      {phone}
+    </a>
   )
 }
 
 function TaskSection({
-                       title,
-                       count,
-                       emptyMessage,
-                       viewAllHref,
-                       children,
-                     }: {
+  title,
+  count,
+  viewAllHref,
+  children,
+}: {
   title: string
   count: number
-  emptyMessage: string
   /** Omit when another section in the same group already links to this queue. */
   viewAllHref?: string
   children: React.ReactNode
@@ -128,26 +80,15 @@ function TaskSection({
             </Link>
           ) : null}
         </div>
-        {count === 0 ? (
-          <p className="text-muted-foreground px-4 py-6 text-sm sm:px-5">
-            {emptyMessage}
-          </p>
-        ) : (
-          children
-        )}
+        {children}
       </CardContent>
     </Card>
   )
 }
 
 export default function RiderTodoPage() {
-  const {
-    currentUser,
-    currentRider,
-    orders,
-    merchants,
-    pickupLocations,
-  } = usePlatform()
+  const { currentUser, currentRider, orders, merchants, pickupLocations } =
+    usePlatform()
 
   const [pickupTarget, setPickupTarget] = useState<Order | null>(null)
   const [pickupDialogOpen, setPickupDialogOpen] = useState(false)
@@ -157,6 +98,7 @@ export default function RiderTodoPage() {
   const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
 
   const myPickups = useMemo(
@@ -182,9 +124,7 @@ export default function RiderTodoPage() {
   const deliveredToday = myDeliveries.filter(
     (o) => o.status === "DELIVERED" && isToday(o.deliveredAt),
   ).length
-  const pickedUpToday = myPickups.filter((o) =>
-    isToday(o.pickedUpAt),
-  ).length
+  const pickedUpToday = myPickups.filter((o) => isToday(o.pickedUpAt)).length
 
   const totalTasks = toPickup.length + toStart.length + toDeliver.length
 
@@ -203,11 +143,173 @@ export default function RiderTodoPage() {
     setDeliveryDialogOpen(true)
   }
 
+  // Pickup needs merchant info only — no recipient details yet.
+  const pickupColumns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <TrackingCell code={o.code} />
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "pickup",
+      header: "Pickup from",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <div className="flex flex-col">
+            <span>{p?.label ?? "Pickup point"}</span>
+            <span className="text-muted-foreground text-xs">
+              {p?.address ?? ""}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "contact",
+      header: "Contact",
+      cell: (o) => <PhoneLink phone={merchant(o.merchantId)?.phone} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) => (
+        <Button size="sm" onClick={() => openPickup(o)}>
+          <PackageCheck className="size-4" />
+          Mark picked up
+        </Button>
+      ),
+    },
+  ]
+
+  // IN_TRANSIT: parcel already handed over — just start the route.
+  const startColumns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <TrackingCell code={o.code} />
+          <span className="font-medium">{o.recipientName}</span>
+        </div>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.deliveryAddress}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "contact",
+      header: "Contact",
+      cell: (o) => <PhoneLink phone={o.recipientPhone} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) => (
+        <Button size="sm" onClick={() => openStartDelivery(o)}>
+          <Navigation className="size-4" />
+          Out for delivery
+        </Button>
+      ),
+    },
+  ]
+
+  // Delivery needs recipient info + the amount to collect.
+  const deliverColumns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <TrackingCell code={o.code} />
+          <span className="font-medium">{o.recipientName}</span>
+        </div>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.deliveryAddress}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "contact",
+      header: "Contact",
+      cell: (o) => <PhoneLink phone={o.recipientPhone} />,
+    },
+    {
+      id: "collectible",
+      header: "Collect",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) => (
+        <Button size="sm" onClick={() => openDelivery(o)}>
+          <CheckCircle2 className="size-4" />
+          Record outcome
+        </Button>
+      ),
+    },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Today's tasks, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Everything that needs your attention right now, in one list."
+        description="Every pickup and delivery that needs your attention right now, in one place."
       />
 
       <StatCardList
@@ -246,84 +348,54 @@ export default function RiderTodoPage() {
             <PartyPopper className="text-chart-2 size-8" />
             <p className="font-medium">All caught up</p>
             <p className="text-muted-foreground max-w-sm text-sm">
-              No pending pickups or deliveries right now. New tasks will show
-              up here as soon as they're assigned to you.
+              No pending pickups or deliveries right now. New tasks will show up
+              here as soon as they&apos;re assigned to you.
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-5">
-          {/* Pickup needs merchant info only — no recipient details yet. */}
           <TaskSection
             title="Pick up from merchant"
             count={toPickup.length}
-            emptyMessage="No pickups waiting."
             viewAllHref="/rider/pickup"
           >
-            {toPickup.map((o) => {
-              const m = merchant(o.merchantId)
-              const p = pickup(o.pickupLocationId)
-              return (
-                <TaskRow
-                  key={o.id}
-                  icon={Store}
-                  tone="bg-chart-1/15 text-chart-1"
-                  title={`${o.code} · ${m?.businessName ?? "Merchant"}`}
-                  subtitle={`${p?.label ?? "Pickup point"} — ${p?.address ?? ""}`}
-                  phone={m?.phone}
-                  actionLabel="Mark picked up"
-                  actionIcon={PackageCheck}
-                  onAction={() => openPickup(o)}
-                />
-              )
-            })}
+            <DataTable
+              columns={pickupColumns}
+              data={toPickup}
+              getRowKey={(o) => o.id}
+              initialSortId="order"
+              pageSize={5}
+              emptyMessage="No pickups waiting."
+            />
           </TaskSection>
 
-          {/* IN_TRANSIT: the parcel has already been handed to you by the
-              warehouse — this just needs a tap to start the route. Same
-              underlying queue as "Deliver to recipient" below, so it
+          {/* Same underlying queue as "Deliver to recipient" below, so it
               doesn't need its own "View queue" link. */}
-          <TaskSection
-            title="Start delivery run"
-            count={toStart.length}
-            emptyMessage="Nothing dispatched to you yet."
-          >
-            {toStart.map((o) => (
-              <TaskRow
-                key={o.id}
-                icon={User}
-                tone="bg-chart-4/15 text-chart-4"
-                title={`${o.code} · ${o.recipientName}`}
-                subtitle={`${o.deliveryAddress}, ${o.deliveryCity}`}
-                phone={o.recipientPhone}
-                actionLabel="Out for delivery"
-                actionIcon={Navigation}
-                onAction={() => openStartDelivery(o)}
-              />
-            ))}
+          <TaskSection title="Start delivery run" count={toStart.length}>
+            <DataTable
+              columns={startColumns}
+              data={toStart}
+              getRowKey={(o) => o.id}
+              initialSortId="order"
+              pageSize={5}
+              emptyMessage="Nothing dispatched to you yet."
+            />
           </TaskSection>
 
-          {/* Delivery needs recipient info only — no merchant details. */}
           <TaskSection
             title="Deliver to recipient"
             count={toDeliver.length}
-            emptyMessage="Nothing out for delivery right now."
             viewAllHref="/rider/delivery"
           >
-            {toDeliver.map((o) => (
-              <TaskRow
-                key={o.id}
-                icon={User}
-                tone="bg-chart-2/15 text-chart-2"
-                title={`${o.code} · ${o.recipientName}`}
-                subtitle={`${o.deliveryAddress}, ${o.deliveryCity}`}
-                phone={o.recipientPhone}
-                meta={`Collect ${formatTk(o.totalCollectible)}`}
-                actionLabel="Record outcome"
-                actionIcon={CheckCircle2}
-                onAction={() => openDelivery(o)}
-              />
-            ))}
+            <DataTable
+              columns={deliverColumns}
+              data={toDeliver}
+              getRowKey={(o) => o.id}
+              initialSortId="order"
+              pageSize={5}
+              emptyMessage="Nothing out for delivery right now."
+            />
           </TaskSection>
         </div>
       )}
@@ -336,7 +408,9 @@ export default function RiderTodoPage() {
             : ""
         }
         pickupLabel={
-          pickupTarget ? (pickup(pickupTarget.pickupLocationId)?.label ?? "—") : ""
+          pickupTarget
+            ? (pickup(pickupTarget.pickupLocationId)?.label ?? "—")
+            : ""
         }
         pickupAddress={
           pickupTarget

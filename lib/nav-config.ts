@@ -14,6 +14,8 @@ import {
   ShieldCheck,
   Shield,
   Warehouse as WarehouseIcon,
+  UserCog,
+  Building2,
   type LucideIcon,
 } from "lucide-react"
 import type { Role } from "@/lib/types"
@@ -50,6 +52,12 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
   ],
   mobileItems: [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -57,6 +65,12 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
     { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
   ],
 }
 
@@ -76,6 +90,12 @@ export const ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/riders", label: "Riders", icon: Bike },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
   ],
 }
 
@@ -97,6 +117,18 @@ export const MERCHANT_SIDEBAR: SidebarConfig = {
     },
     { href: "/merchant/orders/new", label: "Create Order", icon: PackagePlus },
     { href: "/merchant/finance", label: "Finance", icon: Wallet },
+    {
+      href: "/merchant/business",
+      label: "Business",
+      icon: Building2,
+      exact: true,
+    },
+    {
+      href: "/merchant/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
   ],
 }
 
@@ -128,6 +160,12 @@ export const WAREHOUSE_SIDEBAR: SidebarConfig = {
       icon: Wallet,
       exact: true,
     },
+    {
+      href: "/warehouse/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
   ],
 }
 
@@ -146,6 +184,12 @@ export const RIDER_SIDEBAR: SidebarConfig = {
       href: "/rider/delivery",
       label: "Delivery queue",
       icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/rider/account",
+      label: "Account",
+      icon: UserCog,
       exact: true,
     },
   ],

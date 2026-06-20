@@ -4,6 +4,10 @@
  * One-time seed script. Run with:
  *   npx tsx lib/db/seed.ts
  *
+ * Pass --min to skip orders, payout requests, and payout-linked orders:
+ *   npx tsx lib/db/seed.ts --min
+ *   npm run db:seed -- --min
+ *
  * Ports every row from lib/mock-data.ts into the real database.
  * Safe to re-run: each section checks for existing rows and skips them.
  *
@@ -28,6 +32,15 @@ import {
 } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { SEED_CREDENTIALS } from "./seed-credentials"
+
+// ---------------------------------------------------------------------------
+// Flags
+// ---------------------------------------------------------------------------
+
+// `npm run db:seed -- --min` (or `tsx lib/db/seed.ts --min`) skips orders
+// and anything that references orders (payout requests + payout-linked
+// orders), so you get a lightweight base dataset without delivery data.
+const MIN_MODE = process.argv.includes("--min")
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -616,6 +629,8 @@ async function seedOrders() {
       recipientPhone: "+8801822223344",
       deliveryAddress: "House 7, Sector 10, Uttara, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%207%2C%20Sector%2010%2C%20Uttara%2C%20Dhaka",
       parcelWeightKg: 0.8,
       deliveryType: "FRAGILE" as const,
       productCost: 800,
@@ -646,6 +661,10 @@ async function seedOrders() {
       recipientPhone: "+8801833334455",
       deliveryAddress: "Plot 19, Bashundhara R/A, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100258-gate/600/600",
+        "https://picsum.photos/seed/PF-100258-building/600/600",
+      ],
       parcelWeightKg: 3,
       deliveryType: "STANDARD" as const,
       productCost: 12000,
@@ -665,6 +684,12 @@ async function seedOrders() {
       recipientPhone: "+8801844445566",
       deliveryAddress: "Flat 5C, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=Flat%205C%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100260-gate/600/600",
+        "https://picsum.photos/seed/PF-100260-building/600/600",
+      ],
       parcelWeightKg: 1.5,
       deliveryType: "STANDARD" as const,
       productCost: 2200,
@@ -684,6 +709,12 @@ async function seedOrders() {
       recipientPhone: "+8801855556677",
       deliveryAddress: "House 22, Road 5, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%2022%2C%20Road%205%2C%20Dhanmondi%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100261-gate/600/600",
+        "https://picsum.photos/seed/PF-100261-building/600/600",
+      ],
       parcelWeightKg: 0.5,
       deliveryType: "FRAGILE" as const,
       productCost: 650,
@@ -726,6 +757,8 @@ async function seedOrders() {
       recipientPhone: "+8801877778899",
       deliveryAddress: "House 9, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%209%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
       parcelWeightKg: 2.5,
       deliveryType: "FRAGILE" as const,
       productCost: 3200,
@@ -749,6 +782,10 @@ async function seedOrders() {
       recipientPhone: "+8801888889900",
       deliveryAddress: "House 31, Road 8, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100264-gate/600/600",
+        "https://picsum.photos/seed/PF-100264-building/600/600",
+      ],
       parcelWeightKg: 1,
       deliveryType: "STANDARD" as const,
       productCost: 1500,
@@ -773,6 +810,12 @@ async function seedOrders() {
       recipientPhone: "+8801899990011",
       deliveryAddress: "Flat 7B, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=Flat%207B%2C%20Road%2011%2C%20Banani%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100265-gate/600/600",
+        "https://picsum.photos/seed/PF-100265-building/600/600",
+      ],
       parcelWeightKg: 2.2,
       deliveryType: "FRAGILE" as const,
       productCost: 4200,
@@ -797,6 +840,12 @@ async function seedOrders() {
       recipientPhone: "+8801800001122",
       deliveryAddress: "House 5, Road 16, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%205%2C%20Road%2016%2C%20Dhanmondi%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100266-gate/600/600",
+        "https://picsum.photos/seed/PF-100266-building/600/600",
+      ],
       parcelWeightKg: 1.4,
       deliveryType: "STANDARD" as const,
       productCost: 2600,
@@ -851,6 +900,8 @@ async function seedOrders() {
       recipientPhone: "+8801800003344",
       deliveryAddress: "House 22, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%2022%2C%20Road%2011%2C%20Banani%2C%20Dhaka",
       parcelWeightKg: 1.1,
       deliveryType: "STANDARD" as const,
       productCost: 1900,
@@ -881,6 +932,10 @@ async function seedOrders() {
       recipientPhone: "+8801800004455",
       deliveryAddress: "Flat 4B, Road 27, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100269-gate/600/600",
+        "https://picsum.photos/seed/PF-100269-building/600/600",
+      ],
       parcelWeightKg: 0.6,
       deliveryType: "STANDARD" as const,
       productCost: 850,
@@ -912,6 +967,12 @@ async function seedOrders() {
       recipientPhone: "+8801800005566",
       deliveryAddress: "House 8, Road 3, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%208%2C%20Road%203%2C%20Dhanmondi%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100270-gate/600/600",
+        "https://picsum.photos/seed/PF-100270-building/600/600",
+      ],
       parcelWeightKg: 1.3,
       deliveryType: "STANDARD" as const,
       productCost: 2400,
@@ -947,6 +1008,12 @@ async function seedOrders() {
       recipientPhone: "+8801800006677",
       deliveryAddress: "House 12, Road 9, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%2012%2C%20Road%209%2C%20Dhanmondi%2C%20Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100271-gate/600/600",
+        "https://picsum.photos/seed/PF-100271-building/600/600",
+      ],
       parcelWeightKg: 1.6,
       deliveryType: "STANDARD" as const,
       productCost: 3400,
@@ -1087,6 +1154,8 @@ async function seedPayoutLinkedOrders() {
       recipientPhone: "+8801800008899",
       deliveryAddress: "House 3, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryMapLink:
+        "https://www.google.com/maps/search/?api=1&query=House%203%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
       parcelWeightKg: 1.2,
       deliveryType: "STANDARD" as const,
       productCost: 2800,
@@ -1125,6 +1194,10 @@ async function seedPayoutLinkedOrders() {
       recipientPhone: "+8801800009900",
       deliveryAddress: "House 5, Road 16, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryImageLinks: [
+        "https://picsum.photos/seed/PF-100274-gate/600/600",
+        "https://picsum.photos/seed/PF-100274-building/600/600",
+      ],
       parcelWeightKg: 0.9,
       deliveryType: "STANDARD" as const,
       productCost: 1500,
@@ -1171,7 +1244,9 @@ async function seedPayoutLinkedOrders() {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("=== ParcelFlow seed starting ===\n")
+  console.log(
+    `=== ParcelFlow seed starting${MIN_MODE ? " (--min: skipping orders)" : ""} ===\n`
+  )
 
   try {
     await seedWarehouses()
@@ -1180,9 +1255,14 @@ async function main() {
     await seedPickupLocations()
     await seedSecurityConfig()
     await seedUsers() // must come after warehouses (warehouseId FK in profile)
-    await seedOrders() // must come after riders + merchants + pickup locations
-    await seedPayoutRequests()
-    await seedPayoutLinkedOrders() // must come after payout requests
+
+    if (!MIN_MODE) {
+      await seedOrders() // must come after riders + merchants + pickup locations
+      await seedPayoutRequests()
+      await seedPayoutLinkedOrders() // must come after payout requests
+    } else {
+      log("Skipping orders, payout requests, and payout-linked orders (--min)")
+    }
 
     console.log("\n=== Seed complete ✓ ===")
   } catch (err) {

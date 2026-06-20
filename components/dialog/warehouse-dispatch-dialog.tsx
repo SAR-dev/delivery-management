@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import {
-  Loader2,
   Truck,
   MapPin,
   Phone,
@@ -13,17 +12,9 @@ import {
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order, Rider } from "@/lib/types"
-import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { FormDialog } from "@/components/dialog/form-dialog"
 import {
   Select,
   SelectContent,
@@ -102,98 +93,72 @@ export function WarehouseDispatchDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Dispatch {order.code} for delivery</DialogTitle>
-          <DialogDescription>
-            Assign a delivery rider from {warehouseName}. The order status
-            updates to In transit and the rider becomes responsible for handoff.
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Dispatch ${order.code} for delivery`}
+      description={`Assign a delivery rider from ${warehouseName}. The order status updates to In transit and the rider becomes responsible for handoff.`}
+      onConfirm={handleConfirm}
+      submitting={submitting}
+      submittingLabel="Dispatching"
+      submitLabel="Dispatch parcel"
+      submitIcon={<Truck className="size-4" />}
+      submitDisabled={deliveryRiders.length === 0}
+    >
+      <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
+        <InfoRow
+          icon={Package}
+          label="Parcel"
+          value={`${order.parcelWeightKg} KG · ${order.deliveryType} · from ${merchantName}`}
+        />
+        <InfoRow
+          icon={MapPin}
+          label="Final destination"
+          value={`${order.deliveryAddress}, ${order.deliveryCity}`}
+        />
+        <InfoRow
+          icon={Phone}
+          label="Recipient"
+          value={`${order.recipientName} · ${order.recipientPhone}`}
+        />
+      </div>
 
-        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
-          <InfoRow
-            icon={Package}
-            label="Parcel"
-            value={`${order.parcelWeightKg} KG · ${order.deliveryType} · from ${merchantName}`}
-          />
-          <InfoRow
-            icon={MapPin}
-            label="Final destination"
-            value={`${order.deliveryAddress}, ${order.deliveryCity}`}
-          />
-          <InfoRow
-            icon={Phone}
-            label="Recipient"
-            value={`${order.recipientName} · ${order.recipientPhone}`}
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="delivery-rider">Delivery rider</Label>
-          {deliveryRiders.length === 0 ? (
-            <p className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-3 text-sm">
-              No active delivery riders are based at this warehouse.
-            </p>
-          ) : (
-            <Select value={riderId} onValueChange={(v) => setRiderId(v ?? "")}>
-              <SelectTrigger id="delivery-rider">
-                <SelectValue placeholder="Select a delivery rider" />
-              </SelectTrigger>
-              <SelectContent>
-                {deliveryRiders.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name} · {r.zone}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {selectedRider ? (
-            <div className="border-border bg-muted/40 mt-1 flex flex-col gap-2 rounded-lg border p-3">
-              <InfoRow
-                icon={Bike}
-                label="Assigned rider"
-                value={`${selectedRider.name} · ${selectedRider.phone}`}
-              />
-              <Separator className="my-0.5" />
-              <InfoRow
-                icon={WarehouseIcon}
-                label="Dispatching from"
-                value={warehouseName}
-              />
-            </div>
-          ) : null}
-        </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleConfirm}
-            disabled={submitting || deliveryRiders.length === 0}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Dispatching
-              </>
-            ) : (
-              <>
-                <Truck className="size-4" />
-                Dispatch parcel
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="delivery-rider">Delivery rider</Label>
+        {deliveryRiders.length === 0 ? (
+          <p className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-3 text-sm">
+            No active delivery riders are based at this warehouse.
+          </p>
+        ) : (
+          <Select value={riderId} onValueChange={(v) => setRiderId(v ?? "")}>
+            <SelectTrigger id="delivery-rider">
+              <SelectValue placeholder="Select a delivery rider" />
+            </SelectTrigger>
+            <SelectContent>
+              {deliveryRiders.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.name} · {r.zone}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {selectedRider ? (
+          <div className="border-border bg-muted/40 mt-1 flex flex-col gap-2 rounded-lg border p-3">
+            <InfoRow
+              icon={Bike}
+              label="Assigned rider"
+              value={`${selectedRider.name} · ${selectedRider.phone}`}
+            />
+            <Separator className="my-0.5" />
+            <InfoRow
+              icon={WarehouseIcon}
+              label="Dispatching from"
+              value={warehouseName}
+            />
+          </div>
+        ) : null}
+      </div>
+    </FormDialog>
   )
 }
