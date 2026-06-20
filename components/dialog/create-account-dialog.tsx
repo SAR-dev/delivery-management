@@ -118,8 +118,12 @@ export function CreateAccountDialog() {
               value={form.role}
               onValueChange={(v) => update("role", v as CreatableRole)}
             >
-              <SelectTrigger id="role">
-                <SelectValue />
+              <SelectTrigger id="role" className="w-fit min-w-40">
+                <SelectValue>
+                  {(value) =>
+                    value === "ADMIN" ? "Admin" : "Warehouse Admin"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ADMIN">Admin</SelectItem>
@@ -180,7 +184,16 @@ export function CreateAccountDialog() {
                 onValueChange={(v) => update("warehouseId", v ?? "")}
               >
                 <SelectTrigger id="warehouse">
-                  <SelectValue placeholder="Select a warehouse (optional)" />
+                  <SelectValue placeholder="Select a warehouse (optional)">
+                    {(value) => {
+                      const w = unassignedWarehouses.find(
+                        (x) => x.id === value,
+                      )
+                      return w
+                        ? `${w.name} \u00B7 ${w.city}`
+                        : "Select a warehouse (optional)"
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {unassignedWarehouses.length === 0 ? (
