@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { User } from "@/lib/types"
@@ -34,8 +36,23 @@ function StatusToggle({
 }
 
 export default function TeamPage() {
-  const { team, warehouses, toggleAccountActive, togglePricingPermission } =
-    usePlatform()
+  const router = useRouter()
+  const {
+    currentUser,
+    team,
+    warehouses,
+    toggleAccountActive,
+    togglePricingPermission,
+  } = usePlatform()
+
+  // Managing Admin accounts is a Super Admin-only capability. Admins who reach
+  // this route directly are redirected back to their console overview.
+  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
+  useEffect(() => {
+    if (currentUser && !isSuperAdmin) {
+      router.replace("/dashboard")
+    }
+  }, [currentUser, isSuperAdmin, router])
 
   function warehouseName(id?: string | null) {
     if (!id) return "Unassigned"
@@ -141,10 +158,12 @@ export default function TeamPage() {
     statusColumn,
   ]
 
+  if (!isSuperAdmin) return null
+
   return (
     <>
       <PageHeader
-        title="Team Accounts"
+        title="Admins"
         description="Create and manage Admin and Warehouse Admin accounts. Grant Admins permission to manage merchant pricing."
       >
         <CreateAccountDialog />

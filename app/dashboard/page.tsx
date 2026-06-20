@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   Circle,
   ShieldCheck,
+  Bike,
+  Truck,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { PageHeader } from "@/components/page-header"
@@ -26,6 +28,150 @@ import { cn } from "@/lib/utils"
 import { StatCardList } from "@/components/stat-card-list"
 
 export default function OverviewPage() {
+  const { currentUser } = usePlatform()
+  if (currentUser?.role === "ADMIN") return <AdminOverview />
+  return <SuperAdminOverview />
+}
+
+// Pending-orders banner shared by both overviews.
+function PendingOrdersBanner({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <Card className="border-chart-3/30 bg-chart-3/5 lg:col-span-3">
+      <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <div className="bg-chart-3/15 text-chart-3 flex size-11 items-center justify-center rounded-lg">
+            <Package className="size-5" />
+          </div>
+          <div>
+            <p className="font-medium">
+              {count} order{count > 1 ? "s" : ""} awaiting approval
+            </p>
+            <p className="text-muted-foreground text-sm">
+              Verify weight compliance, then approve and assign a pickup rider.
+            </p>
+          </div>
+        </div>
+        <Button render={<Link href="/dashboard/orders" />} nativeButton={false}>
+          Review orders
+          <ArrowRight className="size-4" />
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+// -------------------------------------------------------------------------
+// Admin overview — operations-focused (orders, riders, merchants).
+// -------------------------------------------------------------------------
+function AdminOverview() {
+  const { currentUser, merchants, orders, riders } = usePlatform()
+
+  const pendingOrders = orders.filter((o) => o.status === "PENDING").length
+  const inProgressOrders = orders.filter(
+    (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
+  ).length
+  const activeRiders = riders.filter((r) => r.isActive).length
+  const pendingMerchants = merchants.filter(
+    (m) => m.status === "PENDING",
+  ).length
+
+  const quickLinks = [
+    {
+      label: "Review & approve orders",
+      description: "Approve pending orders and assign pickup riders.",
+      href: "/dashboard/orders",
+      icon: Package,
+    },
+    {
+      label: "Manage riders",
+      description: "Add riders and toggle their availability.",
+      href: "/dashboard/riders",
+      icon: Bike,
+    },
+    {
+      label: "Manage merchants",
+      description: "Approve merchants and set delivery pricing.",
+      href: "/dashboard/merchants",
+      icon: Store,
+    },
+  ]
+
+  return (
+    <>
+      <PageHeader
+        title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
+        description="Keep orders moving — approve shipments, manage riders, and onboard merchants."
+      />
+
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Pending approval",
+            value: pendingOrders,
+            hint: "Awaiting your review",
+            icon: Package,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "In progress",
+            value: inProgressOrders,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Active riders",
+            value: activeRiders,
+            hint: `${riders.length} total`,
+            icon: Bike,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Pending merchants",
+            value: pendingMerchants,
+            hint: "Awaiting approval",
+            icon: Store,
+          },
+        ]}
+      />
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <PendingOrdersBanner count={pendingOrders} />
+
+        {quickLinks.map((link) => {
+          const Icon = link.icon
+          return (
+            <Link key={link.href} href={link.href} className="block">
+              <Card className="hover:border-primary/40 h-full transition-colors">
+                <CardContent className="flex h-full flex-col gap-3 p-5">
+                  <div className="bg-primary/10 text-primary flex size-11 items-center justify-center rounded-lg">
+                    <Icon className="size-5" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">{link.label}</p>
+                    <p className="text-muted-foreground text-sm">
+                      {link.description}
+                    </p>
+                  </div>
+                  <span className="text-primary flex items-center gap-1 text-sm font-medium">
+                    Open
+                    <ArrowRight className="size-4" />
+                  </span>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+// -------------------------------------------------------------------------
+// Super Admin overview — platform setup checklist & security rules.
+// -------------------------------------------------------------------------
+function SuperAdminOverview() {
   const { currentUser, team, securityConfig, merchants, orders, warehouses } =
     usePlatform()
 
@@ -108,35 +254,7 @@ export default function OverviewPage() {
       />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Pending orders — action */}
-        {pendingOrders > 0 ? (
-          <Card className="border-chart-3/30 bg-chart-3/5 lg:col-span-3">
-            <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="bg-chart-3/15 text-chart-3 flex size-11 items-center justify-center rounded-lg">
-                  <Package className="size-5" />
-                </div>
-                <div>
-                  <p className="font-medium">
-                    {pendingOrders} order{pendingOrders > 1 ? "s" : ""} awaiting
-                    approval
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    Verify weight compliance, then approve and assign a pickup
-                    rider.
-                  </p>
-                </div>
-              </div>
-              <Button
-                render={<Link href="/dashboard/orders" />}
-                nativeButton={false}
-              >
-                Review orders
-                <ArrowRight className="size-4" />
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
+        <PendingOrdersBanner count={pendingOrders} />
 
         {/* Setup checklist */}
         <Card className="lg:col-span-2">

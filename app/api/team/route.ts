@@ -10,7 +10,8 @@ export async function GET() {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
-  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+  // Only the Super Admin manages the Admin / Warehouse Admin roster.
+  if (me.role !== "SUPER_ADMIN") {
     return NextResponse.json([], { status: 200 })
   }
 
@@ -42,7 +43,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+  if (me.role !== "SUPER_ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
