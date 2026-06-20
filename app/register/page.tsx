@@ -1,6 +1,6 @@
 "use client"
 
-import {FormEvent, useState} from "react"
+import { FormEvent, useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Loader2, Store, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -62,7 +62,9 @@ export default function RegisterPage() {
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
-        setError(data?.error ?? "Could not complete registration. Please try again.")
+        setError(
+          data?.error ?? "Could not complete registration. Please try again.",
+        )
         return
       }
       setSubmittedName(businessName)
@@ -74,9 +76,9 @@ export default function RegisterPage() {
   return (
     <main className="flex min-h-screen flex-col lg:flex-row">
       {/* Brand panel */}
-      <section className="relative hidden flex-1 flex-col justify-between bg-sidebar p-12 text-sidebar-foreground lg:flex">
+      <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
         <div className="flex items-center gap-2">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
             <Store className="size-5" />
           </div>
           <span className="text-lg font-semibold tracking-tight">
@@ -85,32 +87,32 @@ export default function RegisterPage() {
         </div>
 
         <div className="max-w-md">
-          <p className="text-sm font-medium uppercase tracking-widest text-sidebar-primary">
+          <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
             Merchant Onboarding
           </p>
-          <h1 className="mt-4 text-balance text-4xl font-semibold leading-tight">
+          <h1 className="mt-4 text-4xl leading-tight font-semibold text-balance">
             Start shipping with a nationwide delivery network.
           </h1>
-          <p className="mt-4 text-pretty leading-relaxed text-sidebar-foreground/70">
+          <p className="text-sidebar-foreground/70 mt-4 leading-relaxed text-pretty">
             Register your business in minutes. Once our team approves your
             account, you&apos;ll get your assigned delivery rates and can begin
             creating orders right away.
           </p>
-          <ul className="mt-8 space-y-3 text-sm text-sidebar-foreground/80">
+          <ul className="text-sidebar-foreground/80 mt-8 space-y-3 text-sm">
             {[
               "Transparent per-order pricing",
               "Real-time order tracking",
               "Flexible pickup locations",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3">
-                <CheckCircle2 className="size-4 text-sidebar-primary" />
+                <CheckCircle2 className="text-sidebar-primary size-4" />
                 {item}
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="text-xs text-sidebar-foreground/50">
+        <p className="text-sidebar-foreground/50 text-xs">
           {"\u00A9"} {new Date().getFullYear()} ParcelFlow Logistics.
         </p>
       </section>
@@ -119,7 +121,7 @@ export default function RegisterPage() {
       <section className="flex flex-1 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-md">
           <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
               <Store className="size-5" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
@@ -130,16 +132,19 @@ export default function RegisterPage() {
           {submittedName ? (
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="flex flex-col gap-3">
-                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <div className="bg-primary/10 text-primary flex size-12 items-center justify-center rounded-full">
                   <CheckCircle2 className="size-6" />
                 </div>
                 <CardTitle className="text-2xl text-balance">
                   Registration received
                 </CardTitle>
-                <CardDescription className="text-pretty leading-relaxed">
-                  Thanks, <span className="font-medium text-foreground">{submittedName}</span>.
-                  Your account has been created with a{" "}
-                  <span className="font-medium text-foreground">PENDING</span>{" "}
+                <CardDescription className="leading-relaxed text-pretty">
+                  Thanks,{" "}
+                  <span className="text-foreground font-medium">
+                    {submittedName}
+                  </span>
+                  . Your account has been created with a{" "}
+                  <span className="text-foreground font-medium">PENDING</span>{" "}
                   status. A Super Admin will review and approve your business,
                   after which an Admin will assign your delivery rates. You can
                   log in once your account is active.
@@ -169,7 +174,9 @@ export default function RegisterPage() {
           ) : (
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="flex flex-col gap-1">
-                <CardTitle className="text-2xl">Create your merchant account</CardTitle>
+                <CardTitle className="text-2xl">
+                  Create your merchant account
+                </CardTitle>
                 <CardDescription>
                   Tell us about your business. Approval is required before you
                   can start shipping.
@@ -247,13 +254,17 @@ export default function RegisterPage() {
                   {error ? (
                     <p
                       role="alert"
-                      className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                      className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm"
                     >
                       {error}
                     </p>
                   ) : null}
 
-                  <Button type="submit" className="w-full" disabled={submitting}>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={submitting}
+                  >
                     {submitting ? (
                       <>
                         <Loader2 className="size-4 animate-spin" />
@@ -265,11 +276,11 @@ export default function RegisterPage() {
                   </Button>
                 </form>
 
-                <p className="mt-6 text-center text-sm text-muted-foreground">
+                <p className="text-muted-foreground mt-6 text-center text-sm">
                   Already have an account?{" "}
                   <Link
                     href="/login"
-                    className="font-medium text-primary hover:underline"
+                    className="text-primary font-medium hover:underline"
                   >
                     Log in
                   </Link>

@@ -25,9 +25,9 @@ export function MobileHeader({
   const navItems = items ?? config.mobileItems ?? config.items
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border px-4 md:hidden">
+    <header className="border-border flex h-16 items-center justify-between border-b px-4 md:hidden">
       <div className="flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg">
           <BrandIcon className="size-5" />
         </div>
         <span className="font-semibold">{BRAND_NAME}</span>
@@ -44,7 +44,10 @@ export function MobileHeader({
           {navItems.map((item) => {
             const Icon = item.icon
             return (
-              <DropdownMenuItem key={item.href} render={<Link href={item.href} />}>
+              <DropdownMenuItem
+                key={item.href}
+                render={<Link href={item.href} />}
+              >
                 <Icon className="size-4" />
                 {item.label}
               </DropdownMenuItem>

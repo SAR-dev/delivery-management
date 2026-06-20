@@ -20,8 +20,13 @@ export async function PATCH(
   if (parsed.error) return parsed.error
   const { reason } = parsed.data
 
-  const [orderRow] = await db.select().from(order).where(eq(order.id, id)).limit(1)
-  if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+  const [orderRow] = await db
+    .select()
+    .from(order)
+    .where(eq(order.id, id))
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
   if (orderRow.status !== "FAILED_ATTEMPT") {
     return NextResponse.json(
       { error: "Only FAILED_ATTEMPT parcels can be returned." },

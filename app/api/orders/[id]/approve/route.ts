@@ -20,8 +20,13 @@ export async function PATCH(
   if (parsed.error) return parsed.error
   const { riderId } = parsed.data
 
-  const [orderRow] = await db.select().from(order).where(eq(order.id, id)).limit(1)
-  if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+  const [orderRow] = await db
+    .select()
+    .from(order)
+    .where(eq(order.id, id))
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
   if (orderRow.status !== "PENDING") {
     return NextResponse.json(
       { error: "Only PENDING orders can be approved" },
@@ -42,7 +47,10 @@ export async function PATCH(
   }
   if (riderRow.warehouseId) {
     return NextResponse.json(
-      { error: "Select a pickup rider — this rider is a warehouse delivery rider." },
+      {
+        error:
+          "Select a pickup rider — this rider is a warehouse delivery rider.",
+      },
       { status: 400 },
     )
   }

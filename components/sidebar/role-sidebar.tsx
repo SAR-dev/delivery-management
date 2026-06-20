@@ -34,14 +34,16 @@ export function RoleSidebar({
   const BrandIcon = config.brandIcon
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex border-r border-sidebar-border h-screen sticky top-0 overflow-hidden">
-      <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+    <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-hidden border-r md:flex">
+      <div className="border-sidebar-border flex h-16 items-center gap-2 border-b px-5">
+        <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg">
           <BrandIcon className="size-5" />
         </div>
         <div className="leading-tight">
           <p className="text-sm font-semibold">{BRAND_NAME}</p>
-          <p className="text-xs text-sidebar-foreground/60">{config.roleLabel}</p>
+          <p className="text-sidebar-foreground/60 text-xs">
+            {config.roleLabel}
+          </p>
         </div>
       </div>
 
@@ -64,10 +66,10 @@ export function RoleSidebar({
         })}
       </nav>
 
-      <div className="border-t border-sidebar-border p-3">
+      <div className="border-sidebar-border border-t p-3">
         <div className="flex items-center gap-3 rounded-md px-2 py-2">
           <Avatar className="size-8">
-            <AvatarFallback className="bg-sidebar-accent text-xs text-sidebar-accent-foreground">
+            <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
               {currentUser ? initials(currentUser.name) : fallbackInitials}
             </AvatarFallback>
           </Avatar>
@@ -75,13 +77,18 @@ export function RoleSidebar({
             <p className="truncate text-sm font-medium">
               {currentUser?.name ?? fallbackName}
             </p>
-            <p className="truncate text-xs text-sidebar-foreground/60">
+            <p className="text-sidebar-foreground/60 truncate text-xs">
               {footerSubtitle ?? currentUser?.email}
             </p>
           </div>
         </div>
         <ThemeToggle className={footerActionClass} />
-        <Button variant="ghost" size="sm" onClick={logout} className={footerActionClass}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={logout}
+          className={footerActionClass}
+        >
           <LogOut className="size-4" />
           Sign out
         </Button>

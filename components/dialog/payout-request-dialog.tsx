@@ -83,26 +83,26 @@ export function PayoutRequestDialog({
         <DialogHeader>
           <DialogTitle>Request payout</DialogTitle>
           <DialogDescription>
-            Request the product cost from your delivered, settled
-            orders. Delivery charge and security money are platform revenue and
-            are not paid out.
+            Request the product cost from your delivered, settled orders.
+            Delivery charge and security money are platform revenue and are not
+            paid out.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border border-border bg-muted/40 p-4">
+        <div className="border-border bg-muted/40 rounded-lg border p-4">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="text-muted-foreground flex items-center gap-2 text-sm">
               <Package className="size-4" />
               {payableOrders.length} order
               {payableOrders.length === 1 ? "" : "s"} included
             </span>
-            <span className="text-sm text-muted-foreground">Payout amount</span>
+            <span className="text-muted-foreground text-sm">Payout amount</span>
           </div>
           <div className="mt-2 flex items-end justify-between">
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="text-muted-foreground font-mono text-xs">
               {payableOrders.map((o) => o.code).join(", ")}
             </p>
-            <p className="text-2xl font-semibold tabular-nums text-primary">
+            <p className="text-primary text-2xl font-semibold tabular-nums">
               {formatTk(total)}
             </p>
           </div>

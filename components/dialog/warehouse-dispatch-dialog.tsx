@@ -43,10 +43,10 @@ function InfoRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium leading-snug">{value}</p>
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="text-sm leading-snug font-medium">{value}</p>
       </div>
     </div>
   )
@@ -112,7 +112,7 @@ export function WarehouseDispatchDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4">
+        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
           <InfoRow
             icon={Package}
             label="Parcel"
@@ -133,7 +133,7 @@ export function WarehouseDispatchDialog({
         <div className="flex flex-col gap-2">
           <Label htmlFor="delivery-rider">Delivery rider</Label>
           {deliveryRiders.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+            <p className="border-border text-muted-foreground rounded-md border border-dashed px-3 py-3 text-sm">
               No active delivery riders are based at this warehouse.
             </p>
           ) : (
@@ -151,7 +151,7 @@ export function WarehouseDispatchDialog({
             </Select>
           )}
           {selectedRider ? (
-            <div className="mt-1 flex flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3">
+            <div className="border-border bg-muted/40 mt-1 flex flex-col gap-2 rounded-lg border p-3">
               <InfoRow
                 icon={Bike}
                 label="Assigned rider"

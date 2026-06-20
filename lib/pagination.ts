@@ -7,7 +7,8 @@ export function parsePagination(req: Request): {
   const offsetRaw = url.searchParams.get("offset")
 
   const limit = limitRaw !== null ? Number.parseInt(limitRaw, 10) : Number.NaN
-  const offset = offsetRaw !== null ? Number.parseInt(offsetRaw, 10) : Number.NaN
+  const offset =
+    offsetRaw !== null ? Number.parseInt(offsetRaw, 10) : Number.NaN
 
   return {
     limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,

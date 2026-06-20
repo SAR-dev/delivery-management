@@ -6,5 +6,10 @@ import { MERCHANT_SIDEBAR } from "@/lib/nav-config"
 
 export function MerchantSidebar() {
   const { currentMerchant } = usePlatform()
-  return <RoleSidebar config={MERCHANT_SIDEBAR} footerSubtitle={currentMerchant?.businessName} />
+  return (
+    <RoleSidebar
+      config={MERCHANT_SIDEBAR}
+      footerSubtitle={currentMerchant?.businessName}
+    />
+  )
 }

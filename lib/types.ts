@@ -1,4 +1,14 @@
-import type { user, profile, warehouse, rider, merchant, pickupLocation, securityConfig, payoutRequest, order } from "@/lib/db/schema"
+import type {
+  user,
+  profile,
+  warehouse,
+  rider,
+  merchant,
+  pickupLocation,
+  securityConfig,
+  payoutRequest,
+  order,
+} from "@/lib/db/schema"
 
 // =============================================================================
 // All domain types below are *derived* from the Drizzle schema (lib/db/schema.ts)
@@ -14,7 +24,9 @@ import type { user, profile, warehouse, rider, merchant, pickupLocation, securit
 // we want (mock seed data and optimistic updates routinely omit columns that
 // are simply null), so this utility makes any column whose type includes
 // `null` optional too, while leaving every other column's shape untouched.
-type NullableKeys<T> = { [K in keyof T]: null extends T[K] ? K : never }[keyof T]
+type NullableKeys<T> = {
+  [K in keyof T]: null extends T[K] ? K : never
+}[keyof T]
 type Loosen<T> = Omit<T, NullableKeys<T>> & Partial<Pick<T, NullableKeys<T>>>
 
 // --- Literal unions, derived from the schema's `enum`-hinted columns -------

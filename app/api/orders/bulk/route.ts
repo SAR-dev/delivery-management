@@ -88,7 +88,8 @@ export async function POST(req: Request) {
         input.parcelWeightKg,
       )
       const securityMoney = calcSecurityMoney(configRow, input.productCost)
-      const totalCollectible = input.productCost + deliveryCharge + securityMoney
+      const totalCollectible =
+        input.productCost + deliveryCharge + securityMoney
       seq += 1
       return {
         code: `PF-${String(seq).padStart(6, "0")}`,

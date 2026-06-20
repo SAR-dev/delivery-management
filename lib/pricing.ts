@@ -59,5 +59,7 @@ export function calcSecurityMoney(
   if (productCost <= config.lowValueThreshold) {
     return config.lowValueFlatFee
   }
-  return Math.round(productCost * (config.highValuePercentage / 100) * 100) / 100
+  return (
+    Math.round(productCost * (config.highValuePercentage / 100) * 100) / 100
+  )
 }

@@ -5,7 +5,9 @@ import { MAX_BULK_ORDERS } from "@/lib/constants"
 export async function parseBody<T extends z.ZodType>(
   req: Request,
   schema: T,
-): Promise<{ data: z.infer<T>; error: null } | { data: null; error: NextResponse }> {
+): Promise<
+  { data: z.infer<T>; error: null } | { data: null; error: NextResponse }
+> {
   let raw: unknown
   try {
     raw = await req.json()
@@ -31,7 +33,10 @@ export async function parseBody<T extends z.ZodType>(
 }
 
 const requiredString = (label: string) =>
-  z.string({ error: `${label} is required` }).trim().min(1, `${label} is required`)
+  z
+    .string({ error: `${label} is required` })
+    .trim()
+    .min(1, `${label} is required`)
 
 export const securityConfigSchema = z.object({
   lowValueThreshold: z.number().nonnegative(),
@@ -75,7 +80,10 @@ export const orderBulkCreateSchema = z.object({
   orders: z
     .array(orderCreateSchema)
     .min(1, "At least one order is required")
-    .max(MAX_BULK_ORDERS, `You can create up to ${MAX_BULK_ORDERS} orders at a time`),
+    .max(
+      MAX_BULK_ORDERS,
+      `You can create up to ${MAX_BULK_ORDERS} orders at a time`,
+    ),
 })
 
 export const orderApproveSchema = z.object({

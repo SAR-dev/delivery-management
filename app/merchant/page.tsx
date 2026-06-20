@@ -28,33 +28,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  label: string
-  value: string | number
-  hint?: string
-  icon: React.ComponentType<{ className?: string }>
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+import { StatCardList } from "@/components/stat-card-list"
 
 function TrackingCell({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
@@ -78,12 +52,14 @@ function TrackingCell({ code }: { code: string }) {
       <button
         type="button"
         onClick={copyLink}
-        aria-label={copied ? "Tracking link copied" : "Copy public tracking link"}
+        aria-label={
+          copied ? "Tracking link copied" : "Copy public tracking link"
+        }
         title="Copy public tracking link"
-        className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors"
       >
         {copied ? (
-          <Check className="size-3.5 text-chart-2" />
+          <Check className="text-chart-2 size-3.5" />
         ) : (
           <Copy className="size-3.5" />
         )}
@@ -94,7 +70,7 @@ function TrackingCell({ code }: { code: string }) {
         rel="noopener noreferrer"
         aria-label="Open public tracking page"
         title="Open public tracking page"
-        className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors"
       >
         <ExternalLink className="size-3.5" />
       </Link>
@@ -110,9 +86,13 @@ export default function MerchantOverviewPage() {
     : []
 
   const inTransit = myOrders.filter((o) =>
-    ["APPROVED", "PICKED_UP", "IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(
-      o.status,
-    ),
+    [
+      "APPROVED",
+      "PICKED_UP",
+      "IN_WAREHOUSE",
+      "IN_TRANSIT",
+      "OUT_FOR_DELIVERY",
+    ].includes(o.status),
   ).length
   const delivered = myOrders.filter((o) => o.status === "DELIVERED").length
   const pending = myOrders.filter((o) => o.status === "PENDING").length
@@ -138,7 +118,7 @@ export default function MerchantOverviewPage() {
       cell: (o) => (
         <div className="leading-tight">
           <p className="font-medium">{o.recipientName}</p>
-          <p className="text-xs text-muted-foreground">{o.deliveryCity}</p>
+          <p className="text-muted-foreground text-xs">{o.deliveryCity}</p>
         </div>
       ),
     },
@@ -188,7 +168,10 @@ export default function MerchantOverviewPage() {
         description="Create delivery orders and track them in real time."
       >
         {isActive ? (
-          <Button render={<Link href="/merchant/orders/new" />} nativeButton={false}>
+          <Button
+            render={<Link href="/merchant/orders/new" />}
+            nativeButton={false}
+          >
             <PackagePlus className="size-4" />
             Create order
           </Button>
@@ -196,15 +179,15 @@ export default function MerchantOverviewPage() {
       </PageHeader>
 
       {currentMerchant && !isActive ? (
-        <Card className="mb-6 border-chart-3/30 bg-chart-3/5">
+        <Card className="border-chart-3/30 bg-chart-3/5 mb-6">
           <CardContent className="flex items-start gap-3 p-5">
-            <AlertCircle className="mt-0.5 size-5 shrink-0 text-chart-3" />
+            <AlertCircle className="text-chart-3 mt-0.5 size-5 shrink-0" />
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <p className="font-medium">Account not active yet</p>
                 <MerchantStatusBadge status={currentMerchant.status} />
               </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
+              <p className="text-muted-foreground text-sm leading-relaxed">
                 {currentMerchant.status === "PENDING"
                   ? "Your business is awaiting Super Admin approval. Once approved and priced by an Admin, you can start creating orders."
                   : "Your account is currently suspended. Please contact the platform team to restore access."}
@@ -214,17 +197,25 @@ export default function MerchantOverviewPage() {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total orders" value={myOrders.length} icon={Package} />
-        <StatCard label="In transit" value={inTransit} hint="Active deliveries" icon={Truck} />
-        <StatCard label="Pending approval" value={pending} icon={Clock} />
-        <StatCard
-          label="COD outstanding"
-          value={formatTk(codOutstanding)}
-          hint={`${delivered} delivered`}
-          icon={Wallet}
-        />
-      </div>
+      <StatCardList
+        columns={4}
+        items={[
+          { label: "Total orders", value: myOrders.length, icon: Package },
+          {
+            label: "In transit",
+            value: inTransit,
+            hint: "Active deliveries",
+            icon: Truck,
+          },
+          { label: "Pending approval", value: pending, icon: Clock },
+          {
+            label: "COD outstanding",
+            value: formatTk(codOutstanding),
+            hint: `${delivered} delivered`,
+            icon: Wallet,
+          },
+        ]}
+      />
 
       <Card className="mt-6">
         <CardHeader className="flex flex-row items-center justify-between">
@@ -249,12 +240,12 @@ export default function MerchantOverviewPage() {
         <CardContent>
           {myOrders.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full">
                 <Package className="size-6" />
               </div>
               <div className="space-y-1">
                 <p className="font-medium">No orders yet</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   {isActive
                     ? "Create your first delivery order to get started."
                     : "Orders can be created once your account is active."}

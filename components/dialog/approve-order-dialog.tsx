@@ -95,7 +95,7 @@ export function ApproveOrderDialog({
           <DialogDescription>
             Verify the parcel details, then assign a pickup rider to collect it
             from{" "}
-            <span className="font-medium text-foreground">
+            <span className="text-foreground font-medium">
               {merchant?.businessName ?? "the merchant"}
             </span>
             .
@@ -104,7 +104,7 @@ export function ApproveOrderDialog({
 
         <form onSubmit={handleApprove} className="flex flex-col gap-4">
           {/* Order summary */}
-          <dl className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm">
+          <dl className="border-border bg-muted/40 space-y-2 rounded-lg border p-4 text-sm">
             <DetailRow
               label="Recipient"
               value={`${order.recipientName} · ${order.recipientPhone}`}
@@ -132,12 +132,12 @@ export function ApproveOrderDialog({
           </dl>
 
           {exceedsWeight ? (
-            <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="bg-destructive/10 text-destructive flex items-center gap-2 rounded-md px-3 py-2 text-sm">
               <AlertTriangle className="size-4 shrink-0" />
               Parcel exceeds the weight limit and cannot be approved.
             </p>
           ) : (
-            <p className="flex items-center gap-2 rounded-md bg-chart-2/10 px-3 py-2 text-sm text-chart-2">
+            <p className="bg-chart-2/10 text-chart-2 flex items-center gap-2 rounded-md px-3 py-2 text-sm">
               <ShieldCheck className="size-4 shrink-0" />
               Weight compliant — ready for approval.
             </p>
@@ -158,7 +158,7 @@ export function ApproveOrderDialog({
               <SelectContent>
                 {activeRiders.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
-                    <Bike className="size-4 text-muted-foreground" />
+                    <Bike className="text-muted-foreground size-4" />
                     <span>
                       {r.name} — {r.zone}
                     </span>

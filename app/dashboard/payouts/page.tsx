@@ -2,14 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import {
-  Wallet,
-  Clock,
-  Banknote,
-  Loader2,
-  Check,
-  X,
-} from "lucide-react"
+import { Wallet, Clock, Banknote, Loader2, Check, X } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { PayoutRequest } from "@/lib/types"
@@ -29,36 +22,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: string | number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function PayoutsPage() {
   const {
@@ -145,7 +111,7 @@ export default function PayoutsPage() {
       sortValue: (p) => p.code,
       cell: (p) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {p.code}
           </span>
           <span className="font-medium">{merchantName(p.merchantId)}</span>
@@ -160,7 +126,7 @@ export default function PayoutsPage() {
       cell: (p) => (
         <div className="flex flex-col">
           <span>{p.payoutMethod}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {p.payoutDetails}
           </span>
         </div>
@@ -206,12 +172,12 @@ export default function PayoutsPage() {
         <div className="flex flex-col gap-1">
           <PayoutStatusBadge status={p.status} />
           {p.status === "REJECTED" && p.rejectReason ? (
-            <span className="max-w-48 text-xs text-destructive">
+            <span className="text-destructive max-w-48 text-xs">
               {p.rejectReason}
             </span>
           ) : null}
           {p.status === "PAID" && p.paidAt ? (
-            <span className="text-xs text-chart-2">
+            <span className="text-chart-2 text-xs">
               Paid{" "}
               {new Date(p.paidAt).toLocaleDateString("en-US", {
                 day: "numeric",
@@ -279,26 +245,28 @@ export default function PayoutsPage() {
         description="Review payout requests merchants raise against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Pending review"
-          value={formatTk(pendingAmount)}
-          icon={Clock}
-          tone="bg-chart-3/15 text-chart-3"
-        />
-        <StatCard
-          label="Approved, awaiting payment"
-          value={formatTk(approvedAmount)}
-          icon={Wallet}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="Total paid out"
-          value={formatTk(paidAmount)}
-          icon={Banknote}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Pending review",
+            value: formatTk(pendingAmount),
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Approved, awaiting payment",
+            value: formatTk(approvedAmount),
+            icon: Wallet,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Total paid out",
+            value: formatTk(paidAmount),
+            icon: Banknote,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

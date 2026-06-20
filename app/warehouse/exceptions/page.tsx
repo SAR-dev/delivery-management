@@ -1,12 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  AlertTriangle,
-  RotateCcw,
-  Undo2,
-  Wrench,
-} from "lucide-react"
+import { AlertTriangle, RotateCcw, Undo2, Wrench } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
@@ -17,36 +12,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "NEEDS_ACTION" | "RESOLVED"
-
-function StatCard({
-                    label,
-                    value,
-                    icon: Icon,
-                    tone,
-                  }: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function WarehouseExceptionsPage() {
   const {
@@ -74,9 +42,9 @@ export default function WarehouseExceptionsPage() {
     () =>
       currentWarehouse
         ? orders.filter(
-          (o) =>
-            o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
-        )
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
         : [],
     [orders, currentWarehouse],
   )
@@ -96,7 +64,7 @@ export default function WarehouseExceptionsPage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -120,7 +88,7 @@ export default function WarehouseExceptionsPage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span>{o.deliveryCity}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientName} · {o.recipientPhone}
           </span>
         </div>
@@ -142,16 +110,16 @@ export default function WarehouseExceptionsPage() {
       cellClassName: "whitespace-normal align-top",
       cell: (o) =>
         o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-          <span className="block w-56 whitespace-normal break-words text-xs text-destructive">
+          <span className="text-destructive block w-56 text-xs break-words whitespace-normal">
             {o.failureNote}
           </span>
         ) : o.status === "RETURNED" ? (
-          <span className="block w-56 whitespace-normal break-words text-xs text-muted-foreground">
+          <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
             Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
             {o.returnReason ? ` — ${o.returnReason}` : ""}
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-muted-foreground text-xs">—</span>
         ),
     },
     {
@@ -195,26 +163,28 @@ export default function WarehouseExceptionsPage() {
         } — re-attempt delivery or close the parcel as returned.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Needs action"
-          value={needsAction.length}
-          icon={AlertTriangle}
-          tone="bg-destructive/10 text-destructive"
-        />
-        <StatCard
-          label="Returned"
-          value={resolved.length}
-          icon={Undo2}
-          tone="bg-muted text-muted-foreground"
-        />
-        <StatCard
-          label="Total exceptions"
-          value={needsAction.length + resolved.length}
-          icon={Wrench}
-          tone="bg-chart-4/15 text-chart-4"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Needs action",
+            value: needsAction.length,
+            icon: AlertTriangle,
+            tone: "bg-destructive/10 text-destructive",
+          },
+          {
+            label: "Returned",
+            value: resolved.length,
+            icon: Undo2,
+            tone: "bg-muted text-muted-foreground",
+          },
+          {
+            label: "Total exceptions",
+            value: needsAction.length + resolved.length,
+            icon: Wrench,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

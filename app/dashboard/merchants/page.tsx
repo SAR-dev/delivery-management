@@ -31,42 +31,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "ALL" | MerchantStatus
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className={`flex size-11 items-center justify-center rounded-lg ${tone}`}>
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 export default function MerchantsPage() {
-  const {
-    merchants,
-    approveMerchant,
-    suspendMerchant,
-    reactivateMerchant,
-  } = usePlatform()
+  const { merchants, approveMerchant, suspendMerchant, reactivateMerchant } =
+    usePlatform()
   const [tab, setTab] = useState<FilterTab>("ALL")
   const [query, setQuery] = useState("")
   const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
@@ -114,7 +85,7 @@ export default function MerchantsPage() {
       cell: (m) => (
         <div className="flex flex-col">
           <span className="font-medium">{m.businessName}</span>
-          <span className="text-xs text-muted-foreground">{m.email}</span>
+          <span className="text-muted-foreground text-xs">{m.email}</span>
         </div>
       ),
     },
@@ -126,7 +97,7 @@ export default function MerchantsPage() {
       cell: (m) => (
         <div className="flex flex-col">
           <span>{m.ownerName}</span>
-          <span className="text-xs text-muted-foreground">{m.phone}</span>
+          <span className="text-muted-foreground text-xs">{m.phone}</span>
         </div>
       ),
     },
@@ -141,7 +112,7 @@ export default function MerchantsPage() {
           <div className="flex items-center gap-2">
             <MerchantStatusBadge status={m.status} />
             {needsPricing ? (
-              <span className="text-xs font-medium text-chart-3">
+              <span className="text-chart-3 text-xs font-medium">
                 Needs rate
               </span>
             ) : null}
@@ -246,32 +217,34 @@ export default function MerchantsPage() {
       />
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Total merchants"
-          value={counts.total}
-          icon={Store}
-          tone="bg-primary/10 text-primary"
-        />
-        <StatCard
-          label="Active"
-          value={counts.active}
-          icon={CheckCircle2}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-        <StatCard
-          label="Pending approval"
-          value={counts.pending}
-          icon={Clock}
-          tone="bg-chart-3/15 text-chart-3"
-        />
-        <StatCard
-          label="Suspended"
-          value={counts.suspended}
-          icon={Ban}
-          tone="bg-destructive/10 text-destructive"
-        />
-      </div>
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Total merchants",
+            value: counts.total,
+            icon: Store,
+          },
+          {
+            label: "Active",
+            value: counts.active,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Pending approval",
+            value: counts.pending,
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Suspended",
+            value: counts.suspended,
+            icon: Ban,
+            tone: "bg-destructive/10 text-destructive",
+          },
+        ]}
+      />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -284,7 +257,7 @@ export default function MerchantsPage() {
           </TabsList>
         </Tabs>
         <div className="relative w-full sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
             placeholder="Search business, owner, email"
             value={query}

@@ -29,14 +29,14 @@ export default function MerchantLayout({
 
   if (!isReady || !currentUser || currentUser.role !== "MERCHANT") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="bg-background flex min-h-screen">
       <MerchantSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">

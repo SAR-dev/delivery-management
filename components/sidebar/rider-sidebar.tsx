@@ -6,5 +6,7 @@ import { RIDER_SIDEBAR } from "@/lib/nav-config"
 
 export function RiderSidebar() {
   const { currentRider } = usePlatform()
-  return <RoleSidebar config={RIDER_SIDEBAR} footerSubtitle={currentRider?.zone} />
+  return (
+    <RoleSidebar config={RIDER_SIDEBAR} footerSubtitle={currentRider?.zone} />
+  )
 }

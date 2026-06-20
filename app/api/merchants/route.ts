@@ -33,7 +33,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const parsed = await parseBody(req, merchantRegisterSchema)
   if (parsed.error) return parsed.error
-  const { businessName, ownerName, email, phone, address, password } = parsed.data
+  const { businessName, ownerName, email, phone, address, password } =
+    parsed.data
 
   // 1. Insert the merchant row first (no dependency on the Better Auth user).
   const [newMerchant] = await db
@@ -64,7 +65,10 @@ export async function POST(req: Request) {
     // Roll back the merchant row so a failed sign-up doesn't leave an orphan.
     await db.delete(merchant).where(eq(merchant.id, newMerchant.id))
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Could not create user account" },
+      {
+        error:
+          err instanceof Error ? err.message : "Could not create user account",
+      },
       { status: 400 },
     )
   }

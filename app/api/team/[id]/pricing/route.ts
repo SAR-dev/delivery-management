@@ -22,7 +22,8 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .limit(1)
 
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (current.role !== "ADMIN") {
     return NextResponse.json(
       { error: "Only ADMIN users have pricing permission" },

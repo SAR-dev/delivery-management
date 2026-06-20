@@ -136,7 +136,12 @@ export default function NewOrderPage() {
           securityMoney: acc.securityMoney + r.securityMoney,
           totalCollectible: acc.totalCollectible + r.totalCollectible,
         }),
-        { productCost: 0, deliveryCharge: 0, securityMoney: 0, totalCollectible: 0 },
+        {
+          productCost: 0,
+          deliveryCharge: 0,
+          securityMoney: 0,
+          totalCollectible: 0,
+        },
       ),
     [rows],
   )
@@ -205,10 +210,10 @@ export default function NewOrderPage() {
       {notActive ? (
         <Card className="border-chart-3/30 bg-chart-3/5">
           <CardContent className="flex items-start gap-3 p-5">
-            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-chart-3" />
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            <AlertTriangle className="text-chart-3 mt-0.5 size-5 shrink-0" />
+            <p className="text-muted-foreground text-sm leading-relaxed">
               Your account is{" "}
-              <span className="font-medium text-foreground">
+              <span className="text-foreground font-medium">
                 {currentMerchant.status}
               </span>
               . Orders can only be created once your account is active.
@@ -283,7 +288,7 @@ export default function NewOrderPage() {
                           onClick={() => removeParcel(p.id)}
                           aria-label={`Remove parcel ${index + 1}`}
                         >
-                          <Trash2 className="size-4 text-muted-foreground" />
+                          <Trash2 className="text-muted-foreground size-4" />
                         </Button>
                       )}
                     </CardHeader>
@@ -291,12 +296,18 @@ export default function NewOrderPage() {
                       <div className="flex flex-col gap-4">
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="flex flex-col gap-2">
-                            <Label htmlFor={`name-${p.id}`}>Recipient name</Label>
+                            <Label htmlFor={`name-${p.id}`}>
+                              Recipient name
+                            </Label>
                             <Input
                               id={`name-${p.id}`}
                               value={p.recipientName}
                               onChange={(e) =>
-                                updateParcel(p.id, "recipientName", e.target.value)
+                                updateParcel(
+                                  p.id,
+                                  "recipientName",
+                                  e.target.value,
+                                )
                               }
                               placeholder="Sumaiya Islam"
                               required
@@ -311,7 +322,11 @@ export default function NewOrderPage() {
                               type="tel"
                               value={p.recipientPhone}
                               onChange={(e) =>
-                                updateParcel(p.id, "recipientPhone", e.target.value)
+                                updateParcel(
+                                  p.id,
+                                  "recipientPhone",
+                                  e.target.value,
+                                )
                               }
                               placeholder="+8801811112233"
                               required
@@ -327,7 +342,11 @@ export default function NewOrderPage() {
                             id={`address-${p.id}`}
                             value={p.deliveryAddress}
                             onChange={(e) =>
-                              updateParcel(p.id, "deliveryAddress", e.target.value)
+                              updateParcel(
+                                p.id,
+                                "deliveryAddress",
+                                e.target.value,
+                              )
                             }
                             placeholder="Flat B2, Road 11, Banani"
                             required
@@ -336,30 +355,44 @@ export default function NewOrderPage() {
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="flex flex-col gap-2">
-                            <Label htmlFor={`city-${p.id}`}>Delivery city</Label>
+                            <Label htmlFor={`city-${p.id}`}>
+                              Delivery city
+                            </Label>
                             <Input
                               id={`city-${p.id}`}
                               value={p.deliveryCity}
                               onChange={(e) =>
-                                updateParcel(p.id, "deliveryCity", e.target.value)
+                                updateParcel(
+                                  p.id,
+                                  "deliveryCity",
+                                  e.target.value,
+                                )
                               }
                               placeholder="Dhaka"
                               required
                             />
                           </div>
                           <div className="flex flex-col gap-2">
-                            <Label htmlFor={`type-${p.id}`}>Delivery type</Label>
+                            <Label htmlFor={`type-${p.id}`}>
+                              Delivery type
+                            </Label>
                             <Select
                               value={p.deliveryType}
                               onValueChange={(v) =>
-                                updateParcel(p.id, "deliveryType", v as DeliveryType)
+                                updateParcel(
+                                  p.id,
+                                  "deliveryType",
+                                  v as DeliveryType,
+                                )
                               }
                             >
                               <SelectTrigger id={`type-${p.id}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="STANDARD">Standard</SelectItem>
+                                <SelectItem value="STANDARD">
+                                  Standard
+                                </SelectItem>
                                 <SelectItem value="FRAGILE">Fragile</SelectItem>
                               </SelectContent>
                             </Select>
@@ -378,13 +411,19 @@ export default function NewOrderPage() {
                               step="0.1"
                               value={p.parcelWeightKg}
                               onChange={(e) =>
-                                updateParcel(p.id, "parcelWeightKg", e.target.value)
+                                updateParcel(
+                                  p.id,
+                                  "parcelWeightKg",
+                                  e.target.value,
+                                )
                               }
                               required
                             />
                           </div>
                           <div className="flex flex-col gap-2">
-                            <Label htmlFor={`cost-${p.id}`}>Product cost (TK)</Label>
+                            <Label htmlFor={`cost-${p.id}`}>
+                              Product cost (TK)
+                            </Label>
                             <Input
                               id={`cost-${p.id}`}
                               type="number"
@@ -392,7 +431,11 @@ export default function NewOrderPage() {
                               step="1"
                               value={p.productCost}
                               onChange={(e) =>
-                                updateParcel(p.id, "productCost", e.target.value)
+                                updateParcel(
+                                  p.id,
+                                  "productCost",
+                                  e.target.value,
+                                )
                               }
                               placeholder="5000"
                               required
@@ -401,11 +444,11 @@ export default function NewOrderPage() {
                         </div>
 
                         {row.exceedsMax && (
-                          <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                          <div className="bg-destructive/10 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-sm">
                             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                             <span>
-                              Parcel exceeds the {currentMerchant.maxWeightKg} KG
-                              maximum and will be rejected.
+                              Parcel exceeds the {currentMerchant.maxWeightKg}{" "}
+                              KG maximum and will be rejected.
                             </span>
                           </div>
                         )}
@@ -432,7 +475,7 @@ export default function NewOrderPage() {
             <Card className="sticky top-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Calculator className="size-5 text-primary" />
+                  <Calculator className="text-primary size-5" />
                   Batch summary
                 </CardTitle>
                 <CardDescription>
@@ -444,7 +487,7 @@ export default function NewOrderPage() {
               </CardHeader>
               <CardContent>
                 {anyExceeds && (
-                  <div className="mb-4 flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-3 text-sm text-destructive">
+                  <div className="bg-destructive/10 text-destructive mb-4 flex items-start gap-2 rounded-md px-3 py-3 text-sm">
                     <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                     <span>
                       Some parcels exceed the {currentMerchant.maxWeightKg} KG
@@ -474,7 +517,7 @@ export default function NewOrderPage() {
                   <Separator className="my-1" />
                   <div className="flex justify-between text-base font-semibold">
                     <dt>Total collectible</dt>
-                    <dd className="tabular-nums text-primary">
+                    <dd className="text-primary tabular-nums">
                       {formatTk(totals.totalCollectible)}
                     </dd>
                   </div>
@@ -499,7 +542,7 @@ export default function NewOrderPage() {
                     </>
                   )}
                 </Button>
-                <p className="mt-3 text-center text-xs text-muted-foreground">
+                <p className="text-muted-foreground mt-3 text-center text-xs">
                   Cash collected on delivery from each recipient.
                 </p>
               </CardContent>

@@ -40,10 +40,10 @@ function InfoRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium leading-snug">{value}</p>
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="text-sm leading-snug font-medium">{value}</p>
       </div>
     </div>
   )
@@ -116,22 +116,18 @@ export function FailedDeliveryDialog({
         <DialogHeader>
           <DialogTitle>Resolve failed delivery — {order.code}</DialogTitle>
           <DialogDescription>
-            Decide whether to send this parcel back out for another
-            attempt or close it as a return.
+            Decide whether to send this parcel back out for another attempt or
+            close it as a return.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4">
+        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
           <InfoRow
             icon={Package}
             label="Parcel"
             value={`${order.parcelWeightKg} KG · ${order.deliveryType} · from ${merchantName}`}
           />
-          <InfoRow
-            icon={Bike}
-            label="Delivery rider"
-            value={riderName}
-          />
+          <InfoRow icon={Bike} label="Delivery rider" value={riderName} />
           <InfoRow icon={User} label="Recipient" value={order.recipientName} />
           <InfoRow icon={Phone} label="Phone" value={order.recipientPhone} />
           <InfoRow
@@ -142,7 +138,7 @@ export function FailedDeliveryDialog({
         </div>
 
         {order.failureNote ? (
-          <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="bg-destructive/10 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-sm">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div className="leading-snug">
               <p className="font-medium">
@@ -181,11 +177,13 @@ export function FailedDeliveryDialog({
         </div>
 
         {decision === "REATTEMPT" ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             The parcel goes back to {riderName} as{" "}
-            <span className="font-medium text-foreground">Out for delivery</span>
-            . They&apos;ll attempt to collect{" "}
-            {formatTk(order.totalCollectible)} again.
+            <span className="text-foreground font-medium">
+              Out for delivery
+            </span>
+            . They&apos;ll attempt to collect {formatTk(order.totalCollectible)}{" "}
+            again.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -199,7 +197,7 @@ export function FailedDeliveryDialog({
               onChange={(e) => setReason(e.target.value)}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               The parcel is closed as Returned — no COD is collected and no
               merchant payout is issued.
             </p>

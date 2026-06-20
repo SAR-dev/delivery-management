@@ -38,10 +38,10 @@ function InfoRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium leading-snug">{value}</p>
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="text-sm leading-snug font-medium">{value}</p>
       </div>
     </div>
   )
@@ -115,12 +115,8 @@ export function DeliveryAttemptDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4">
-          <InfoRow
-            icon={User}
-            label="Recipient"
-            value={order.recipientName}
-          />
+        <div className="border-border bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
+          <InfoRow icon={User} label="Recipient" value={order.recipientName} />
           <InfoRow icon={Phone} label="Phone" value={order.recipientPhone} />
           <InfoRow
             icon={MapPin}
@@ -163,14 +159,15 @@ export function DeliveryAttemptDialog({
         </div>
 
         {outcome === "DELIVERED" ? (
-          <p className="text-sm text-muted-foreground">
-            Confirm you collected {formatTk(order.totalCollectible)} and captured
-            proof of delivery from {order.recipientName.split(" ")[0]}.
+          <p className="text-muted-foreground text-sm">
+            Confirm you collected {formatTk(order.totalCollectible)} and
+            captured proof of delivery from {order.recipientName.split(" ")[0]}.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
             <Label htmlFor="failure-note">
-              Reason for failed attempt <span className="text-destructive">*</span>
+              Reason for failed attempt{" "}
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="failure-note"
@@ -179,8 +176,9 @@ export function DeliveryAttemptDialog({
               onChange={(e) => setNote(e.target.value)}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">
-              The parcel returns to the warehouse queue for the admin to process.
+            <p className="text-muted-foreground text-xs">
+              The parcel returns to the warehouse queue for the admin to
+              process.
             </p>
           </div>
         )}

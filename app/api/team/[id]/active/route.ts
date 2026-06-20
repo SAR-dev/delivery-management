@@ -22,7 +22,8 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .limit(1)
 
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   const [updated] = await db
     .update(profile)

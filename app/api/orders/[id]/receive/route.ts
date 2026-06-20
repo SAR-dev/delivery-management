@@ -16,8 +16,13 @@ export async function PATCH(
 
   const { id } = await params
 
-  const [orderRow] = await db.select().from(order).where(eq(order.id, id)).limit(1)
-  if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+  const [orderRow] = await db
+    .select()
+    .from(order)
+    .where(eq(order.id, id))
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
   if (orderRow.status !== "PICKED_UP") {
     return NextResponse.json(
       { error: "Only PICKED_UP parcels can be received." },

@@ -12,36 +12,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "READY" | "DISPATCHED"
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  tone: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div
-          className={`flex size-11 items-center justify-center rounded-lg ${tone}`}
-        >
-          <Icon className="size-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function WarehouseDispatchPage() {
   const {
@@ -82,7 +55,9 @@ export default function WarehouseDispatchPage() {
             (o) =>
               o.warehouseId === currentWarehouse.id &&
               o.deliveryRiderId != null &&
-              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(o.status),
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
           )
         : [],
     [orders, currentWarehouse],
@@ -103,7 +78,7 @@ export default function WarehouseDispatchPage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="text-muted-foreground font-mono text-xs">
             {o.code}
           </span>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
@@ -118,18 +93,18 @@ export default function WarehouseDispatchPage() {
       cell: (o) =>
         o.deliveryRiderId ? (
           <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="size-4 text-muted-foreground" />
+            <Bike className="text-muted-foreground size-4" />
             {rider(o.deliveryRiderId)?.name ?? "—"}
           </span>
         ) : (
-          <span className="text-sm text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground text-sm">Unassigned</span>
         ),
     },
     {
       id: "parcel",
       header: "Parcel",
       cell: (o) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           {o.parcelWeightKg} KG · {o.deliveryType}
         </span>
       ),
@@ -142,7 +117,7 @@ export default function WarehouseDispatchPage() {
       cell: (o) => (
         <div className="flex flex-col">
           <span>{o.deliveryCity}</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {o.recipientName} · {o.recipientPhone}
           </span>
         </div>
@@ -189,26 +164,28 @@ export default function WarehouseDispatchPage() {
         } and send them out for delivery.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Ready to dispatch"
-          value={ready.length}
-          icon={PackageOpen}
-          tone="bg-chart-1/15 text-chart-1"
-        />
-        <StatCard
-          label="Dispatched"
-          value={dispatched.length}
-          icon={Truck}
-          tone="bg-chart-4/15 text-chart-4"
-        />
-        <StatCard
-          label="Available riders"
-          value={warehouseDeliveryRiders.length}
-          icon={Bike}
-          tone="bg-chart-2/15 text-chart-2"
-        />
-      </div>
+      <StatCardList
+        items={[
+          {
+            label: "Ready to dispatch",
+            value: ready.length,
+            icon: PackageOpen,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Dispatched",
+            value: dispatched.length,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Available riders",
+            value: warehouseDeliveryRiders.length,
+            icon: Bike,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <TabsList>

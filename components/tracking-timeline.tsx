@@ -133,7 +133,8 @@ export function TrackingTimeline({ order }: { order: Order }) {
                   reached
                     ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
                     : "border-border bg-muted text-muted-foreground",
-                  isCurrent && "ring-2 ring-chart-2/40 ring-offset-2 ring-offset-background",
+                  isCurrent &&
+                    "ring-chart-2/40 ring-offset-background ring-2 ring-offset-2",
                 )}
               >
                 <Icon className="size-4" />
@@ -141,8 +142,10 @@ export function TrackingTimeline({ order }: { order: Order }) {
               {!isLast && (
                 <span
                   className={cn(
-                    "w-px flex-1 min-h-8",
-                    reached && currentRank > step.rank ? "bg-chart-2/40" : "bg-border",
+                    "min-h-8 w-px flex-1",
+                    reached && currentRank > step.rank
+                      ? "bg-chart-2/40"
+                      : "bg-border",
                   )}
                   aria-hidden="true"
                 />
@@ -159,14 +162,18 @@ export function TrackingTimeline({ order }: { order: Order }) {
               >
                 {step.label}
                 {isCurrent && (
-                  <span className="ml-2 rounded-full bg-chart-2/15 px-2 py-0.5 text-xs font-medium text-chart-2">
+                  <span className="bg-chart-2/15 text-chart-2 ml-2 rounded-full px-2 py-0.5 text-xs font-medium">
                     Current
                   </span>
                 )}
               </p>
-              <p className="text-sm text-muted-foreground">{step.description}</p>
+              <p className="text-muted-foreground text-sm">
+                {step.description}
+              </p>
               {stamp && (
-                <p className="mt-1 text-xs tabular-nums text-muted-foreground">{stamp}</p>
+                <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                  {stamp}
+                </p>
               )}
             </div>
           </li>
@@ -177,17 +184,19 @@ export function TrackingTimeline({ order }: { order: Order }) {
       {isFailed && (
         <li className="flex gap-4">
           <div className="flex flex-col items-center">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-destructive/25 bg-destructive/10 text-destructive">
+            <span className="border-destructive/25 bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-full border">
               <XCircle className="size-4" />
             </span>
           </div>
           <div>
-            <p className="text-sm font-medium text-destructive">Delivery attempt failed</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-destructive text-sm font-medium">
+              Delivery attempt failed
+            </p>
+            <p className="text-muted-foreground text-sm">
               We could not complete delivery. A new attempt will be scheduled.
             </p>
             {formatStamp(order.failedAttemptAt) && (
-              <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+              <p className="text-muted-foreground mt-1 text-xs tabular-nums">
                 {formatStamp(order.failedAttemptAt)}
               </p>
             )}
@@ -198,17 +207,19 @@ export function TrackingTimeline({ order }: { order: Order }) {
       {isReturned && (
         <li className="flex gap-4">
           <div className="flex flex-col items-center">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground">
+            <span className="border-border bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full border">
               <Undo2 className="size-4" />
             </span>
           </div>
           <div>
-            <p className="text-sm font-medium text-foreground">Returned to merchant</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-foreground text-sm font-medium">
+              Returned to merchant
+            </p>
+            <p className="text-muted-foreground text-sm">
               This parcel was returned and will not be delivered.
             </p>
             {formatStamp(order.returnedAt) && (
-              <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+              <p className="text-muted-foreground mt-1 text-xs tabular-nums">
                 {formatStamp(order.returnedAt)}
               </p>
             )}

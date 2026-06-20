@@ -23,35 +23,7 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-
-function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  label: string
-  value: string | number
-  hint?: string
-  icon: React.ComponentType<{ className?: string }>
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? (
-            <p className="text-xs text-muted-foreground">{hint}</p>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+import { StatCardList } from "@/components/stat-card-list"
 
 export default function OverviewPage() {
   const { currentUser, team, securityConfig, merchants, orders, warehouses } =
@@ -106,39 +78,42 @@ export default function OverviewPage() {
         description="Get the platform ready before merchants start onboarding."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Admins"
-          value={adminCount}
-          hint={`${pricingManagers} can set pricing`}
-          icon={Users}
-        />
-        <StatCard
-          label="Warehouse Admins"
-          value={warehouseAdminCount}
-          icon={ShieldCheck}
-        />
-        <StatCard
-          label="Active warehouses"
-          value={activeWarehouses}
-          hint={`${warehouses.length} total`}
-          icon={WarehouseIcon}
-        />
-        <StatCard
-          label="Pending merchants"
-          value={pendingMerchants}
-          hint="Awaiting approval"
-          icon={Store}
-        />
-      </div>
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Admins",
+            value: adminCount,
+            hint: `${pricingManagers} can set pricing`,
+            icon: Users,
+          },
+          {
+            label: "Warehouse Admins",
+            value: warehouseAdminCount,
+            icon: ShieldCheck,
+          },
+          {
+            label: "Active warehouses",
+            value: activeWarehouses,
+            hint: `${warehouses.length} total`,
+            icon: WarehouseIcon,
+          },
+          {
+            label: "Pending merchants",
+            value: pendingMerchants,
+            hint: "Awaiting approval",
+            icon: Store,
+          },
+        ]}
+      />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Pending orders — action */}
         {pendingOrders > 0 ? (
-          <Card className="lg:col-span-3 border-chart-3/30 bg-chart-3/5">
+          <Card className="border-chart-3/30 bg-chart-3/5 lg:col-span-3">
             <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
-                <div className="flex size-11 items-center justify-center rounded-lg bg-chart-3/15 text-chart-3">
+                <div className="bg-chart-3/15 text-chart-3 flex size-11 items-center justify-center rounded-lg">
                   <Package className="size-5" />
                 </div>
                 <div>
@@ -146,7 +121,7 @@ export default function OverviewPage() {
                     {pendingOrders} order{pendingOrders > 1 ? "s" : ""} awaiting
                     approval
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-muted-foreground text-sm">
                     Verify weight compliance, then approve and assign a pickup
                     rider.
                   </p>
@@ -181,9 +156,9 @@ export default function OverviewPage() {
                   )}
                 >
                   {step.done ? (
-                    <CheckCircle2 className="size-5 text-chart-2" />
+                    <CheckCircle2 className="text-chart-2 size-5" />
                   ) : (
-                    <Circle className="size-5 text-muted-foreground/50" />
+                    <Circle className="text-muted-foreground/50 size-5" />
                   )}
                   <span
                     className={cn(
@@ -196,7 +171,7 @@ export default function OverviewPage() {
                     {step.label}
                   </span>
                   {step.href && !step.done ? (
-                    <ArrowRight className="size-4 text-muted-foreground" />
+                    <ArrowRight className="text-muted-foreground size-4" />
                   ) : null}
                 </div>
               )
@@ -215,7 +190,7 @@ export default function OverviewPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Coins className="size-5 text-primary" />
+              <Coins className="text-primary size-5" />
               Security Money
             </CardTitle>
             <CardDescription>Current calculation rules</CardDescription>

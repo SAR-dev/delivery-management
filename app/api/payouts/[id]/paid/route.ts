@@ -21,7 +21,8 @@ export async function PATCH(
     .where(eq(payoutRequest.id, id))
     .limit(1)
 
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (current.status !== "APPROVED") {
     return NextResponse.json(
       { error: "Only APPROVED requests can be marked paid." },

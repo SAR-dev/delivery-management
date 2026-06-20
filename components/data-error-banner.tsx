@@ -14,15 +14,15 @@ export function DataErrorBanner() {
   return (
     <div
       role="alert"
-      className="mb-6 flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+      className="border-destructive/40 bg-destructive/10 mb-6 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+        <AlertTriangle className="text-destructive mt-0.5 size-5 shrink-0" />
         <div>
-          <p className="font-medium text-destructive">
+          <p className="text-destructive font-medium">
             Couldn&apos;t load the latest data
           </p>
-          <p className="text-sm text-muted-foreground">{dataError}</p>
+          <p className="text-muted-foreground text-sm">{dataError}</p>
         </div>
       </div>
       <Button
