@@ -1245,7 +1245,7 @@ async function seedPayoutLinkedOrders() {
 
 async function main() {
   console.log(
-    `=== ParcelFlow seed starting${MIN_MODE ? " (--min: skipping orders)" : ""} ===\n`
+    `=== ParcelFlow seed starting${MIN_MODE ? " (--min: skipping orders)" : ""} ===\n`,
   )
 
   try {
