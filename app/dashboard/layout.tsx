@@ -52,7 +52,7 @@ export default function DashboardLayout({
         <MobileHeader config={ADMIN_SIDEBAR} />
 
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-6xl">
+          <div className="mx-auto w-full max-w-7xl">
             <DataErrorBanner />
             {children}
           </div>
