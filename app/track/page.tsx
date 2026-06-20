@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, Suspense, useMemo, useState } from "react"
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -8,7 +8,6 @@ import {
   Search,
   MapPin,
   Store,
-  PackageX,
   ArrowRight,
   CheckCircle2,
   XCircle,
@@ -191,17 +190,19 @@ export default function TrackPage() {
 }
 
 function TrackContent() {
-  const { orders, merchants, riders, warehouses } = usePlatform()
+  const { orders, merchants, riders, warehouses, isReady, dataError } =
+    usePlatform()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialCode = (searchParams.get("code") ?? "").trim()
 
   const [query, setQuery] = useState(initialCode)
-  const [searched, setSearched] = useState(Boolean(initialCode))
+  const [searched, setSearched] = useState(false)
 
-  const submittedCode = searched ? initialCode || query : ""
+  const submittedCode = searched ? query : ""
 
   const order = useMemo(() => {
+    if (!isReady) return null
     const normalized = submittedCode.trim().toUpperCase()
     if (!normalized) return null
     return (
@@ -212,7 +213,7 @@ function TrackContent() {
           o.id.toUpperCase() === normalized,
       ) ?? null
     )
-  }, [orders])
+  }, [orders, isReady])
 
   const merchant = useMemo(
     () =>
@@ -247,20 +248,28 @@ function TrackContent() {
   function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault()
     const trimmed = query.trim()
+    if (!trimmed) return
     setSearched(true)
-    router.replace(
-      trimmed ? `/track?code=${encodeURIComponent(trimmed)}` : "/track",
-    )
+    router.replace(`/track?code=${encodeURIComponent(trimmed)}`)
   }
 
-  const notFound = searched && submittedCode.trim() !== "" && !order
+  const isLoading = searched && !isReady
+  const notFound =
+    isReady && searched && submittedCode.trim() !== "" && !order
+
+  // Show a simple alert when parcel is not found
+  useEffect(() => {
+    if (notFound) {
+      alert(`No parcel found for "${submittedCode}".\nDouble-check your tracking code and try again.`)
+      setSearched(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notFound])
+
   const statusInfo = order ? STATUS_COPY[order.status] : null
 
   return (
-    <main
-      className="min-h-screen"
-      style={{ background: "var(--track-bg, oklch(0.985 0.002 247))" }}
-    >
+    <main className="bg-background min-h-screen">
       {/* Header */}
       <header className="border-border/60 bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-5 py-3.5">
@@ -323,29 +332,27 @@ function TrackContent() {
         </form>
 
         {/* Hint */}
-        {!order && !notFound && !searched && (
+        {!order && !notFound && !isLoading && !searched && (
           <p className="text-muted-foreground mt-4 text-center text-xs">
             Your code is printed on the delivery note — it starts with{" "}
             <span className="text-foreground font-mono">PF-</span>
           </p>
         )}
 
-        {/* Not found */}
-        {notFound && (
-          <div className="mx-auto mt-2 max-w-sm">
-            <div className="border-border bg-card rounded-xl border p-8 text-center shadow-sm">
-              <div className="bg-muted mb-4 inline-flex size-12 items-center justify-center rounded-full">
-                <PackageX className="text-muted-foreground size-5" />
-              </div>
-              <p className="text-sm font-medium">No parcel found</p>
-              <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
-                We couldn&apos;t find a parcel for{" "}
-                <span className="text-foreground font-mono">
-                  {submittedCode}
-                </span>
-                . Double-check your tracking code and try again.
-              </p>
-            </div>
+        {/* Data error */}
+        {isReady && dataError && searched && (
+          <p className="text-destructive mx-auto mt-4 max-w-sm text-center text-sm">
+            Couldn&apos;t load tracking data: {dataError}
+          </p>
+        )}
+
+        {/* Loading */}
+        {isLoading && !dataError && (
+          <div className="mt-8 flex flex-col items-center gap-3">
+            <span className="border-muted border-t-primary size-6 animate-spin rounded-full border-2" />
+            <p className="text-muted-foreground text-xs">
+              Looking up your parcel…
+            </p>
           </div>
         )}
 
@@ -483,12 +490,12 @@ function TrackContent() {
 }
 
 function HandlerRow({
-  icon: Icon,
-  role,
-  name,
-  detail,
-  done,
-}: {
+                      icon: Icon,
+                      role,
+                      name,
+                      detail,
+                      done,
+                    }: {
   icon: React.ComponentType<{ className?: string }>
   role: string
   name: string
@@ -550,15 +557,15 @@ function InlineTimeline({ order }: { order: Order }) {
               <div className="flex flex-col items-center">
                 <span
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                    "flex size-9 shrink-0 items-center justify-center rounded-full border transition-all",
                     isCompleted
-                      ? "border-chart-2 bg-chart-2 text-white"
+                      ? "border-chart-2/30 bg-chart-2/15 text-chart-2"
                       : isCurrent
-                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                        : "border-border bg-muted/50 text-muted-foreground/50",
+                        ? "border-primary/30 bg-primary/15 text-primary"
+                        : "border-border bg-muted text-muted-foreground/50",
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  <Icon className="size-4" />
                 </span>
                 {(!isLast || hasExceptionAfter) && (
                   <span
@@ -612,8 +619,8 @@ function InlineTimeline({ order }: { order: Order }) {
             {showFailedAfter && (
               <li key="FAILED_ATTEMPT" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="border-destructive/40 bg-destructive/10 text-destructive flex size-8 shrink-0 items-center justify-center rounded-full border-2">
-                    <XCircle className="size-3.5" />
+                  <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-full border">
+                    <XCircle className="size-4" />
                   </span>
                   {/* Connector down to Delivered */}
                   <span
@@ -636,8 +643,8 @@ function InlineTimeline({ order }: { order: Order }) {
             {showReturnedAfter && (
               <li key="RETURNED" className="flex gap-3.5">
                 <div className="flex flex-col items-center">
-                  <span className="border-border bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full border-2">
-                    <Undo2 className="size-3.5" />
+                  <span className="border-border bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full border">
+                    <Undo2 className="size-4" />
                   </span>
                   {/* Connector down to Delivered */}
                   <span

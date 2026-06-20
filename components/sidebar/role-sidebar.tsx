@@ -11,19 +11,23 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { BRAND_NAME } from "@/lib/constants"
 import type { SidebarConfig } from "@/lib/nav-config"
 
+// Claude-style nav link: quiet by default, soft neutral fill on hover,
+// and a gentle tonal fill (not a saturated brand color) when active.
 const navLinkClass =
-  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
-const navLinkActive = "bg-sidebar-primary text-sidebar-primary-foreground"
+  "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-150"
+const navLinkActive =
+  "bg-sidebar-accent text-sidebar-accent-foreground"
 const navLinkIdle =
-  "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-const footerActionClass = `mt-1 w-full justify-start ${navLinkIdle}`
+  "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+const footerActionClass =
+  "mt-0.5 w-full justify-start gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
 
 export function RoleSidebar({
-  config,
-  footerSubtitle,
-  fallbackName,
-  fallbackInitials = "?",
-}: {
+                              config,
+                              footerSubtitle,
+                              fallbackName,
+                              fallbackInitials = "?",
+                            }: {
   config: SidebarConfig
   footerSubtitle?: string | null
   fallbackName?: string
@@ -34,20 +38,18 @@ export function RoleSidebar({
   const BrandIcon = config.brandIcon
 
   return (
-    <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-hidden border-r md:flex">
-      <div className="border-sidebar-border flex h-16 items-center gap-2 border-b px-5">
-        <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg">
-          <BrandIcon className="size-5" />
-        </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold">{BRAND_NAME}</p>
-          <p className="text-sidebar-foreground/60 text-xs">
-            {config.roleLabel}
-          </p>
-        </div>
+    <aside className="bg-sidebar text-sidebar-foreground sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-hidden md:flex">
+      {/* Brand — logo sized with the text, role badge in accent color */}
+      <div className="flex h-16 items-center gap-2 px-4">
+        <BrandIcon className="size-4 shrink-0" />
+        <p className="text-[13px] font-semibold">{BRAND_NAME}</p>
+        <span className="bg-sidebar-primary text-sidebar-primary-foreground rounded-full px-2 py-0.5 text-[10px] font-medium">
+          {config.roleLabel}
+        </span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+      {/* Nav — no rules, no boxes, just rhythm and spacing */}
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-2">
         {config.items.map((item) => {
           const active = item.exact
             ? pathname === item.href
@@ -59,25 +61,26 @@ export function RoleSidebar({
               href={item.href}
               className={cn(navLinkClass, active ? navLinkActive : navLinkIdle)}
             >
-              <Icon className="size-4" />
-              {item.label}
+              <Icon className="size-4 shrink-0" />
+              <span className="truncate">{item.label}</span>
             </Link>
           )
         })}
       </nav>
 
-      <div className="border-sidebar-border border-t p-3">
-        <div className="flex items-center gap-3 rounded-md px-2 py-2">
-          <Avatar className="size-8">
-            <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
+      {/* Footer — separated by spacing/tone, not a hard border line */}
+      <div className="px-3 pb-3 pt-2">
+        <div className="mb-1 flex items-center gap-3 rounded-lg px-3 py-2">
+          <Avatar className="size-7">
+            <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-[11px] font-medium">
               {currentUser ? initials(currentUser.name) : fallbackInitials}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-sm font-medium">
+            <p className="truncate text-[13px] font-medium">
               {currentUser?.name ?? fallbackName}
             </p>
-            <p className="text-sidebar-foreground/60 truncate text-xs">
+            <p className="text-sidebar-foreground/50 truncate text-[11px]">
               {footerSubtitle ?? currentUser?.email}
             </p>
           </div>
