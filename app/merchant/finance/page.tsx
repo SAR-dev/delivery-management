@@ -16,6 +16,8 @@ import type { Order, PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { PayoutStatusBadge } from "@/components/dialog/payout-status-badge"
 import { PayoutRequestDialog } from "@/components/dialog/payout-request-dialog"
+import { TrackingCell } from "@/components/tracking-cell"
+import { AddressModal } from "@/components/address-modal"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -53,8 +55,7 @@ export default function MerchantFinancePage() {
       header: "Tracking",
       sortable: true,
       sortValue: (o) => o.code,
-      cellClassName: "font-mono text-xs",
-      cell: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
     },
     {
       id: "recipient",
@@ -62,10 +63,14 @@ export default function MerchantFinancePage() {
       sortable: true,
       sortValue: (o) => o.recipientName,
       cell: (o) => (
-        <div className="leading-tight">
-          <p className="font-medium">{o.recipientName}</p>
-          <p className="text-muted-foreground text-xs">{o.deliveryCity}</p>
-        </div>
+        <AddressModal order={o}>
+          <div className="leading-tight">
+            <p className="font-medium">{o.recipientName}</p>
+            <p className="text-muted-foreground text-xs underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </p>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -169,8 +174,8 @@ export default function MerchantFinancePage() {
   return (
     <>
       <PageHeader
-        title="Financial dashboard"
-        description="Track your available funds and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
+        title="Finances & payouts"
+        description="Track your available balance and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
       >
         <Button onClick={() => setDialogOpen(true)} disabled={!canRequest}>
           <Wallet className="size-4" />

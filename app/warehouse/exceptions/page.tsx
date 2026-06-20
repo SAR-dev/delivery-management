@@ -7,6 +7,8 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { TrackingCell } from "@/components/tracking-cell"
+import { AddressModal } from "@/components/address-modal"
 import { FailedDeliveryDialog } from "@/components/dialog/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -86,12 +88,16 @@ export default function WarehouseExceptionsPage() {
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span>{o.deliveryCity}</span>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} · {o.recipientPhone}
-          </span>
-        </div>
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -105,21 +111,26 @@ export default function WarehouseExceptionsPage() {
       ),
     },
     {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
       id: "note",
-      header: "Note",
+      header: "Resolution",
       cellClassName: "whitespace-normal align-top",
       cell: (o) =>
-        o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-          <span className="text-destructive block w-56 text-xs break-words whitespace-normal">
-            {o.failureNote}
-          </span>
-        ) : o.status === "RETURNED" ? (
+        o.status === "RETURNED" ? (
           <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
             Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
             {o.returnReason ? ` — ${o.returnReason}` : ""}
           </span>
         ) : (
-          <span className="text-muted-foreground text-xs">—</span>
+          <span className="text-muted-foreground text-xs">
+            Open tracking for attempt details
+          </span>
         ),
     },
     {
@@ -160,7 +171,7 @@ export default function WarehouseExceptionsPage() {
         title={`Exceptions desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
         description={`Resolve failed delivery attempts at ${
           currentWarehouse?.name ?? "your warehouse"
-        } — re-attempt delivery or close the parcel as returned.`}
+        } — re-attempt the delivery or close the parcel as a return.`}
       />
 
       <StatCardList

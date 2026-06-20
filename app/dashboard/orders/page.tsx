@@ -17,6 +17,7 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { AddressModal } from "@/components/address-modal"
 import { ApproveOrderDialog } from "@/components/dialog/approve-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -85,7 +86,13 @@ export default function OrdersPage() {
             {o.code}
           </Link>
           <span className="text-muted-foreground text-xs">
-            {o.recipientName} · {o.deliveryCity}
+            {o.recipientName} ·{" "}
+            <AddressModal
+              order={o}
+              className="underline decoration-dotted underline-offset-4"
+            >
+              {o.deliveryCity}
+            </AddressModal>
           </span>
         </div>
       ),
@@ -170,7 +177,7 @@ export default function OrdersPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Orders"
+        title="Order approvals"
         description="Review pending orders, verify weight compliance, then approve and assign a pickup rider."
       />
 

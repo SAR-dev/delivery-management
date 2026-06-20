@@ -99,8 +99,8 @@ export default function SecurityMoneyPage() {
   return (
     <>
       <PageHeader
-        title="Security Money Rules"
-        description="Set how the platform calculates the refundable security amount collected on every order. These rules apply across all merchants."
+        title="Security money rules"
+        description="Configure how the refundable security amount is calculated on every order. These rules apply to all merchants."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">

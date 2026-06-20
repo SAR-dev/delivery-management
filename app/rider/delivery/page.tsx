@@ -7,6 +7,8 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { TrackingCell } from "@/components/tracking-cell"
+import { AddressModal } from "@/components/address-modal"
 import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
 import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
@@ -61,11 +63,7 @@ export default function RiderDeliveryQueuePage() {
       header: "Order",
       sortable: true,
       sortValue: (o) => o.code,
-      cell: (o) => (
-        <span className="text-muted-foreground font-mono text-xs">
-          {o.code}
-        </span>
-      ),
+      cell: (o) => <TrackingCell code={o.code} />,
     },
     {
       id: "recipient",
@@ -87,12 +85,16 @@ export default function RiderDeliveryQueuePage() {
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span>{o.deliveryCity}</span>
-          <span className="text-muted-foreground text-xs">
-            {o.deliveryAddress}
-          </span>
-        </div>
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.deliveryAddress}
+            </span>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -119,16 +121,7 @@ export default function RiderDeliveryQueuePage() {
       header: "Status",
       sortable: true,
       sortValue: (o) => o.status,
-      cell: (o) => (
-        <div className="flex flex-col gap-1">
-          <OrderStatusBadge status={o.status} />
-          {o.status === "FAILED_ATTEMPT" && o.failureNote ? (
-            <span className="text-destructive max-w-48 text-xs">
-              {o.failureNote}
-            </span>
-          ) : null}
-        </div>
-      ),
+      cell: (o) => <OrderStatusBadge status={o.status} />,
     },
     {
       id: "actions",
@@ -154,7 +147,7 @@ export default function RiderDeliveryQueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Delivery queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Take dispatched parcels out for delivery and record the outcome."
+        description="Take dispatched parcels out for delivery and record each outcome on the spot."
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>

@@ -65,10 +65,19 @@ export async function POST(req: Request) {
     recipientPhone,
     deliveryAddress,
     deliveryCity,
+    deliveryMapLink,
+    deliveryImageLinks,
     parcelWeightKg,
     deliveryType,
     productCost,
   } = parsed.data
+
+  const normalizedMapLink = deliveryMapLink?.trim()
+    ? deliveryMapLink.trim()
+    : null
+  const normalizedImageLinks = (deliveryImageLinks ?? [])
+    .map((link) => link.trim())
+    .filter((link) => link.length > 0)
 
   const [merchantRow] = await db
     .select()
@@ -140,6 +149,10 @@ export async function POST(req: Request) {
       recipientPhone,
       deliveryAddress,
       deliveryCity,
+      deliveryMapLink: normalizedMapLink,
+      deliveryImageLinks: normalizedImageLinks.length
+        ? normalizedImageLinks
+        : null,
       parcelWeightKg,
       deliveryType: deliveryType ?? "STANDARD",
       productCost,

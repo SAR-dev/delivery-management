@@ -242,7 +242,7 @@ export default function PayoutsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Merchant payouts"
-        description="Review payout requests merchants raise against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
+        description="Review payout requests against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
       />
 
       <StatCardList

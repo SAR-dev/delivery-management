@@ -163,8 +163,8 @@ export default function TeamPage() {
   return (
     <>
       <PageHeader
-        title="Admins"
-        description="Create and manage Admin and Warehouse Admin accounts. Grant Admins permission to manage merchant pricing."
+        title="Team & admins"
+        description="Create and manage Admin and Warehouse Admin accounts, and control who can set merchant pricing."
       >
         <CreateAccountDialog />
       </PageHeader>

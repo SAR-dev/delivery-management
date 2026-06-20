@@ -91,6 +91,10 @@ export async function POST(req: Request) {
       const totalCollectible =
         input.productCost + deliveryCharge + securityMoney
       seq += 1
+      const mapLink = input.deliveryMapLink?.trim()
+      const imageLinks = (input.deliveryImageLinks ?? [])
+        .map((link) => link.trim())
+        .filter((link) => link.length > 0)
       return {
         code: `PF-${String(seq).padStart(6, "0")}`,
         merchantId,
@@ -99,6 +103,8 @@ export async function POST(req: Request) {
         recipientPhone: input.recipientPhone,
         deliveryAddress: input.deliveryAddress,
         deliveryCity: input.deliveryCity,
+        deliveryMapLink: mapLink ? mapLink : null,
+        deliveryImageLinks: imageLinks.length ? imageLinks : null,
         parcelWeightKg: input.parcelWeightKg,
         deliveryType: input.deliveryType ?? "STANDARD",
         productCost: input.productCost,

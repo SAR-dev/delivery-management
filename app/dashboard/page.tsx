@@ -101,7 +101,7 @@ function AdminOverview() {
     <>
       <PageHeader
         title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Keep orders moving — approve shipments, manage riders, and onboard merchants."
+        description="Your command center for approvals, riders, merchants, and daily delivery operations."
       />
 
       <StatCardList
@@ -221,7 +221,7 @@ function SuperAdminOverview() {
     <>
       <PageHeader
         title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Get the platform ready before merchants start onboarding."
+        description="Finish the setup checklist below to start onboarding merchants and moving parcels."
       />
 
       <StatCardList

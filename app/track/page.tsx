@@ -619,6 +619,11 @@ function InlineTimeline({
                     {formatStamp(order.failedAttemptAt) ??
                       "A new attempt will be scheduled."}
                   </p>
+                  {order.failureNote ? (
+                    <p className="bg-destructive/10 text-destructive mt-2 rounded-md px-2.5 py-1.5 text-xs leading-snug">
+                      {order.failureNote}
+                    </p>
+                  ) : null}
                 </div>
               </li>
             )}

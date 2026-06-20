@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
 import {
   PackagePlus,
   Package,
@@ -9,9 +8,6 @@ import {
   Truck,
   Clock,
   AlertCircle,
-  Copy,
-  Check,
-  ExternalLink,
 } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
@@ -19,6 +15,8 @@ import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
+import { TrackingCell } from "@/components/tracking-cell"
+import { AddressModal } from "@/components/address-modal"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -29,54 +27,6 @@ import {
 } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
-
-function TrackingCell({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false)
-  const path = `/track?code=${encodeURIComponent(code)}`
-
-  async function copyLink() {
-    const url =
-      typeof window !== "undefined" ? `${window.location.origin}${path}` : path
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard may be unavailable; silently ignore.
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="font-mono text-xs">{code}</span>
-      <button
-        type="button"
-        onClick={copyLink}
-        aria-label={
-          copied ? "Tracking link copied" : "Copy public tracking link"
-        }
-        title="Copy public tracking link"
-        className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors"
-      >
-        {copied ? (
-          <Check className="text-chart-2 size-3.5" />
-        ) : (
-          <Copy className="size-3.5" />
-        )}
-      </button>
-      <Link
-        href={path}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Open public tracking page"
-        title="Open public tracking page"
-        className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors"
-      >
-        <ExternalLink className="size-3.5" />
-      </Link>
-    </div>
-  )
-}
 
 export default function MerchantOverviewPage() {
   const { currentUser, currentMerchant, orders } = usePlatform()
@@ -116,10 +66,14 @@ export default function MerchantOverviewPage() {
       sortable: true,
       sortValue: (o) => o.recipientName,
       cell: (o) => (
-        <div className="leading-tight">
-          <p className="font-medium">{o.recipientName}</p>
-          <p className="text-muted-foreground text-xs">{o.deliveryCity}</p>
-        </div>
+        <AddressModal order={o}>
+          <div className="leading-tight">
+            <p className="font-medium">{o.recipientName}</p>
+            <p className="text-muted-foreground text-xs underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </p>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -164,8 +118,8 @@ export default function MerchantOverviewPage() {
   return (
     <>
       <PageHeader
-        title={`Welcome, ${currentUser?.name.split(" ")[0] ?? "Merchant"}`}
-        description="Create delivery orders and track them in real time."
+        title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Merchant"}`}
+        description="Book new deliveries and follow every parcel from pickup to doorstep in real time."
       >
         {isActive ? (
           <Button

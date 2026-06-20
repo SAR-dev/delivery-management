@@ -7,6 +7,7 @@ import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { AddressModal } from "@/components/address-modal"
 import { WarehouseDispatchDialog } from "@/components/dialog/warehouse-dispatch-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -115,12 +116,16 @@ export default function WarehouseDispatchPage() {
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
-        <div className="flex flex-col">
-          <span>{o.deliveryCity}</span>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} · {o.recipientPhone}
-          </span>
-        </div>
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
       ),
     },
     {
@@ -159,9 +164,9 @@ export default function WarehouseDispatchPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`Dispatch desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Assign delivery riders to parcels held in ${
+        description={`Assign delivery riders to parcels waiting in ${
           currentWarehouse?.name ?? "your warehouse"
-        } and send them out for delivery.`}
+        } and send them out for the final mile.`}
       />
 
       <StatCardList

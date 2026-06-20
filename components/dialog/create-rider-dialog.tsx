@@ -1,21 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { UserPlus, Loader2 } from "lucide-react"
+import { UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { FormDialog } from "@/components/dialog/form-dialog"
 import {
   Select,
   SelectContent,
@@ -77,121 +69,100 @@ export function CreateRiderDialog() {
   }
 
   return (
-    <Dialog
+    <FormDialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) setForm(EMPTY)
       }}
+      trigger={
+        <Button>
+          <UserPlus className="size-4" />
+          Add rider
+        </Button>
+      }
+      title="Add rider"
+      description="Creates a rider profile and a login account. The rider's name will be set as their initial password."
+      onSubmit={handleSubmit}
+      submitting={submitting}
+      submitLabel="Add rider"
+      submitIcon={<UserPlus className="size-4" />}
+      showCancel={false}
+      fullWidthButtons
     >
-      <DialogTrigger
-        render={
-          <Button>
-            <UserPlus className="size-4" />
-            Add rider
-          </Button>
-        }
-      />
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add rider</DialogTitle>
-          <DialogDescription>
-            Creates a rider profile and a login account. The rider's name will
-            be set as their initial password.
-          </DialogDescription>
-        </DialogHeader>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="rider-name">Full name</Label>
+        <Input
+          id="rider-name"
+          value={form.name}
+          onChange={(e) => update("name", e.target.value)}
+          placeholder="Karim Hossain"
+        />
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="rider-name">Full name</Label>
-            <Input
-              id="rider-name"
-              value={form.name}
-              onChange={(e) => update("name", e.target.value)}
-              placeholder="Karim Hossain"
-            />
-          </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="rider-email">Email</Label>
+        <Input
+          id="rider-email"
+          type="email"
+          value={form.email}
+          onChange={(e) => update("email", e.target.value)}
+          placeholder="karim@example.com"
+        />
+      </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="rider-email">Email</Label>
-            <Input
-              id="rider-email"
-              type="email"
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
-              placeholder="karim@example.com"
-            />
-          </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="rider-phone">Phone</Label>
+          <Input
+            id="rider-phone"
+            value={form.phone}
+            onChange={(e) => update("phone", e.target.value)}
+            placeholder="+8801711000000"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="rider-zone">Service zone</Label>
+          <Input
+            id="rider-zone"
+            value={form.zone}
+            onChange={(e) => update("zone", e.target.value)}
+            placeholder="Dhaka North"
+          />
+        </div>
+      </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="rider-phone">Phone</Label>
-              <Input
-                id="rider-phone"
-                value={form.phone}
-                onChange={(e) => update("phone", e.target.value)}
-                placeholder="+8801711000000"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="rider-zone">Service zone</Label>
-              <Input
-                id="rider-zone"
-                value={form.zone}
-                onChange={(e) => update("zone", e.target.value)}
-                placeholder="Dhaka North"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="rider-warehouse">Home warehouse</Label>
-            <Select
-              value={form.warehouseId}
-              onValueChange={(v) => update("warehouseId", v ?? UNASSIGNED)}
-            >
-              <SelectTrigger id="rider-warehouse" className="w-full">
-                <SelectValue>
-                  {(value) => {
-                    if (!value || value === UNASSIGNED) {
-                      return "Pickup only (no warehouse)"
-                    }
-                    const w = warehouses.find((x) => x.id === value)
-                    return w
-                      ? `${w.name} \u00B7 ${w.city}`
-                      : "Pickup only (no warehouse)"
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNASSIGNED}>
-                  Pickup only (no warehouse)
-                </SelectItem>
-                {warehouses.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name} {"\u00B7"} {w.city}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="submit"
-              disabled={submitting}
-              className="w-full sm:w-auto"
-            >
-              {submitting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <UserPlus className="size-4" />
-              )}
-              Add rider
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="rider-warehouse">Home warehouse</Label>
+        <Select
+          value={form.warehouseId}
+          onValueChange={(v) => update("warehouseId", v ?? UNASSIGNED)}
+        >
+          <SelectTrigger id="rider-warehouse" className="w-full">
+            <SelectValue>
+              {(value) => {
+                if (!value || value === UNASSIGNED) {
+                  return "Pickup only (no warehouse)"
+                }
+                const w = warehouses.find((x) => x.id === value)
+                return w
+                  ? `${w.name} \u00B7 ${w.city}`
+                  : "Pickup only (no warehouse)"
+              }}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNASSIGNED}>
+              Pickup only (no warehouse)
+            </SelectItem>
+            {warehouses.map((w) => (
+              <SelectItem key={w.id} value={w.id}>
+                {w.name} {"\u00B7"} {w.city}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </FormDialog>
   )
 }

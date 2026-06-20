@@ -118,8 +118,8 @@ export const profile = pgTable("profile", {
   // circular dependencies between the profile table and its referents.
   // Only the field matching the user's role is expected to be populated.
   warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
-  merchantId: text("merchantId"),   // MERCHANT: their merchant business
-  riderId: text("riderId"),         // RIDER: their rider profile
+  merchantId: text("merchantId"), // MERCHANT: their merchant business
+  riderId: text("riderId"), // RIDER: their rider profile
   createdAt: ts("createdAt").notNull().defaultNow(),
 })
 
@@ -303,6 +303,12 @@ export const order = pgTable("order", {
   recipientPhone: text("recipientPhone").notNull(),
   deliveryAddress: text("deliveryAddress").notNull(),
   deliveryCity: text("deliveryCity").notNull(),
+  // Optional map link (e.g. Google Maps URL) the merchant can share to pinpoint
+  // the recipient location.
+  deliveryMapLink: text("deliveryMapLink"),
+  // Optional list of image URLs (location photos / landmarks) shared by the
+  // merchant to help the rider find the address.
+  deliveryImageLinks: text("deliveryImageLinks").array(),
   parcelWeightKg: doublePrecision("parcelWeightKg").notNull(),
   deliveryType: text("deliveryType", { enum: orderDeliveryTypes })
     .notNull()
