@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import {
+  Package,
   PackageCheck,
   Navigation,
   CheckCircle2,
@@ -9,15 +10,16 @@ import {
   Store,
   User,
   PartyPopper,
+  Phone,
 } from "lucide-react"
 import Link from "next/link"
-import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
 import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
+import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -35,19 +37,21 @@ function isToday(iso?: string | null) {
 }
 
 function TaskRow({
-  icon: Icon,
-  tone,
-  title,
-  subtitle,
-  meta,
-  actionLabel,
-  actionIcon: ActionIcon,
-  onAction,
-}: {
+                   icon: Icon,
+                   tone,
+                   title,
+                   subtitle,
+                   phone,
+                   meta,
+                   actionLabel,
+                   actionIcon: ActionIcon,
+                   onAction,
+                 }: {
   icon: React.ComponentType<{ className?: string }>
   tone: string
   title: string
   subtitle: string
+  phone?: string
   meta?: string
   actionLabel: string
   actionIcon: React.ComponentType<{ className?: string }>
@@ -66,6 +70,16 @@ function TaskRow({
           <p className="text-muted-foreground truncate text-xs">
             {subtitle}
           </p>
+          {phone ? (
+            <a
+              href={`tel:${phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs tabular-nums"
+            >
+              <Phone className="size-3" />
+              {phone}
+            </a>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-3">
@@ -84,12 +98,12 @@ function TaskRow({
 }
 
 function TaskSection({
-  title,
-  count,
-  emptyMessage,
-  viewAllHref,
-  children,
-}: {
+                       title,
+                       count,
+                       emptyMessage,
+                       viewAllHref,
+                       children,
+                     }: {
   title: string
   count: number
   emptyMessage: string
@@ -133,11 +147,12 @@ export default function RiderTodoPage() {
     orders,
     merchants,
     pickupLocations,
-    markOutForDelivery,
   } = usePlatform()
 
   const [pickupTarget, setPickupTarget] = useState<Order | null>(null)
   const [pickupDialogOpen, setPickupDialogOpen] = useState(false)
+  const [startTarget, setStartTarget] = useState<Order | null>(null)
+  const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Order | null>(null)
   const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
 
@@ -167,6 +182,9 @@ export default function RiderTodoPage() {
   const deliveredToday = myDeliveries.filter(
     (o) => o.status === "DELIVERED" && isToday(o.deliveredAt),
   ).length
+  const pickedUpToday = myPickups.filter((o) =>
+    isToday(o.pickedUpAt),
+  ).length
 
   const totalTasks = toPickup.length + toStart.length + toDeliver.length
 
@@ -175,18 +193,14 @@ export default function RiderTodoPage() {
     setPickupDialogOpen(true)
   }
 
+  function openStartDelivery(order: Order) {
+    setStartTarget(order)
+    setStartDialogOpen(true)
+  }
+
   function openDelivery(order: Order) {
     setDeliveryTarget(order)
     setDeliveryDialogOpen(true)
-  }
-
-  async function startDelivery(order: Order) {
-    const result = await markOutForDelivery(order.id)
-    if (result.ok) {
-      toast.success(`${order.code} is now out for delivery.`)
-    } else {
-      toast.error(result.error ?? "Unable to start delivery.")
-    }
   }
 
   return (
@@ -197,12 +211,19 @@ export default function RiderTodoPage() {
       />
 
       <StatCardList
+        columns={4}
         items={[
           {
             label: "To pick up",
             value: toPickup.length,
             icon: PackageCheck,
             tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Picked up today",
+            value: pickedUpToday,
+            icon: Package,
+            tone: "bg-chart-3/15 text-chart-3",
           },
           {
             label: "To deliver",
@@ -249,6 +270,7 @@ export default function RiderTodoPage() {
                   tone="bg-chart-1/15 text-chart-1"
                   title={`${o.code} · ${m?.businessName ?? "Merchant"}`}
                   subtitle={`${p?.label ?? "Pickup point"} — ${p?.address ?? ""}`}
+                  phone={m?.phone}
                   actionLabel="Mark picked up"
                   actionIcon={PackageCheck}
                   onAction={() => openPickup(o)}
@@ -273,9 +295,10 @@ export default function RiderTodoPage() {
                 tone="bg-chart-4/15 text-chart-4"
                 title={`${o.code} · ${o.recipientName}`}
                 subtitle={`${o.deliveryAddress}, ${o.deliveryCity}`}
+                phone={o.recipientPhone}
                 actionLabel="Out for delivery"
                 actionIcon={Navigation}
-                onAction={() => startDelivery(o)}
+                onAction={() => openStartDelivery(o)}
               />
             ))}
           </TaskSection>
@@ -294,6 +317,7 @@ export default function RiderTodoPage() {
                 tone="bg-chart-2/15 text-chart-2"
                 title={`${o.code} · ${o.recipientName}`}
                 subtitle={`${o.deliveryAddress}, ${o.deliveryCity}`}
+                phone={o.recipientPhone}
                 meta={`Collect ${formatTk(o.totalCollectible)}`}
                 actionLabel="Record outcome"
                 actionIcon={CheckCircle2}
@@ -321,6 +345,12 @@ export default function RiderTodoPage() {
         }
         open={pickupDialogOpen}
         onOpenChange={setPickupDialogOpen}
+      />
+
+      <OutForDeliveryDialog
+        order={startTarget}
+        open={startDialogOpen}
+        onOpenChange={setStartDialogOpen}
       />
 
       <DeliveryAttemptDialog

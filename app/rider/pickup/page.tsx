@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { PackageCheck, PackageOpen, CheckCircle2, Clock } from "lucide-react"
+import { PackageCheck } from "lucide-react"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "TO_COLLECT" | "COLLECTED"
 
@@ -138,29 +137,6 @@ export default function RiderPickupQueuePage() {
       <PageHeader
         title={`Pickup queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
         description="Collect approved parcels from merchants and mark them picked up."
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "To collect",
-            value: toCollect.length,
-            icon: Clock,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Collected",
-            value: collected.length,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Total assigned",
-            value: myPickups.length,
-            icon: PackageOpen,
-            tone: "bg-primary/10 text-primary",
-          },
-        ]}
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
