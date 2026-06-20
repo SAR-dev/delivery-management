@@ -4,13 +4,13 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import {
   ArrowLeft,
+  Bike,
   Loader2,
-  Package,
   MapPin,
-  User,
+  Package,
   Phone,
   Store,
-  Bike,
+  User,
   Warehouse as WarehouseIcon,
   Weight,
 } from "lucide-react"
@@ -24,11 +24,11 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 function Field({
-                 icon: Icon,
-                 label,
-                 value,
-                 className,
-               }: {
+  icon: Icon,
+  label,
+  value,
+  className,
+}: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: React.ReactNode
@@ -40,7 +40,7 @@ function Field({
         <Icon className="text-muted-foreground size-3.5" />
       </span>
       <div className="min-w-0">
-        <p className="text-muted-foreground mb-0.5 text-[11px] font-medium uppercase tracking-wide">
+        <p className="text-muted-foreground mb-0.5 text-[11px] font-medium tracking-wide uppercase">
           {label}
         </p>
         <p className="text-sm font-medium break-words">{value}</p>
@@ -50,17 +50,17 @@ function Field({
 }
 
 function Section({
-                   title,
-                   children,
-                   className,
-                 }: {
+  title,
+  children,
+  className,
+}: {
   title: string
   children: React.ReactNode
   className?: string
 }) {
   return (
     <div className={cn("", className)}>
-      <p className="text-muted-foreground mb-4 text-[11px] font-semibold uppercase tracking-widest">
+      <p className="text-muted-foreground mb-4 text-[11px] font-semibold tracking-widest uppercase">
         {title}
       </p>
       {children}
@@ -144,8 +144,16 @@ export default function OrderDetailPage() {
           <div className="bg-card border-border rounded-t-xl border p-6">
             <Section title="Recipient & delivery">
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <Field icon={User} label="Recipient" value={order.recipientName} />
-                <Field icon={Phone} label="Phone" value={order.recipientPhone} />
+                <Field
+                  icon={User}
+                  label="Recipient"
+                  value={order.recipientName}
+                />
+                <Field
+                  icon={Phone}
+                  label="Phone"
+                  value={order.recipientPhone}
+                />
                 <Field
                   icon={MapPin}
                   label="Delivery address"
@@ -178,7 +186,9 @@ export default function OrderDetailPage() {
                 <Field
                   icon={Package}
                   label="Delivery type"
-                  value={order.deliveryType === "FRAGILE" ? "Fragile" : "Standard"}
+                  value={
+                    order.deliveryType === "FRAGILE" ? "Fragile" : "Standard"
+                  }
                 />
                 <Field
                   icon={Bike}
@@ -187,7 +197,9 @@ export default function OrderDetailPage() {
                     pickupRider ? (
                       pickupRider.name
                     ) : (
-                      <span className="text-muted-foreground font-normal">Not assigned</span>
+                      <span className="text-muted-foreground font-normal">
+                        Not assigned
+                      </span>
                     )
                   }
                 />
@@ -200,14 +212,17 @@ export default function OrderDetailPage() {
                         {deliveryRider.name}
                         {warehouse && (
                           <span className="text-muted-foreground font-normal">
-                            {" · "}{warehouse.name}
+                            {" · "}
+                            {warehouse.name}
                           </span>
                         )}
                       </>
                     ) : warehouse ? (
                       warehouse.name
                     ) : (
-                      <span className="text-muted-foreground font-normal">Not assigned</span>
+                      <span className="text-muted-foreground font-normal">
+                        Not assigned
+                      </span>
                     )
                   }
                 />
@@ -221,7 +236,10 @@ export default function OrderDetailPage() {
               <div className="space-y-0">
                 {[
                   { label: "Product cost (COD)", amount: order.productCost },
-                  { label: "Delivery charge", amount: order.deliveryCharge },
+                  {
+                    label: "Delivery charge",
+                    amount: order.deliveryCharge,
+                  },
                   { label: "Security money", amount: order.securityMoney },
                 ].map(({ label, amount }) => (
                   <div
@@ -251,7 +269,7 @@ export default function OrderDetailPage() {
 
         {/* Right: tracking */}
         <div className="bg-card border-border h-fit rounded-xl border p-6">
-          <p className="text-muted-foreground mb-5 text-[11px] font-semibold uppercase tracking-widest">
+          <p className="text-muted-foreground mb-5 text-[11px] font-semibold tracking-widest uppercase">
             Tracking
           </p>
           <TrackingTimeline

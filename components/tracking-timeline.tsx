@@ -110,12 +110,12 @@ type WarehouseInfo = { name: string; city: string }
 type MerchantInfo = { businessName: string; ownerName: string }
 
 export function TrackingTimeline({
-                                   order,
-                                   pickupRider,
-                                   warehouse,
-                                   deliveryRider,
-                                   merchant,
-                                 }: {
+  order,
+  pickupRider,
+  warehouse,
+  deliveryRider,
+  merchant,
+}: {
   order: Order
   pickupRider?: RiderInfo | null
   warehouse?: WarehouseInfo | null
@@ -126,7 +126,9 @@ export function TrackingTimeline({
   const isReturned = order.status === "RETURNED"
   const isFailed = order.status === "FAILED_ATTEMPT"
 
-  const stepDetails: Partial<Record<StepKey, { role: string; name: string; sub: string }>> = {}
+  const stepDetails: Partial<
+    Record<StepKey, { role: string; name: string; sub: string }>
+  > = {}
 
   if (merchant) {
     stepDetails.PLACED = {
@@ -149,7 +151,9 @@ export function TrackingTimeline({
       name: warehouse.name,
       sub: [
         warehouse.city,
-        order.receivedByWarehouse ? `Logged by ${order.receivedByWarehouse}` : null,
+        order.receivedByWarehouse
+          ? `Logged by ${order.receivedByWarehouse}`
+          : null,
       ]
         .filter(Boolean)
         .join(" · "),
@@ -159,7 +163,9 @@ export function TrackingTimeline({
     const riderDetail = {
       role: "Delivery rider",
       name: deliveryRider.name,
-      sub: [deliveryRider.phone, deliveryRider.zone].filter(Boolean).join(" · "),
+      sub: [deliveryRider.phone, deliveryRider.zone]
+        .filter(Boolean)
+        .join(" · "),
     }
     stepDetails.OUT_FOR_DELIVERY = riderDetail
     stepDetails.DELIVERED = riderDetail
@@ -212,11 +218,16 @@ export function TrackingTimeline({
               </div>
 
               {/* Content */}
-              <div className={cn("pb-5 pt-0.5 min-w-0 flex-1", isLast && !hasExceptionAfter && "pb-0")}>
+              <div
+                className={cn(
+                  "min-w-0 flex-1 pt-0.5 pb-5",
+                  isLast && !hasExceptionAfter && "pb-0",
+                )}
+              >
                 <div className="flex items-center gap-2">
                   <p
                     className={cn(
-                      "text-sm font-medium leading-none",
+                      "text-sm leading-none font-medium",
                       reached ? "text-foreground" : "text-muted-foreground/50",
                     )}
                   >
@@ -240,12 +251,16 @@ export function TrackingTimeline({
                 )}
                 {detail && (
                   <div className="mt-2">
-                    <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                       {detail.role}
                     </p>
-                    <p className="text-foreground text-xs font-medium">{detail.name}</p>
+                    <p className="text-foreground text-xs font-medium">
+                      {detail.name}
+                    </p>
                     {detail.sub && (
-                      <p className="text-muted-foreground text-xs">{detail.sub}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {detail.sub}
+                      </p>
                     )}
                   </div>
                 )}
@@ -258,14 +273,18 @@ export function TrackingTimeline({
                   <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-8 shrink-0 items-center justify-center rounded-full border">
                     <XCircle className="size-3.5" />
                   </span>
-                  <span className="bg-border mt-1 w-px flex-1" aria-hidden="true" />
+                  <span
+                    className="bg-border mt-1 w-px flex-1"
+                    aria-hidden="true"
+                  />
                 </div>
-                <div className="pb-5 pt-0.5">
-                  <p className="text-destructive text-sm font-medium leading-none">
+                <div className="pt-0.5 pb-5">
+                  <p className="text-destructive text-sm leading-none font-medium">
                     Delivery attempt failed
                   </p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {formatStamp(order.failedAttemptAt) ?? "A new attempt will be scheduled."}
+                    {formatStamp(order.failedAttemptAt) ??
+                      "A new attempt will be scheduled."}
                   </p>
                 </div>
               </li>
@@ -277,14 +296,18 @@ export function TrackingTimeline({
                   <span className="border-border bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full border">
                     <Undo2 className="size-3.5" />
                   </span>
-                  <span className="bg-border mt-1 w-px flex-1" aria-hidden="true" />
+                  <span
+                    className="bg-border mt-1 w-px flex-1"
+                    aria-hidden="true"
+                  />
                 </div>
-                <div className="pb-5 pt-0.5">
-                  <p className="text-foreground text-sm font-medium leading-none">
+                <div className="pt-0.5 pb-5">
+                  <p className="text-foreground text-sm leading-none font-medium">
                     Returned to merchant
                   </p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {formatStamp(order.returnedAt) ?? "This parcel was returned and will not be delivered."}
+                    {formatStamp(order.returnedAt) ??
+                      "This parcel was returned and will not be delivered."}
                   </p>
                 </div>
               </li>

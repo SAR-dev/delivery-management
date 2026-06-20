@@ -254,10 +254,7 @@ function TrackContent() {
   }
 
   const isLoading = searched && !isReady
-  const notFound =
-    isReady && searched && submittedCode.trim() !== "" && !order
-
-
+  const notFound = isReady && searched && submittedCode.trim() !== "" && !order
 
   const statusInfo = order ? STATUS_COPY[order.status] : null
 
@@ -447,11 +444,11 @@ function TrackContent() {
 type HandlerInfo = { name: string; detail?: string } | null
 
 function InlineTimeline({
-                          order,
-                          pickupRider,
-                          warehouse,
-                          deliveryRider,
-                        }: {
+  order,
+  pickupRider,
+  warehouse,
+  deliveryRider,
+}: {
   order: Order
   pickupRider: { name: string; phone: string; zone: string } | null
   warehouse: { name: string; city: string } | null
@@ -465,40 +462,40 @@ function InlineTimeline({
   const stepHandlers: Partial<Record<StepKey, HandlerInfo>> = {
     PICKED_UP: pickupRider
       ? {
-        name: pickupRider.name,
-        detail: [maskPhone(pickupRider.phone), pickupRider.zone]
-          .filter(Boolean)
-          .join(" · "),
-      }
+          name: pickupRider.name,
+          detail: [maskPhone(pickupRider.phone), pickupRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
       : null,
     IN_WAREHOUSE: warehouse
       ? {
-        name: warehouse.name,
-        detail: [
-          warehouse.city,
-          order.receivedByWarehouse
-            ? `Logged by ${order.receivedByWarehouse}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      }
+          name: warehouse.name,
+          detail: [
+            warehouse.city,
+            order.receivedByWarehouse
+              ? `Logged by ${order.receivedByWarehouse}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }
       : null,
     OUT_FOR_DELIVERY: deliveryRider
       ? {
-        name: deliveryRider.name,
-        detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
-          .filter(Boolean)
-          .join(" · "),
-      }
+          name: deliveryRider.name,
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
       : null,
     DELIVERED: deliveryRider
       ? {
-        name: deliveryRider.name,
-        detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
-          .filter(Boolean)
-          .join(" · "),
-      }
+          name: deliveryRider.name,
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
+        }
       : null,
   }
 
@@ -552,7 +549,13 @@ function InlineTimeline({
               </div>
 
               {/* Content */}
-              <div className={cn("pb-6", isLast && !hasExceptionAfter && "pb-1", "pt-0.5 min-w-0 flex-1")}>
+              <div
+                className={cn(
+                  "pb-6",
+                  isLast && !hasExceptionAfter && "pb-1",
+                  "min-w-0 flex-1 pt-0.5",
+                )}
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <p
                     className={cn(
@@ -583,9 +586,13 @@ function InlineTimeline({
                     <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                       {step.key === "IN_WAREHOUSE" ? "Sorting hub" : "Rider"}
                     </p>
-                    <p className="text-foreground text-xs font-medium">{handler.name}</p>
+                    <p className="text-foreground text-xs font-medium">
+                      {handler.name}
+                    </p>
                     {handler.detail && (
-                      <p className="text-muted-foreground text-xs">{handler.detail}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {handler.detail}
+                      </p>
                     )}
                   </div>
                 )}

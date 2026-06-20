@@ -15,19 +15,18 @@ import type { SidebarConfig } from "@/lib/nav-config"
 // and a gentle tonal fill (not a saturated brand color) when active.
 const navLinkClass =
   "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-150"
-const navLinkActive =
-  "bg-sidebar-accent text-sidebar-accent-foreground"
+const navLinkActive = "bg-sidebar-accent text-sidebar-accent-foreground"
 const navLinkIdle =
   "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
 const footerActionClass =
   "mt-0.5 w-full justify-start gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
 
 export function RoleSidebar({
-                              config,
-                              footerSubtitle,
-                              fallbackName,
-                              fallbackInitials = "?",
-                            }: {
+  config,
+  footerSubtitle,
+  fallbackName,
+  fallbackInitials = "?",
+}: {
   config: SidebarConfig
   footerSubtitle?: string | null
   fallbackName?: string
@@ -69,7 +68,7 @@ export function RoleSidebar({
       </nav>
 
       {/* Footer — separated by spacing/tone, not a hard border line */}
-      <div className="px-3 pb-3 pt-2">
+      <div className="px-3 pt-2 pb-3">
         <div className="mb-1 flex items-center gap-3 rounded-lg px-3 py-2">
           <Avatar className="size-7">
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-[11px] font-medium">
