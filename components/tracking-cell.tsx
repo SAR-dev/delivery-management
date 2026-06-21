@@ -11,7 +11,7 @@ import { Copy, Check, ExternalLink } from "lucide-react"
  */
 export function TrackingCell({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
-  const path = `/track?code=${encodeURIComponent(code)}`
+  const path = `/track/${encodeURIComponent(code)}`
 
   async function copyLink() {
     const url =
