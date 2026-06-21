@@ -1,9 +1,9 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { merchant, order, securityConfig } from "@/lib/db/schema"
+import { division, merchant, order, securityConfig } from "@/lib/db/schema"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderBulkCreateSchema, parseBody } from "@/lib/validation"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
@@ -56,6 +56,26 @@ export async function POST(req: Request) {
     )
   }
 
+  // Every referenced delivery division must exist and be active.
+  const divisionIds = [...new Set(inputs.map((o) => o.deliveryDivisionId))]
+  const validDivisions = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(and(inArray(division.id, divisionIds), eq(division.isActive, true)))
+  const validDivisionIds = new Set(validDivisions.map((d) => d.id))
+  const badDivisionRows = inputs
+    .map((o, i) => ({ i, ok: validDivisionIds.has(o.deliveryDivisionId) }))
+    .filter((o) => !o.ok)
+  if (badDivisionRows.length > 0) {
+    return NextResponse.json(
+      {
+        error: `${badDivisionRows.length} parcel(s) have an invalid delivery division.`,
+        rows: badDivisionRows.map((o) => o.i),
+      },
+      { status: 400 },
+    )
+  }
+
   const [configRow] = await db
     .select()
     .from(securityConfig)
@@ -103,6 +123,7 @@ export async function POST(req: Request) {
         recipientPhone: input.recipientPhone,
         deliveryAddress: input.deliveryAddress,
         deliveryCity: input.deliveryCity,
+        deliveryDivisionId: input.deliveryDivisionId,
         deliveryMapLink: mapLink ? mapLink : null,
         deliveryImageLinks: imageLinks.length ? imageLinks : null,
         parcelWeightKg: input.parcelWeightKg,

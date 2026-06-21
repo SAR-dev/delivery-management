@@ -8,6 +8,7 @@ import type {
   securityConfig,
   payoutRequest,
   order,
+  division,
 } from "@/lib/db/schema"
 
 // =============================================================================
@@ -52,6 +53,7 @@ type JoinedUser = typeof user.$inferSelect &
 
 export type User = Loosen<JoinedUser>
 
+export type Division = Loosen<typeof division.$inferSelect>
 export type Warehouse = Loosen<typeof warehouse.$inferSelect>
 export type SecurityMoneyConfig = Loosen<typeof securityConfig.$inferSelect>
 export type Merchant = Loosen<typeof merchant.$inferSelect>
@@ -87,6 +89,7 @@ export interface CreateOrderInput {
   recipientPhone: string
   deliveryAddress: string
   deliveryCity: string
+  deliveryDivisionId: string
   deliveryMapLink?: string | null
   deliveryImageLinks?: string[] | null
   parcelWeightKg: number

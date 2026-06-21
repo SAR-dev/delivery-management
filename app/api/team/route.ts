@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { profile, user } from "@/lib/db/schema"
+import { profile, user, warehouse } from "@/lib/db/schema"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
 import { inArray, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
@@ -83,6 +83,15 @@ export async function POST(req: Request) {
     canManagePricing: newRole === "ADMIN" ? (canManagePricing ?? false) : false,
     warehouseId: newRole === "WAREHOUSE_ADMIN" ? (warehouseId ?? null) : null,
   })
+
+  // Keep warehouse.managedBy in sync so the assigned warehouse reflects its
+  // new manager (and is no longer offered as "unassigned" elsewhere).
+  if (newRole === "WAREHOUSE_ADMIN" && warehouseId) {
+    await db
+      .update(warehouse)
+      .set({ managedBy: created.user.id })
+      .where(eq(warehouse.id, warehouseId))
+  }
 
   const [profileRow] = await db
     .select()

@@ -124,6 +124,23 @@ export const profile = pgTable("profile", {
 })
 
 // =============================================================================
+// Divisions (geographic regions, e.g. Bangladesh divisions)
+//
+// Managed by Super Admins. Every address-bearing entity (warehouse, merchant,
+// pickup location, order receiver) references a division so parcels can be
+// routed to the hub serving the division they are picked up from.
+// =============================================================================
+
+export const division = pgTable("division", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  name: text("name").notNull().unique(),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+})
+
+// =============================================================================
 // Warehouses
 // =============================================================================
 
@@ -134,6 +151,10 @@ export const warehouse = pgTable("warehouse", {
   name: text("name").notNull(),
   address: text("address").notNull(),
   city: text("city").notNull(),
+  // Division this hub serves. Soft reference (no FK) so divisions can be
+  // managed independently. Nullable in the DB for backwards compatibility;
+  // required at the validation/UI layer for new records.
+  divisionId: text("divisionId"),
   // Soft reference to a WAREHOUSE_ADMIN user id; no FK to avoid tight coupling.
   managedBy: text("managedBy"),
   isActive: boolean("isActive").notNull().default(true),
@@ -175,6 +196,8 @@ export const merchant = pgTable("merchant", {
   email: text("email").notNull(),
   phone: text("phone").notNull(),
   address: text("address").notNull(),
+  // Division the merchant's business address belongs to (soft reference).
+  divisionId: text("divisionId"),
   status: text("status", { enum: merchantStatuses })
     .notNull()
     .default("PENDING"),
@@ -203,6 +226,14 @@ export const pickupLocation = pgTable("pickup_location", {
     .references(() => merchant.id, { onDelete: "cascade" }),
   label: text("label").notNull(),
   address: text("address").notNull(),
+  // Division this pickup location is in. Drives which warehouse a parcel
+  // collected here is routed to (soft reference).
+  divisionId: text("divisionId"),
+  // Optional map link (e.g. Google Maps URL) so riders can pinpoint the shop.
+  mapLink: text("mapLink"),
+  // Optional list of image URLs (shop front / landmark photos) to help riders
+  // find the pickup location.
+  imageLinks: text("imageLinks").array(),
 })
 
 // =============================================================================
@@ -303,6 +334,8 @@ export const order = pgTable("order", {
   recipientPhone: text("recipientPhone").notNull(),
   deliveryAddress: text("deliveryAddress").notNull(),
   deliveryCity: text("deliveryCity").notNull(),
+  // Division of the receiver address (soft reference).
+  deliveryDivisionId: text("deliveryDivisionId"),
   // Optional map link (e.g. Google Maps URL) the merchant can share to pinpoint
   // the recipient location.
   deliveryMapLink: text("deliveryMapLink"),

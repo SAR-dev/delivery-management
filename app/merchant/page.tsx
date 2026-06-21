@@ -17,6 +17,7 @@ import { OrderStatusBadge } from "@/components/badge/order-status-badge"
 import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
 import { TrackingCell } from "@/components/tracking-cell"
 import { AddressModal } from "@/components/address-modal"
+import { PickupLocationModal } from "@/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -29,11 +30,14 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
 export default function MerchantOverviewPage() {
-  const { currentUser, currentMerchant, orders } = usePlatform()
+  const { currentUser, currentMerchant, orders, pickupLocations } =
+    usePlatform()
 
   const myOrders = currentMerchant
     ? orders.filter((o) => o.merchantId === currentMerchant.id)
     : []
+
+  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
 
   const inTransit = myOrders.filter((o) =>
     [
@@ -75,6 +79,22 @@ export default function MerchantOverviewPage() {
           </div>
         </AddressModal>
       ),
+    },
+    {
+      id: "pickup",
+      header: "Pickup",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <PickupLocationModal location={p ?? null}>
+            <span className="underline decoration-dotted underline-offset-4">
+              {p?.label ?? "—"}
+            </span>
+          </PickupLocationModal>
+        )
+      },
     },
     {
       id: "weight",

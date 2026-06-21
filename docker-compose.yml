@@ -11,6 +11,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+    volumes:
+      - uploads_data:/app/uploads
     restart: unless-stopped
 
   cloudflared:
@@ -23,3 +25,6 @@ services:
     depends_on:
       - web
     network_mode: host
+
+volumes:
+  uploads_data:

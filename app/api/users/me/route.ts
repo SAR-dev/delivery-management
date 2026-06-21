@@ -14,6 +14,7 @@ function serializeUser(
     name: string
     email: string
     emailVerified: boolean
+    image?: string | null
     createdAt: string | Date
     updatedAt: string | Date
   },
@@ -24,6 +25,7 @@ function serializeUser(
     name: u.name,
     email: u.email,
     emailVerified: u.emailVerified,
+    image: u.image ?? null,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
     role: row.role,
@@ -65,10 +67,17 @@ export async function PATCH(req: Request) {
   const parsed = await parseBody(req, profileUpdateSchema)
   if (parsed.error) return parsed.error
 
-  await db
+  const updates: { name?: string; image?: string | null; updatedAt: string } = {
+    updatedAt: new Date().toISOString(),
+  }
+  if (parsed.data.name !== undefined) updates.name = parsed.data.name
+  if (parsed.data.image !== undefined) updates.image = parsed.data.image
+
+  const [updatedUser] = await db
     .update(user)
-    .set({ name: parsed.data.name, updatedAt: new Date().toISOString() })
+    .set(updates)
     .where(eq(user.id, session.user.id))
+    .returning()
 
   const [row] = await db
     .select()
@@ -81,6 +90,6 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json(
-    serializeUser({ ...session.user, name: parsed.data.name }, row),
+    serializeUser({ ...session.user, ...updatedUser }, row),
   )
 }

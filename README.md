@@ -8,6 +8,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 - **Neon** Postgres database
 - **Drizzle ORM** for type-safe queries
 - **Better Auth** for email + password authentication
+- **Image uploads** (avatars, delivery proof, pickup-location photos) — stored on local disk
 - **Tailwind CSS** + shadcn/ui components
 
 ## Getting Started
@@ -26,14 +27,18 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    BETTER_AUTH_DEV_URL=http://localhost:3000
    ```
 
-3. Set up the database:
+3. Image uploads (avatars, delivery proof, pickup-location photos) work out
+   of the box — files are written to `./uploads` (override with `UPLOADS_DIR`)
+   and served from `app/uploads/[...path]/route.ts`. No extra setup needed.
+
+4. Set up the database:
 
    ```bash
    pnpm db:push   # apply the schema
    pnpm db:seed   # load sample data
    ```
 
-4. Start the dev server:
+5. Start the dev server:
 
    ```bash
    pnpm dev
@@ -93,8 +98,23 @@ After seeding, sign in at `/login` with any of the following:
 
 ```
 app/          Routes for each role + auth and tracking
+  uploads/    Serves locally-stored uploaded files (local storage driver)
 components/    Shared UI, including the reusable DataTable
 lib/
   auth.ts     Better Auth server config
   db/         Drizzle client, schema, and seed script
+  storage/    Upload config + local-disk storage driver
 ```
+
+## Deployment notes
+
+Image uploads are written to local disk under `UPLOADS_DIR` (defaults to
+`./uploads`) and served by `app/uploads/[...path]/route.ts`. In Docker, this
+directory is mounted as a named volume (`uploads_data`, see
+`docker-compose.yml`) so uploaded files survive container rebuilds and
+redeploys — without that volume, every redeploy would wipe avatars, delivery
+proofs, and pickup-location photos.
+
+If you run more than one app instance/container behind a load balancer, point
+`UPLOADS_DIR` at a shared network volume so every instance sees the same
+files.

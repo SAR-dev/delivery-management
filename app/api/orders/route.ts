@@ -1,10 +1,10 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { merchant, order, securityConfig } from "@/lib/db/schema"
+import { division, merchant, order, securityConfig } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { eq, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -27,7 +27,13 @@ export async function GET(req: Request) {
       break
     case "WAREHOUSE_ADMIN":
       if (!me.warehouseId) return NextResponse.json([])
-      where = eq(order.warehouseId, me.warehouseId)
+      // Orders already logged into this warehouse, plus picked-up parcels
+      // not yet assigned to any warehouse — these are the incoming
+      // candidates any warehouse admin can receive (see app/warehouse/page.tsx).
+      where = or(
+        eq(order.warehouseId, me.warehouseId),
+        and(isNull(order.warehouseId), eq(order.status, "PICKED_UP")),
+      )
       break
     case "ADMIN":
     case "SUPER_ADMIN":
@@ -65,12 +71,28 @@ export async function POST(req: Request) {
     recipientPhone,
     deliveryAddress,
     deliveryCity,
+    deliveryDivisionId,
     deliveryMapLink,
     deliveryImageLinks,
     parcelWeightKg,
     deliveryType,
     productCost,
   } = parsed.data
+
+  // Receiver division must exist and be active.
+  const [deliveryDivision] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(
+      and(eq(division.id, deliveryDivisionId), eq(division.isActive, true)),
+    )
+    .limit(1)
+  if (!deliveryDivision) {
+    return NextResponse.json(
+      { error: "Select a valid delivery division." },
+      { status: 400 },
+    )
+  }
 
   const normalizedMapLink = deliveryMapLink?.trim()
     ? deliveryMapLink.trim()
@@ -149,6 +171,7 @@ export async function POST(req: Request) {
       recipientPhone,
       deliveryAddress,
       deliveryCity,
+      deliveryDivisionId,
       deliveryMapLink: normalizedMapLink,
       deliveryImageLinks: normalizedImageLinks.length
         ? normalizedImageLinks

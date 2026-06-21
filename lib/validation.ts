@@ -38,6 +38,18 @@ const requiredString = (label: string) =>
     .trim()
     .min(1, `${label} is required`)
 
+// Accepts either an absolute URL (e.g. an externally hosted image) or a
+// site-relative upload path served by app/uploads/[...path]/route.ts — the
+// local storage driver returns paths like "/uploads/avatars/<id>/<uuid>.png",
+// which z.url() alone would reject.
+const imageUrl = (label: string) =>
+  z
+    .string({ error: `${label} must be a valid URL` })
+    .trim()
+    .refine((v) => v.startsWith("/") || z.url().safeParse(v).success, {
+      error: `${label} must be a valid URL`,
+    })
+
 export const securityConfigSchema = z.object({
   lowValueThreshold: z.number().nonnegative(),
   lowValueFlatFee: z.number().nonnegative(),
@@ -50,8 +62,47 @@ export const merchantRegisterSchema = z.object({
   email: z.email("A valid email is required"),
   phone: requiredString("Phone"),
   address: requiredString("Address"),
+  divisionId: requiredString("Division"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 })
+
+export const divisionCreateSchema = z.object({
+  name: requiredString("Division name"),
+})
+
+export const divisionUpdateSchema = z
+  .object({
+    name: requiredString("Division name").optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((d) => d.name !== undefined || d.isActive !== undefined, {
+    error: "Provide a name or active state to update",
+  })
+
+export const warehouseCreateSchema = z.object({
+  name: requiredString("Warehouse name"),
+  address: requiredString("Address"),
+  city: requiredString("City"),
+  divisionId: requiredString("Division"),
+})
+
+export const warehouseUpdateSchema = z
+  .object({
+    name: requiredString("Warehouse name").optional(),
+    address: requiredString("Address").optional(),
+    city: requiredString("City").optional(),
+    divisionId: requiredString("Division").optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.address !== undefined ||
+      d.city !== undefined ||
+      d.divisionId !== undefined ||
+      d.isActive !== undefined,
+    { error: "Provide at least one field to update" },
+  )
 
 export const merchantPricingSchema = z
   .object({
@@ -71,14 +122,15 @@ export const orderCreateSchema = z.object({
   recipientPhone: requiredString("Recipient phone"),
   deliveryAddress: requiredString("Delivery address"),
   deliveryCity: requiredString("Delivery city"),
+  deliveryDivisionId: requiredString("Delivery division"),
   deliveryMapLink: z
     .url("Map link must be a valid URL")
-    .optional()
-    .or(z.literal("")),
+    .or(z.literal(""))
+    .nullish(),
   deliveryImageLinks: z
     .array(z.url("Each image link must be a valid URL"))
     .max(10, "You can add up to 10 image links")
-    .optional(),
+    .nullish(),
   parcelWeightKg: z.number().positive("Parcel weight must be greater than 0"),
   deliveryType: z.enum(["STANDARD", "FRAGILE"]).optional(),
   productCost: z.number().nonnegative("Product cost cannot be negative"),
@@ -132,8 +184,25 @@ export const riderCreateSchema = z.object({
   warehouseId: z.string().nullish(),
 })
 
-export const profileUpdateSchema = z.object({
-  name: requiredString("Name"),
+export const profileUpdateSchema = z
+  .object({
+    name: requiredString("Name").optional(),
+    // `null` clears the avatar; a string sets it; omitted leaves it unchanged.
+    image: imageUrl("Avatar").nullish(),
+  })
+  .refine((d) => d.name !== undefined || d.image !== undefined, {
+    error: "Provide a name or an image to update",
+  })
+
+export const pickupLocationSchema = z.object({
+  label: requiredString("Shop name"),
+  address: requiredString("Address"),
+  divisionId: requiredString("Division"),
+  mapLink: z.url("Map link must be a valid URL").optional().or(z.literal("")),
+  imageLinks: z
+    .array(imageUrl("Each image link"))
+    .max(10, "You can add up to 10 image links")
+    .optional(),
 })
 
 export const merchantProfileSchema = z.object({
@@ -141,6 +210,7 @@ export const merchantProfileSchema = z.object({
   email: z.email("A valid email is required"),
   phone: requiredString("Phone"),
   address: requiredString("Address"),
+  divisionId: requiredString("Division"),
 })
 
 export const teamCreateSchema = z.object({

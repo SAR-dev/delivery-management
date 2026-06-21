@@ -1,10 +1,10 @@
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { merchant, profile } from "@/lib/db/schema"
+import { division, merchant, profile } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { merchantRegisterSchema, parseBody } from "@/lib/validation"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -33,8 +33,28 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const parsed = await parseBody(req, merchantRegisterSchema)
   if (parsed.error) return parsed.error
-  const { businessName, ownerName, email, phone, address, password } =
-    parsed.data
+  const {
+    businessName,
+    ownerName,
+    email,
+    phone,
+    address,
+    divisionId,
+    password,
+  } = parsed.data
+
+  // The merchant's business division must exist and be active.
+  const [div] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(and(eq(division.id, divisionId), eq(division.isActive, true)))
+    .limit(1)
+  if (!div) {
+    return NextResponse.json(
+      { error: "Select a valid division." },
+      { status: 400 },
+    )
+  }
 
   // 1. Insert the merchant row first (no dependency on the Better Auth user).
   const [newMerchant] = await db
@@ -45,6 +65,7 @@ export async function POST(req: Request) {
       email,
       phone,
       address,
+      divisionId,
       status: "PENDING",
       baseRate: 0,
       extraRatePerKg: 0,

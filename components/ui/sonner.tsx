@@ -17,6 +17,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Distinct colors per toast type (green success, red error, amber
+      // warning, blue info) plus a dismiss button for clarity.
+      richColors
+      closeButton
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

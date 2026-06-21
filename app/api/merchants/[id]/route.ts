@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { merchant } from "@/lib/db/schema"
+import { division, merchant } from "@/lib/db/schema"
 import { merchantProfileSchema, parseBody } from "@/lib/validation"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 // Update a merchant's own business contact details (name, email, phone,
@@ -25,7 +25,19 @@ export async function PATCH(
 
   const parsed = await parseBody(req, merchantProfileSchema)
   if (parsed.error) return parsed.error
-  const { businessName, email, phone, address } = parsed.data
+  const { businessName, email, phone, address, divisionId } = parsed.data
+
+  const [div] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(and(eq(division.id, divisionId), eq(division.isActive, true)))
+    .limit(1)
+  if (!div) {
+    return NextResponse.json(
+      { error: "Select a valid division." },
+      { status: 400 },
+    )
+  }
 
   const [updated] = await db
     .update(merchant)
@@ -34,6 +46,7 @@ export async function PATCH(
       email: email.trim(),
       phone: phone.trim(),
       address: address.trim(),
+      divisionId,
     })
     .where(eq(merchant.id, id))
     .returning()

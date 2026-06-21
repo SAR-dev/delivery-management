@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { order } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { order, pickupLocation, warehouse } from "@/lib/db/schema"
+import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function PATCH(
@@ -36,9 +36,41 @@ export async function PATCH(
     )
   }
 
+  // Route the parcel to an active hub in the SAME division it was picked up
+  // from: "picked up in division A → submitted to a warehouse of division A".
+  // The pickup location carries the division, so resolve it from there.
+  // If the division has no active hub, leave warehouseId null — the order
+  // stays in the shared incoming queue (orders GET fallback) so it can never
+  // disappear.
+  let destinationWarehouseId: string | null = null
+
+  const [pickup] = await db
+    .select({ divisionId: pickupLocation.divisionId })
+    .from(pickupLocation)
+    .where(eq(pickupLocation.id, orderRow.pickupLocationId))
+    .limit(1)
+
+  if (pickup?.divisionId) {
+    const [hub] = await db
+      .select({ id: warehouse.id })
+      .from(warehouse)
+      .where(
+        and(
+          eq(warehouse.isActive, true),
+          eq(warehouse.divisionId, pickup.divisionId),
+        ),
+      )
+      .limit(1)
+    destinationWarehouseId = hub?.id ?? null
+  }
+
   const [updated] = await db
     .update(order)
-    .set({ status: "PICKED_UP", pickedUpAt: new Date().toISOString() })
+    .set({
+      status: "PICKED_UP",
+      pickedUpAt: new Date().toISOString(),
+      warehouseId: destinationWarehouseId,
+    })
     .where(eq(order.id, id))
     .returning()
 

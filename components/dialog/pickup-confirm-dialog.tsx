@@ -1,10 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { PackageCheck, MapPin, Package, Store } from "lucide-react"
+import {
+  PackageCheck,
+  MapPin,
+  Package,
+  Store,
+  ExternalLink,
+  ImageOff,
+} from "lucide-react"
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
-import type { Order } from "@/lib/types"
+import type { Order, PickupLocation } from "@/lib/types"
 import { Separator } from "@/components/ui/separator"
 import { FormDialog } from "@/components/dialog/form-dialog"
 
@@ -31,15 +38,13 @@ function InfoRow({
 export function PickupConfirmDialog({
   order,
   merchantName,
-  pickupLabel,
-  pickupAddress,
+  pickupLocation,
   open,
   onOpenChange,
 }: {
   order: Order | null
   merchantName: string
-  pickupLabel: string
-  pickupAddress: string
+  pickupLocation: PickupLocation | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -47,6 +52,13 @@ export function PickupConfirmDialog({
   const [submitting, setSubmitting] = useState(false)
 
   if (!order) return null
+
+  const pickupLabel = pickupLocation?.label ?? "—"
+  const pickupAddress = pickupLocation?.address ?? "—"
+  const mapLink = pickupLocation?.mapLink?.trim() || null
+  const photos = (pickupLocation?.imageLinks ?? []).filter(
+    (link) => link.trim().length > 0,
+  )
 
   async function handleConfirm() {
     setSubmitting(true)
@@ -82,6 +94,52 @@ export function PickupConfirmDialog({
           label="Pickup location"
           value={`${pickupLabel} — ${pickupAddress}`}
         />
+
+        {mapLink ? (
+          <a
+            href={mapLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary ml-7 inline-flex w-fit items-center gap-1.5 text-sm hover:underline"
+          >
+            <ExternalLink className="size-3.5 shrink-0" />
+            Open in maps
+          </a>
+        ) : null}
+
+        <div className="ml-7 flex flex-col gap-1.5">
+          <p className="text-muted-foreground text-xs">
+            Photos {photos.length > 0 ? `(${photos.length})` : ""}
+          </p>
+          {photos.length > 0 ? (
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((link, i) => (
+                <a
+                  key={i}
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group border-border bg-background relative aspect-square overflow-hidden rounded-md border"
+                  title={`Open photo ${i + 1}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={link || "/placeholder.svg"}
+                    alt={`Pickup location reference ${i + 1}`}
+                    crossOrigin="anonymous"
+                    className="size-full object-cover transition-transform group-hover:scale-105"
+                  />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground/60 inline-flex items-center gap-1.5 text-xs italic">
+              <ImageOff className="size-3.5" />
+              No photos provided.
+            </span>
+          )}
+        </div>
+
         <Separator className="my-1" />
         <InfoRow
           icon={Package}
