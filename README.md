@@ -8,6 +8,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 - **Neon** Postgres database
 - **Drizzle ORM** for type-safe queries
 - **Better Auth** for email + password authentication
+- **Supabase Storage** for image uploads (avatars, delivery proof, pickup-location photos)
 - **Tailwind CSS** + shadcn/ui components
 
 ## Getting Started
@@ -24,16 +25,34 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    DATABASE_URL=your-neon-connection-string
    BETTER_AUTH_SECRET=run `openssl rand -base64 32`
    BETTER_AUTH_DEV_URL=http://localhost:3000
+   SUPABASE_URL=your-supabase-project-url
+   SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
    ```
 
-3. Set up the database:
+3. Set up Supabase Storage (powers avatar, delivery proof, and
+   pickup-location photo uploads):
+
+   1. Create a project at [supabase.com](https://supabase.com) (or use an
+      existing one) and open **Project Settings → API**.
+   2. Copy the **Project URL** into `SUPABASE_URL`.
+   3. Copy the **service_role** secret key into
+      `SUPABASE_SERVICE_ROLE_KEY`. This key is server-only — never expose it
+      in client code or commit it to version control.
+   4. In the Supabase dashboard, go to **Storage** and create a new bucket
+      named exactly `uploads`, marked **Public** (the app reads images back
+      via public URLs, not signed URLs).
+   5. No further bucket configuration is required — `app/api/uploads/route.ts`
+      validates file type/size and writes to `avatars/`, `delivery-proofs/`,
+      and `pickups/` folders within that bucket using the service role key.
+
+4. Set up the database:
 
    ```bash
    pnpm db:push   # apply the schema
    pnpm db:seed   # load sample data
    ```
 
-4. Start the dev server:
+5. Start the dev server:
 
    ```bash
    pnpm dev
@@ -44,7 +63,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Scripts
 
 | Command          | What it does                       |
-| ---------------- | ---------------------------------- |
+|------------------|------------------------------------|
 | `pnpm dev`       | Start the development server       |
 | `pnpm build`     | Production build                   |
 | `pnpm start`     | Run the production build           |
@@ -57,7 +76,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Roles & Areas
 
 | Role      | Area         | What they do                                      |
-| --------- | ------------ | ------------------------------------------------- |
+|-----------|--------------|---------------------------------------------------|
 | Admin     | `/dashboard` | Orders, merchants, payouts, team, reconciliation  |
 | Merchant  | `/merchant`  | Create orders, track deliveries, request payouts  |
 | Warehouse | `/warehouse` | Intake, dispatch, exceptions, cash reconciliation |
@@ -73,7 +92,7 @@ Public order tracking is available at `/track`.
 After seeding, sign in at `/login` with any of the following:
 
 | Role            | Name            | Email                      | Password        |
-| --------------- | --------------- | -------------------------- | --------------- |
+|-----------------|-----------------|----------------------------|-----------------|
 | Super Admin     | Nadia Rahman    | `superadmin@parcelflow.io` | `superadmin123` |
 | Admin           | Tanvir Hossain  | `tanvir@parcelflow.io`     | `admin123`      |
 | Admin           | Sadia Karim     | `sadia@parcelflow.io`      | `admin123`      |
@@ -97,4 +116,5 @@ components/    Shared UI, including the reusable DataTable
 lib/
   auth.ts     Better Auth server config
   db/         Drizzle client, schema, and seed script
+  supabase/   Supabase Storage client (image uploads)
 ```

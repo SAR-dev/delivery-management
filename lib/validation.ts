@@ -172,9 +172,15 @@ export const riderCreateSchema = z.object({
   warehouseId: z.string().nullish(),
 })
 
-export const profileUpdateSchema = z.object({
-  name: requiredString("Name"),
-})
+export const profileUpdateSchema = z
+  .object({
+    name: requiredString("Name").optional(),
+    // `null` clears the avatar; a string sets it; omitted leaves it unchanged.
+    image: z.url("Avatar must be a valid URL").nullish(),
+  })
+  .refine((d) => d.name !== undefined || d.image !== undefined, {
+    error: "Provide a name or an image to update",
+  })
 
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),

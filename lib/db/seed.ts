@@ -31,7 +31,7 @@ import {
   order,
   payoutRequest,
 } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Division IDs — stable so seeded entities can reference them by name.
@@ -150,6 +150,56 @@ async function seedDivisions() {
     await db.insert(division).values(row)
     log(`  created division ${row.name}`)
   }
+}
+
+// Backfill divisionId on any pre-existing rows that were seeded before the
+// division feature existed. Idempotent: only touches rows where the division
+// reference is still null. All originally-seeded data lives in Dhaka except
+// the Chattogram warehouse/merchant and the Sylhet depot.
+async function backfillDivisions() {
+  log("Backfilling divisions on existing rows…")
+
+  // Warehouses — map by city.
+  const warehouseByCity: Record<string, string> = {
+    Dhaka: DIVISION_IDS.Dhaka,
+    Chattogram: DIVISION_IDS.Chattogram,
+    Sylhet: DIVISION_IDS.Sylhet,
+  }
+  for (const [city, divisionId] of Object.entries(warehouseByCity)) {
+    await db
+      .update(warehouse)
+      .set({ divisionId })
+      .where(and(eq(warehouse.city, city), isNull(warehouse.divisionId)))
+  }
+
+  // Merchants — Urban Crate is in Chattogram; everyone else seeded in Dhaka.
+  await db
+    .update(merchant)
+    .set({ divisionId: DIVISION_IDS.Chattogram })
+    .where(
+      and(
+        eq(merchant.id, "nsfktk64zjut01r2x93hnweu"),
+        isNull(merchant.divisionId),
+      ),
+    )
+  await db
+    .update(merchant)
+    .set({ divisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(merchant.divisionId))
+
+  // Pickup locations — all seeded in Dhaka.
+  await db
+    .update(pickupLocation)
+    .set({ divisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(pickupLocation.divisionId))
+
+  // Orders — all seeded receivers are in Dhaka.
+  await db
+    .update(order)
+    .set({ deliveryDivisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(order.deliveryDivisionId))
+
+  log("  backfill complete")
 }
 
 // ---------------------------------------------------------------------------
@@ -1317,6 +1367,9 @@ async function main() {
     } else {
       log("Skipping orders, payout requests, and payout-linked orders (--min)")
     }
+
+    // Backfill divisions on any rows seeded before this feature existed.
+    await backfillDivisions()
 
     console.log("\n=== Seed complete ✓ ===")
   } catch (err) {

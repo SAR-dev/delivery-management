@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { PickupLocation } from "@/lib/types"
+import { ImageGalleryUpload } from "@/components/image-upload"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -52,13 +53,7 @@ interface FormState {
 }
 
 function emptyForm(): FormState {
-  return {
-    label: "",
-    address: "",
-    divisionId: "",
-    mapLink: "",
-    imageLinks: [""],
-  }
+  return { label: "", address: "", divisionId: "", mapLink: "", imageLinks: [] }
 }
 
 function formFromLocation(loc: PickupLocation): FormState {
@@ -68,7 +63,7 @@ function formFromLocation(loc: PickupLocation): FormState {
     address: loc.address,
     divisionId: loc.divisionId ?? "",
     mapLink: loc.mapLink ?? "",
-    imageLinks: links.length > 0 ? links : [""],
+    imageLinks: links,
   }
 }
 
@@ -105,27 +100,6 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
     setEditing(loc)
     setForm(formFromLocation(loc))
     setDialogOpen(true)
-  }
-
-  function updateImageLink(index: number, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      imageLinks: prev.imageLinks.map((l, i) => (i === index ? value : l)),
-    }))
-  }
-
-  function addImageLink() {
-    setForm((prev) => ({ ...prev, imageLinks: [...prev.imageLinks, ""] }))
-  }
-
-  function removeImageLink(index: number) {
-    setForm((prev) => ({
-      ...prev,
-      imageLinks:
-        prev.imageLinks.length === 1
-          ? [""]
-          : prev.imageLinks.filter((_, i) => i !== index),
-    }))
   }
 
   // Show active divisions, plus the currently-selected one even if it has been
@@ -370,46 +344,20 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
               <Label>
                 <span className="flex items-center gap-1.5">
                   <ImageIcon className="text-muted-foreground size-3.5" />
-                  Photo links
+                  Shop photos
                   <span className="text-muted-foreground font-normal">
                     (optional)
                   </span>
                 </span>
               </Label>
-              <div className="flex flex-col gap-2">
-                {form.imageLinks.map((link, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      type="url"
-                      value={link}
-                      onChange={(e) => updateImageLink(index, e.target.value)}
-                      placeholder="https://example.com/shop-photo.jpg"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeImageLink(index)}
-                      aria-label={`Remove photo link ${index + 1}`}
-                      disabled={
-                        form.imageLinks.length === 1 && link.trim() === ""
-                      }
-                    >
-                      <Trash2 className="text-muted-foreground size-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="self-start"
-                onClick={addImageLink}
-              >
-                <Plus className="size-3.5" />
-                Add photo link
-              </Button>
+              <ImageGalleryUpload
+                value={form.imageLinks}
+                onChange={(urls) =>
+                  setForm((prev) => ({ ...prev, imageLinks: urls }))
+                }
+                folder="pickups"
+                disabled={saving}
+              />
             </div>
 
             <DialogFooter>

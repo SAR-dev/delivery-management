@@ -6,7 +6,8 @@ import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import { initials } from "@/lib/utils"
 import { PageHeader } from "@/components/page-header"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ImageUpload } from "@/components/image-upload"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -20,10 +21,26 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function AccountSettings() {
-  const { currentUser, updateProfileName, changePassword } = usePlatform()
+  const { currentUser, updateProfileName, updateProfileImage, changePassword } =
+    usePlatform()
 
   const [name, setName] = useState(currentUser?.name ?? "")
   const [savingName, setSavingName] = useState(false)
+  const [savingImage, setSavingImage] = useState(false)
+
+  async function handleImageChange(url: string | null) {
+    setSavingImage(true)
+    try {
+      const result = await updateProfileImage(url)
+      if (result.ok) {
+        toast.success(url ? "Profile photo updated." : "Profile photo removed.")
+      } else {
+        toast.error(result.error ?? "Could not update your photo.")
+      }
+    } finally {
+      setSavingImage(false)
+    }
+  }
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -138,28 +155,35 @@ export function AccountSettings() {
             </CardFooter>
           </form>
         </Card>
-        {/* Avatar — placeholder only; upload wired up later. */}
+        {/* Avatar */}
         <Card>
           <CardHeader>
             <CardTitle>Avatar</CardTitle>
             <CardDescription>
-              Upload a profile photo. This is coming soon.
+              Upload a profile photo shown next to your name across the
+              platform.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center gap-4">
             <Avatar size="lg">
+              {currentUser?.image ? (
+                <AvatarImage
+                  src={currentUser.image || "/placeholder.svg"}
+                  alt={currentUser.name}
+                />
+              ) : null}
               <AvatarFallback className="text-sm font-medium">
                 {currentUser ? initials(currentUser.name) : "?"}
               </AvatarFallback>
             </Avatar>
-            <div className="flex flex-col gap-1">
-              <Button type="button" variant="outline" size="sm" disabled>
-                Upload photo
-              </Button>
-              <p className="text-muted-foreground text-xs">
-                PNG or JPG, up to 2MB.
-              </p>
-            </div>
+            <ImageUpload
+              value={currentUser?.image ?? null}
+              onChange={handleImageChange}
+              folder="avatars"
+              disabled={savingImage}
+              label="Upload photo"
+              hidePreview
+            />
           </CardContent>
         </Card>
 

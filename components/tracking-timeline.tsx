@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   XCircle,
   Undo2,
+  ImageOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Order, OrderStatus } from "@/lib/types"
@@ -261,6 +262,34 @@ export function TrackingTimeline({
                       <p className="text-muted-foreground text-xs">
                         {detail.sub}
                       </p>
+                    )}
+                  </div>
+                )}
+                {step.key === "DELIVERED" && reached && (
+                  <div className="mt-2">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      Proof of delivery
+                    </p>
+                    {order.deliveryProofRef ? (
+                      <a
+                        href={order.deliveryProofRef}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="border-border bg-muted mt-1.5 block size-20 overflow-hidden rounded-md border"
+                        title="Open proof of delivery photo"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={order.deliveryProofRef || "/placeholder.svg"}
+                          alt="Proof of delivery"
+                          className="size-full object-cover transition-transform hover:scale-105"
+                        />
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground/60 mt-1 inline-flex items-center gap-1.5 text-xs italic">
+                        <ImageOff className="size-3.5" />
+                        No proof photo uploaded.
+                      </span>
                     )}
                   </div>
                 )}

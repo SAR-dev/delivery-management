@@ -12,9 +12,7 @@ async function loadOwned(id: string) {
   if (!me) return { error: NextResponse.json(null, { status: 401 }) } as const
 
   if (me.role !== "MERCHANT" || !me.merchantId) {
-    return {
-      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
-    } as const
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) } as const
   }
 
   const [row] = await db
@@ -29,9 +27,7 @@ async function loadOwned(id: string) {
     .limit(1)
 
   if (!row) {
-    return {
-      error: NextResponse.json({ error: "Not found" }, { status: 404 }),
-    } as const
+    return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) } as const
   }
 
   return { row } as const
