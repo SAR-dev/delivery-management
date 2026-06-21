@@ -1,0 +1,19 @@
+// Shared upload config used by the local-disk storage backend
+// (lib/storage/local.ts) and the upload API route. Keeping validation rules
+// and the set of allowed folders here keeps them in one place.
+
+// Allowed image content types.
+export const ALLOWED_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+] as const
+
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5MB
+
+// Folders we allow callers to upload into, so a stray value can't be used to
+// scatter files across arbitrary paths.
+export const UPLOAD_FOLDERS = ["avatars", "delivery-proofs", "pickups"] as const
+export type UploadFolder = (typeof UPLOAD_FOLDERS)[number]

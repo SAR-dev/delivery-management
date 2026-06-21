@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
-import type { UploadFolder } from "@/lib/supabase/storage"
+import type { UploadFolder } from "@/lib/storage/config"
 import { uploadImage } from "@/lib/upload-image"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -107,7 +107,7 @@ export function ImageUpload({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled || uploading}
-          className="border-border text-muted-foreground hover:border-primary/50 hover:text-foreground flex h-28 w-full px-1 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          className="border-border text-muted-foreground hover:border-primary/50 hover:text-foreground flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
           {uploading ? (
             <Loader2 className="size-5 animate-spin" />
