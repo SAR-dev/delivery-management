@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Building2,
   Loader2,
@@ -46,24 +46,32 @@ function PricingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function MerchantBusinessPage() {
-  const { currentMerchant, divisions, updateMerchantProfile } = usePlatform()
+  const { currentMerchant, divisions, updateMerchantProfile, isReady, isDataReady } = usePlatform()
 
-  const [businessName, setBusinessName] = useState(
-    currentMerchant?.businessName ?? "",
-  )
-  const [email, setEmail] = useState(currentMerchant?.email ?? "")
-  const [phone, setPhone] = useState(currentMerchant?.phone ?? "")
-  const [address, setAddress] = useState(currentMerchant?.address ?? "")
-  const [divisionId, setDivisionId] = useState(
-    currentMerchant?.divisionId ?? "",
-  )
+  const [businessName, setBusinessName] = useState(() => currentMerchant?.businessName ?? "")
+  const [email, setEmail] = useState(() => currentMerchant?.email ?? "")
+  const [phone, setPhone] = useState(() => currentMerchant?.phone ?? "")
+  const [address, setAddress] = useState(() => currentMerchant?.address ?? "")
+  const [divisionId, setDivisionId] = useState(() => currentMerchant?.divisionId ?? "")
   const [saving, setSaving] = useState(false)
+
+  // Populate form fields once currentMerchant is available (async after reload).
+  useEffect(() => {
+    if (!currentMerchant) return
+    setBusinessName(currentMerchant.businessName)
+    setEmail(currentMerchant.email)
+    setPhone(currentMerchant.phone)
+    setAddress(currentMerchant.address)
+    setDivisionId(currentMerchant.divisionId ?? "")
+  }, [currentMerchant])
 
   // Active divisions, plus the merchant's current one even if since disabled.
   const divisionOptions = useMemo(
     () => divisions.filter((d) => d.isActive || d.id === divisionId),
     [divisions, divisionId],
   )
+
+  if (!isReady || !isDataReady) return null
 
   if (!currentMerchant) {
     return (
@@ -203,7 +211,9 @@ export default function MerchantBusinessPage() {
                     className="w-full"
                     aria-invalid={divisionId.length === 0}
                   >
-                    <SelectValue placeholder="Select a division" />
+                    <SelectValue placeholder="Select a division">
+                      {divisionOptions.find((d) => d.id === divisionId)?.name}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {divisionOptions.map((d) => (

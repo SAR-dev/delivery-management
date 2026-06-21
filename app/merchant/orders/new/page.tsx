@@ -467,7 +467,9 @@ export default function NewOrderPage() {
                                   p.deliveryDivisionId.length === 0
                                 }
                               >
-                                <SelectValue placeholder="Select a division" />
+                                <SelectValue placeholder="Select a division">
+                                  {activeDivisions.find((d) => d.id === p.deliveryDivisionId)?.name}
+                                </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 {activeDivisions.map((d) => (

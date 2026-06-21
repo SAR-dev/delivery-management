@@ -61,6 +61,8 @@ interface PickupLocationInput {
 interface PlatformContextValue {
   currentUser: User | null
   isReady: boolean
+  // True once both the session AND the full platform data have loaded.
+  isDataReady: boolean
   // Non-null when the initial platform data load failed. Pages can show a
   // retry prompt and call refreshData() to re-attempt the load.
   dataError: string | null
@@ -318,6 +320,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
+  const [isDataReady, setIsDataReady] = useState(false)
   const [securityConfig, setSecurityConfig] =
     useState<SecurityMoneyConfig | null>(null)
   const [team, setTeam] = useState<User[]>([])
@@ -370,6 +373,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setDivisions([])
       setSecurityConfig(null)
       setDataError(null)
+      setIsDataReady(false)
       return
     }
 
@@ -426,7 +430,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         setWarehouses(await warehousesRes.json())
         setDivisions(await divisionsRes.json())
         setSecurityConfig(await securityConfigRes.json())
-        if (!cancelled) setDataError(null)
+        if (!cancelled) {
+          setDataError(null)
+          setIsDataReady(true)
+        }
       } catch (err) {
         if (cancelled) return
         setDataError(
@@ -971,9 +978,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           method: "PATCH",
           ...(body
             ? {
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-              }
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
             : {}),
         })
         const data = await res.json().catch(() => null)
@@ -1104,10 +1111,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   // still need a re-attempt / return decision.
   const warehouseFailedOrders = currentWarehouse
     ? orders.filter(
-        (o) =>
-          o.status === "FAILED_ATTEMPT" &&
-          o.warehouseId === currentWarehouse.id,
-      )
+      (o) =>
+        o.status === "FAILED_ATTEMPT" &&
+        o.warehouseId === currentWarehouse.id,
+    )
     : []
 
   const reattemptFailedOrder = useCallback<
@@ -1127,11 +1134,11 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   // rider has not yet settled (step 45).
   const warehouseUnsettledOrders = currentWarehouse
     ? orders.filter(
-        (o) =>
-          o.status === "DELIVERED" &&
-          o.warehouseId === currentWarehouse.id &&
-          !o.codSettledAt,
-      )
+      (o) =>
+        o.status === "DELIVERED" &&
+        o.warehouseId === currentWarehouse.id &&
+        !o.codSettledAt,
+    )
     : []
 
   const settleOrderCod = useCallback<PlatformContextValue["settleOrderCod"]>(
@@ -1143,12 +1150,12 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   // request — these make up the merchant's available funds.
   const merchantPayableOrders = currentMerchant
     ? orders.filter(
-        (o) =>
-          o.merchantId === currentMerchant.id &&
-          o.status === "DELIVERED" &&
-          Boolean(o.codSettledAt) &&
-          !o.payoutRequestId,
-      )
+      (o) =>
+        o.merchantId === currentMerchant.id &&
+        o.status === "DELIVERED" &&
+        Boolean(o.codSettledAt) &&
+        !o.payoutRequestId,
+    )
     : []
 
   const merchantPayoutRequests = currentMerchant
@@ -1235,6 +1242,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       value={{
         currentUser,
         isReady,
+        isDataReady,
         dataError,
         refreshData,
         login,
@@ -1246,9 +1254,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         updateSecurityConfig,
         team,
         createAccount,
-    toggleAccountActive,
-    togglePricingPermission,
-    updateAccountWarehouse,
+        toggleAccountActive,
+        togglePricingPermission,
+        updateAccountWarehouse,
         merchants,
         approveMerchant,
         suspendMerchant,

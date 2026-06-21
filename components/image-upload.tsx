@@ -63,7 +63,6 @@ export function ImageUpload({
       {value ? (
         <div className="flex items-start gap-3">
           {hidePreview ? null : (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={value || "/placeholder.svg"}
               alt="Uploaded preview"
