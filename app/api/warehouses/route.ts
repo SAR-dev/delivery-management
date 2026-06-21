@@ -29,7 +29,9 @@ export async function POST(req: Request) {
   const [existing] = await db
     .select({ id: warehouse.id })
     .from(warehouse)
-    .where(and(eq(warehouse.name, name.trim()), eq(warehouse.city, city.trim())))
+    .where(
+      and(eq(warehouse.name, name.trim()), eq(warehouse.city, city.trim())),
+    )
     .limit(1)
   if (existing) {
     return NextResponse.json(

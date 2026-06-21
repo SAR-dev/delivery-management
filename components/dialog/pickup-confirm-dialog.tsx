@@ -12,8 +12,11 @@ import {
 import { toast } from "sonner"
 import { usePlatform } from "@/lib/platform-context"
 import type { Order, PickupLocation } from "@/lib/types"
+import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { FormDialog } from "@/components/dialog/form-dialog"
+import { ImageGalleryUpload } from "@/components/image-upload"
+import { ImageZoom } from "@/components/image-zoom"
 
 function InfoRow({
   icon: Icon,
@@ -50,6 +53,7 @@ export function PickupConfirmDialog({
 }) {
   const { markOrderPickedUp } = usePlatform()
   const [submitting, setSubmitting] = useState(false)
+  const [proofUrls, setProofUrls] = useState<string[]>([])
 
   if (!order) return null
 
@@ -60,13 +64,18 @@ export function PickupConfirmDialog({
     (link) => link.trim().length > 0,
   )
 
+  function handleOpenChange(next: boolean) {
+    if (!next) setProofUrls([])
+    onOpenChange(next)
+  }
+
   async function handleConfirm() {
     setSubmitting(true)
     try {
-      const result = await markOrderPickedUp(order!.id)
+      const result = await markOrderPickedUp(order!.id, proofUrls)
       if (result.ok) {
         toast.success(`${order!.code} marked as picked up.`)
-        onOpenChange(false)
+        handleOpenChange(false)
       } else {
         toast.error(result.error ?? "Unable to update pickup.")
       }
@@ -78,12 +87,13 @@ export function PickupConfirmDialog({
   return (
     <FormDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
       title={`Confirm pickup of ${order.code}`}
       description="Collect the parcel from the merchant, then confirm to update the status to Picked up. The merchant sees this change in real time."
       onConfirm={handleConfirm}
       submitting={submitting}
       submittingLabel="Updating"
+      submitDisabled={proofUrls.length === 0}
       submitLabel="Confirm pickup"
       submitIcon={<PackageCheck className="size-4" />}
     >
@@ -114,22 +124,12 @@ export function PickupConfirmDialog({
           {photos.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
               {photos.map((link, i) => (
-                <a
+                <ImageZoom
                   key={i}
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group border-border bg-background relative aspect-square overflow-hidden rounded-md border"
-                  title={`Open photo ${i + 1}`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={link || "/placeholder.svg"}
-                    alt={`Pickup location reference ${i + 1}`}
-                    crossOrigin="anonymous"
-                    className="size-full object-cover transition-transform group-hover:scale-105"
-                  />
-                </a>
+                  src={link}
+                  alt={`Pickup location reference ${i + 1}`}
+                  className="size-full object-cover transition-transform group-hover:scale-105"
+                />
               ))}
             </div>
           ) : (
@@ -145,6 +145,21 @@ export function PickupConfirmDialog({
           icon={Package}
           label="Parcel"
           value={`${order.parcelWeightKg} KG · ${order.deliveryType}`}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-muted-foreground text-sm">
+          Capture photos of the parcel as proof you collected it from the
+          merchant.
+        </p>
+        <Label>
+          Pickup proof photos <span className="text-destructive">*</span>
+        </Label>
+        <ImageGalleryUpload
+          value={proofUrls}
+          onChange={setProofUrls}
+          folder="pickups"
         />
       </div>
     </FormDialog>

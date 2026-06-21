@@ -463,12 +463,14 @@ export default function NewOrderPage() {
                               <SelectTrigger
                                 id={`division-${p.id}`}
                                 className="w-full"
-                                aria-invalid={
-                                  p.deliveryDivisionId.length === 0
-                                }
+                                aria-invalid={p.deliveryDivisionId.length === 0}
                               >
                                 <SelectValue placeholder="Select a division">
-                                  {activeDivisions.find((d) => d.id === p.deliveryDivisionId)?.name}
+                                  {
+                                    activeDivisions.find(
+                                      (d) => d.id === p.deliveryDivisionId,
+                                    )?.name
+                                  }
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent>

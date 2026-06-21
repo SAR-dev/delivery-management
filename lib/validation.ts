@@ -154,6 +154,13 @@ export const orderDispatchSchema = z.object({
   riderId: requiredString("riderId"),
 })
 
+export const orderPickedUpSchema = z.object({
+  proofRefs: z
+    .array(imageUrl("Each pickup proof photo"))
+    .min(1, "At least one pickup proof photo is required")
+    .max(10, "You can add up to 10 pickup proof photos"),
+})
+
 export const orderDeliveredSchema = z.object({
   proofRef: z.string().trim().min(1).optional(),
 })

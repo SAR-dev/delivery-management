@@ -46,13 +46,23 @@ function PricingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function MerchantBusinessPage() {
-  const { currentMerchant, divisions, updateMerchantProfile, isReady, isDataReady } = usePlatform()
+  const {
+    currentMerchant,
+    divisions,
+    updateMerchantProfile,
+    isReady,
+    isDataReady,
+  } = usePlatform()
 
-  const [businessName, setBusinessName] = useState(() => currentMerchant?.businessName ?? "")
+  const [businessName, setBusinessName] = useState(
+    () => currentMerchant?.businessName ?? "",
+  )
   const [email, setEmail] = useState(() => currentMerchant?.email ?? "")
   const [phone, setPhone] = useState(() => currentMerchant?.phone ?? "")
   const [address, setAddress] = useState(() => currentMerchant?.address ?? "")
-  const [divisionId, setDivisionId] = useState(() => currentMerchant?.divisionId ?? "")
+  const [divisionId, setDivisionId] = useState(
+    () => currentMerchant?.divisionId ?? "",
+  )
   const [saving, setSaving] = useState(false)
 
   // Populate form fields once currentMerchant is available (async after reload).

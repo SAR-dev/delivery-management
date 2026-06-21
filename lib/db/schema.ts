@@ -361,6 +361,10 @@ export const order = pgTable("order", {
 
   // Pickup rider collects parcel from merchant.
   pickedUpAt: ts("pickedUpAt"),
+  // Photo(s) the pickup rider captures as proof of collection (shop front,
+  // parcel in hand, etc). Multiple images allowed, same pattern as the
+  // pickup-location reference photos above.
+  pickupProofRefs: text("pickupProofRefs").array(),
 
   // Parcel received at warehouse.
   warehouseId: text("warehouseId").references(() => warehouse.id),

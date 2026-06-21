@@ -172,8 +172,7 @@ export function DeliveryAttemptDialog({
             {order.recipientName.split(" ")[0]} and capture proof of delivery.
           </p>
           <Label>
-            Proof of delivery photo{" "}
-            <span className="text-destructive">*</span>
+            Proof of delivery photo <span className="text-destructive">*</span>
           </Label>
           <ImageUpload
             value={proofUrl}

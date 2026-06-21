@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Order, OrderStatus } from "@/lib/types"
+import { ImageZoom } from "@/components/image-zoom"
 
 type StepKey =
   | "PLACED"
@@ -265,26 +266,42 @@ export function TrackingTimeline({
                     )}
                   </div>
                 )}
+                {step.key === "PICKED_UP" && reached && (
+                  <div className="mt-2">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      Pickup proof
+                    </p>
+                    {order.pickupProofRefs &&
+                    order.pickupProofRefs.length > 0 ? (
+                      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                        {order.pickupProofRefs.map((link, i) => (
+                          <ImageZoom
+                            key={i}
+                            src={link}
+                            alt={`Pickup proof ${i + 1}`}
+                            className="size-full object-cover transition-transform hover:scale-105"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/60 mt-1 inline-flex items-center gap-1.5 text-xs italic">
+                        <ImageOff className="size-3.5" />
+                        No proof photo uploaded.
+                      </span>
+                    )}
+                  </div>
+                )}
                 {step.key === "DELIVERED" && reached && (
                   <div className="mt-2">
                     <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                       Proof of delivery
                     </p>
                     {order.deliveryProofRef ? (
-                      <a
-                        href={order.deliveryProofRef}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="border-border bg-muted mt-1.5 block size-20 overflow-hidden rounded-md border"
-                        title="Open proof of delivery photo"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={order.deliveryProofRef || "/placeholder.svg"}
-                          alt="Proof of delivery"
-                          className="size-full object-cover transition-transform hover:scale-105"
-                        />
-                      </a>
+                      <ImageZoom
+                        src={order.deliveryProofRef}
+                        alt="Proof of delivery"
+                        className="border-border bg-muted mt-1.5 block size-20 overflow-hidden rounded-md border object-cover transition-transform hover:scale-105"
+                      />
                     ) : (
                       <span className="text-muted-foreground/60 mt-1 inline-flex items-center gap-1.5 text-xs italic">
                         <ImageOff className="size-3.5" />
