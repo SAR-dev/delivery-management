@@ -41,6 +41,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Local-disk upload storage (lib/storage/local.ts). Mounted as a volume in
+# docker-compose.yml so uploaded files survive container rebuilds/redeploys.
+# Owned by the nextjs user since the app writes here at runtime.
+RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
+
 USER nextjs
 
 EXPOSE 3000

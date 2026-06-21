@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { LogOut } from "lucide-react"
 import { cn, initials } from "@/lib/utils"
 import { usePlatform } from "@/lib/platform-context"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { BRAND_NAME } from "@/lib/constants"
@@ -71,6 +71,12 @@ export function RoleSidebar({
       <div className="px-3 pt-2 pb-3">
         <div className="mb-1 flex items-center gap-3 rounded-lg px-3 py-2">
           <Avatar className="size-7">
+            {currentUser?.image ? (
+              <AvatarImage
+                src={currentUser.image || "/placeholder.svg"}
+                alt={currentUser.name}
+              />
+            ) : null}
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-[11px] font-medium">
               {currentUser ? initials(currentUser.name) : fallbackInitials}
             </AvatarFallback>

@@ -38,6 +38,18 @@ const requiredString = (label: string) =>
     .trim()
     .min(1, `${label} is required`)
 
+// Accepts either an absolute URL (e.g. an externally hosted image) or a
+// site-relative upload path served by app/uploads/[...path]/route.ts — the
+// local storage driver returns paths like "/uploads/avatars/<id>/<uuid>.png",
+// which z.url() alone would reject.
+const imageUrl = (label: string) =>
+  z
+    .string({ error: `${label} must be a valid URL` })
+    .trim()
+    .refine((v) => v.startsWith("/") || z.url().safeParse(v).success, {
+      error: `${label} must be a valid URL`,
+    })
+
 export const securityConfigSchema = z.object({
   lowValueThreshold: z.number().nonnegative(),
   lowValueFlatFee: z.number().nonnegative(),
@@ -172,9 +184,15 @@ export const riderCreateSchema = z.object({
   warehouseId: z.string().nullish(),
 })
 
-export const profileUpdateSchema = z.object({
-  name: requiredString("Name"),
-})
+export const profileUpdateSchema = z
+  .object({
+    name: requiredString("Name").optional(),
+    // `null` clears the avatar; a string sets it; omitted leaves it unchanged.
+    image: imageUrl("Avatar").nullish(),
+  })
+  .refine((d) => d.name !== undefined || d.image !== undefined, {
+    error: "Provide a name or an image to update",
+  })
 
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),
@@ -182,7 +200,7 @@ export const pickupLocationSchema = z.object({
   divisionId: requiredString("Division"),
   mapLink: z.url("Map link must be a valid URL").optional().or(z.literal("")),
   imageLinks: z
-    .array(z.url("Each image link must be a valid URL"))
+    .array(imageUrl("Each image link"))
     .max(10, "You can add up to 10 image links")
     .optional(),
 })

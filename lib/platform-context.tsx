@@ -73,6 +73,10 @@ interface PlatformContextValue {
 
   // Update the signed-in user's own display name.
   updateProfileName: (name: string) => Promise<{ ok: boolean; error?: string }>
+  // Set or clear (null) the signed-in user's avatar image.
+  updateProfileImage: (
+    image: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>
   // Change the signed-in user's password (verifies the current one).
   changePassword: (
     currentPassword: string,
@@ -130,7 +134,9 @@ interface PlatformContextValue {
     id: string,
     input: PickupLocationInput,
   ) => Promise<{ ok: boolean; error?: string }>
-  deletePickupLocation: (id: string) => Promise<{ ok: boolean; error?: string }>
+  deletePickupLocation: (
+    id: string,
+  ) => Promise<{ ok: boolean; error?: string }>
   // The merchant business for the currently logged-in merchant user.
   currentMerchant: Merchant | null
   createOrder: (
@@ -493,6 +499,25 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     return { ok: true }
   }, [])
 
+  const updateProfileImage = useCallback<
+    PlatformContextValue["updateProfileImage"]
+  >(async (image) => {
+    const res = await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data?.error ?? "Could not update your photo.",
+      }
+    }
+    setCurrentUser(data)
+    return { ok: true }
+  }, [])
+
   const changePassword = useCallback<PlatformContextValue["changePassword"]>(
     async (currentPassword, newPassword) => {
       const { error } = await authClient.changePassword({
@@ -539,7 +564,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
         setWarehouses((prev) =>
           prev.map((w) =>
-            w.id === newUser.warehouseId ? { ...w, managedBy: newUser.id } : w,
+            w.id === newUser.warehouseId
+              ? { ...w, managedBy: newUser.id }
+              : w,
           ),
         )
       }
@@ -587,7 +614,9 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const updatedProfile = await res.json()
     setTeam((prev) =>
       prev.map((u) =>
-        u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
+        u.id === id
+          ? { ...u, warehouseId: updatedProfile.warehouseId }
+          : u,
       ),
     )
     // Reflect the managedBy change on the cached warehouse list so the create
@@ -595,7 +624,8 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     setWarehouses((prev) =>
       prev.map((w) => {
         if (w.managedBy === id) return { ...w, managedBy: null }
-        if (warehouseId && w.id === warehouseId) return { ...w, managedBy: id }
+        if (warehouseId && w.id === warehouseId)
+          return { ...w, managedBy: id }
         return w
       }),
     )
@@ -1210,14 +1240,15 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         updateProfileName,
+        updateProfileImage,
         changePassword,
         securityConfig,
         updateSecurityConfig,
         team,
         createAccount,
-        toggleAccountActive,
-        togglePricingPermission,
-        updateAccountWarehouse,
+    toggleAccountActive,
+    togglePricingPermission,
+    updateAccountWarehouse,
         merchants,
         approveMerchant,
         suspendMerchant,

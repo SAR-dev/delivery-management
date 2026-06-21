@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { FormDialog } from "@/components/dialog/form-dialog"
+import { ImageUpload } from "@/components/image-upload"
 
 function InfoRow({
   icon: Icon,
@@ -52,6 +53,7 @@ export function DeliveryAttemptDialog({
   const { markDelivered, markDeliveryFailed } = usePlatform()
   const [outcome, setOutcome] = useState<Outcome>("DELIVERED")
   const [note, setNote] = useState("")
+  const [proofUrl, setProofUrl] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   if (!order) return null
@@ -59,6 +61,7 @@ export function DeliveryAttemptDialog({
   function reset() {
     setOutcome("DELIVERED")
     setNote("")
+    setProofUrl(null)
   }
 
   function handleOpenChange(next: boolean) {
@@ -70,7 +73,7 @@ export function DeliveryAttemptDialog({
     setSubmitting(true)
     try {
       if (outcome === "DELIVERED") {
-        const result = await markDelivered(order!.id)
+        const result = await markDelivered(order!.id, proofUrl ?? undefined)
         if (result.ok) {
           toast.success(
             `${order!.code} delivered. ${formatTk(order!.totalCollectible)} collected.`,
@@ -94,6 +97,8 @@ export function DeliveryAttemptDialog({
   }
 
   const failedNeedsNote = outcome === "FAILED" && !note.trim()
+  const deliveredNeedsProof = outcome === "DELIVERED" && !proofUrl
+  const submitBlocked = failedNeedsNote || deliveredNeedsProof
 
   return (
     <FormDialog
@@ -104,7 +109,7 @@ export function DeliveryAttemptDialog({
       onConfirm={handleSubmit}
       submitting={submitting}
       submittingLabel="Saving"
-      submitDisabled={failedNeedsNote}
+      submitDisabled={submitBlocked}
       submitVariant={outcome === "FAILED" ? "destructive" : "default"}
       submitLabel={
         outcome === "DELIVERED" ? "Confirm delivery" : "Record failure"
@@ -161,10 +166,22 @@ export function DeliveryAttemptDialog({
       </div>
 
       {outcome === "DELIVERED" ? (
-        <p className="text-muted-foreground text-sm">
-          Confirm you collected {formatTk(order.totalCollectible)} and captured
-          proof of delivery from {order.recipientName.split(" ")[0]}.
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-sm">
+            Confirm you collected {formatTk(order.totalCollectible)} from{" "}
+            {order.recipientName.split(" ")[0]} and capture proof of delivery.
+          </p>
+          <Label>
+            Proof of delivery photo{" "}
+            <span className="text-destructive">*</span>
+          </Label>
+          <ImageUpload
+            value={proofUrl}
+            onChange={setProofUrl}
+            folder="delivery-proofs"
+            label="Capture / upload proof photo"
+          />
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           <Label htmlFor="failure-note">

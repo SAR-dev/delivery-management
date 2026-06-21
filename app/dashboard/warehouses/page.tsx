@@ -417,7 +417,9 @@ function WarehouseFields({
         </label>
         <Select
           value={form.divisionId}
-          onValueChange={(v) => setForm((f) => ({ ...f, divisionId: v ?? "" }))}
+          onValueChange={(v) =>
+            setForm((f) => ({ ...f, divisionId: v ?? "" }))
+          }
         >
           <SelectTrigger id="warehouse-division">
             <SelectValue placeholder="Select a division" />
