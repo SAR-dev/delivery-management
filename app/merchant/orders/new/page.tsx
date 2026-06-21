@@ -44,6 +44,7 @@ interface ParcelState {
   recipientPhone: string
   deliveryAddress: string
   deliveryCity: string
+  deliveryDivisionId: string
   deliveryMapLink: string
   deliveryImageLinks: string[]
   parcelWeightKg: string
@@ -58,6 +59,7 @@ function emptyParcel(): ParcelState {
     recipientPhone: "",
     deliveryAddress: "",
     deliveryCity: "",
+    deliveryDivisionId: "",
     deliveryMapLink: "",
     deliveryImageLinks: [""],
     parcelWeightKg: "1",
@@ -68,8 +70,19 @@ function emptyParcel(): ParcelState {
 
 export default function NewOrderPage() {
   const router = useRouter()
-  const { currentMerchant, pickupLocations, securityConfig, createOrders } =
-    usePlatform()
+  const {
+    currentMerchant,
+    pickupLocations,
+    divisions,
+    securityConfig,
+    createOrders,
+  } = usePlatform()
+
+  // Only active divisions can be chosen for a new order's receiver.
+  const activeDivisions = useMemo(
+    () => divisions.filter((d) => d.isActive),
+    [divisions],
+  )
 
   const myLocations = useMemo(
     () =>
@@ -207,6 +220,10 @@ export default function NewOrderPage() {
       toast.error("Every parcel weight must be greater than 0.")
       return
     }
+    if (parcels.some((p) => !p.deliveryDivisionId)) {
+      toast.error("Select a delivery division for every parcel.")
+      return
+    }
     if (anyExceeds) {
       toast.error(
         `One or more parcels exceed the ${currentMerchant!.maxWeightKg} KG limit.`,
@@ -220,6 +237,7 @@ export default function NewOrderPage() {
       recipientPhone: p.recipientPhone.trim(),
       deliveryAddress: p.deliveryAddress.trim(),
       deliveryCity: p.deliveryCity.trim(),
+      deliveryDivisionId: p.deliveryDivisionId,
       deliveryMapLink: p.deliveryMapLink.trim() || null,
       deliveryImageLinks: p.deliveryImageLinks
         .map((link) => link.trim())
@@ -427,6 +445,36 @@ export default function NewOrderPage() {
                               placeholder="Dhaka"
                               required
                             />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Label htmlFor={`division-${p.id}`}>
+                              Delivery division
+                            </Label>
+                            <Select
+                              value={p.deliveryDivisionId}
+                              onValueChange={(v) =>
+                                updateParcel(
+                                  p.id,
+                                  "deliveryDivisionId",
+                                  v ?? "",
+                                )
+                              }
+                            >
+                              <SelectTrigger
+                                id={`division-${p.id}`}
+                                className="w-full"
+                                aria-invalid={p.deliveryDivisionId.length === 0}
+                              >
+                                <SelectValue placeholder="Select a division" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeDivisions.map((d) => (
+                                  <SelectItem key={d.id} value={d.id}>
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div className="flex flex-col gap-2">
                             <Label htmlFor={`type-${p.id}`}>

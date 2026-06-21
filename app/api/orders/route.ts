@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { merchant, order, securityConfig } from "@/lib/db/schema"
+import { division, merchant, order, securityConfig } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
@@ -71,12 +71,28 @@ export async function POST(req: Request) {
     recipientPhone,
     deliveryAddress,
     deliveryCity,
+    deliveryDivisionId,
     deliveryMapLink,
     deliveryImageLinks,
     parcelWeightKg,
     deliveryType,
     productCost,
   } = parsed.data
+
+  // Receiver division must exist and be active.
+  const [deliveryDivision] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(
+      and(eq(division.id, deliveryDivisionId), eq(division.isActive, true)),
+    )
+    .limit(1)
+  if (!deliveryDivision) {
+    return NextResponse.json(
+      { error: "Select a valid delivery division." },
+      { status: 400 },
+    )
+  }
 
   const normalizedMapLink = deliveryMapLink?.trim()
     ? deliveryMapLink.trim()
@@ -155,6 +171,7 @@ export async function POST(req: Request) {
       recipientPhone,
       deliveryAddress,
       deliveryCity,
+      deliveryDivisionId,
       deliveryMapLink: normalizedMapLink,
       deliveryImageLinks: normalizedImageLinks.length
         ? normalizedImageLinks

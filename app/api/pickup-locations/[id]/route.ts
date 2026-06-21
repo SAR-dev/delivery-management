@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { order, pickupLocation } from "@/lib/db/schema"
+import { division, order, pickupLocation } from "@/lib/db/schema"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
@@ -49,13 +49,26 @@ export async function PATCH(
 
   const parsed = await parseBody(req, pickupLocationSchema)
   if (parsed.error) return parsed.error
-  const { label, address, mapLink, imageLinks } = parsed.data
+  const { label, address, divisionId, mapLink, imageLinks } = parsed.data
+
+  const [div] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(and(eq(division.id, divisionId), eq(division.isActive, true)))
+    .limit(1)
+  if (!div) {
+    return NextResponse.json(
+      { error: "Select a valid division." },
+      { status: 400 },
+    )
+  }
 
   const [updated] = await db
     .update(pickupLocation)
     .set({
       label: label.trim(),
       address: address.trim(),
+      divisionId,
       mapLink: mapLink?.trim() ? mapLink.trim() : null,
       imageLinks:
         imageLinks && imageLinks.length > 0

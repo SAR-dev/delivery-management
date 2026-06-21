@@ -50,8 +50,47 @@ export const merchantRegisterSchema = z.object({
   email: z.email("A valid email is required"),
   phone: requiredString("Phone"),
   address: requiredString("Address"),
+  divisionId: requiredString("Division"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 })
+
+export const divisionCreateSchema = z.object({
+  name: requiredString("Division name"),
+})
+
+export const divisionUpdateSchema = z
+  .object({
+    name: requiredString("Division name").optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((d) => d.name !== undefined || d.isActive !== undefined, {
+    error: "Provide a name or active state to update",
+  })
+
+export const warehouseCreateSchema = z.object({
+  name: requiredString("Warehouse name"),
+  address: requiredString("Address"),
+  city: requiredString("City"),
+  divisionId: requiredString("Division"),
+})
+
+export const warehouseUpdateSchema = z
+  .object({
+    name: requiredString("Warehouse name").optional(),
+    address: requiredString("Address").optional(),
+    city: requiredString("City").optional(),
+    divisionId: requiredString("Division").optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.address !== undefined ||
+      d.city !== undefined ||
+      d.divisionId !== undefined ||
+      d.isActive !== undefined,
+    { error: "Provide at least one field to update" },
+  )
 
 export const merchantPricingSchema = z
   .object({
@@ -71,6 +110,7 @@ export const orderCreateSchema = z.object({
   recipientPhone: requiredString("Recipient phone"),
   deliveryAddress: requiredString("Delivery address"),
   deliveryCity: requiredString("Delivery city"),
+  deliveryDivisionId: requiredString("Delivery division"),
   deliveryMapLink: z
     .url("Map link must be a valid URL")
     .or(z.literal(""))
@@ -139,6 +179,7 @@ export const profileUpdateSchema = z.object({
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),
   address: requiredString("Address"),
+  divisionId: requiredString("Division"),
   mapLink: z.url("Map link must be a valid URL").optional().or(z.literal("")),
   imageLinks: z
     .array(z.url("Each image link must be a valid URL"))
@@ -151,6 +192,7 @@ export const merchantProfileSchema = z.object({
   email: z.email("A valid email is required"),
   phone: requiredString("Phone"),
   address: requiredString("Address"),
+  divisionId: requiredString("Division"),
 })
 
 export const teamCreateSchema = z.object({

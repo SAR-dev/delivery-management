@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Building2,
   Loader2,
@@ -28,6 +28,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 function PricingRow({ label, value }: { label: string; value: string }) {
   return (
@@ -39,7 +46,7 @@ function PricingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function MerchantBusinessPage() {
-  const { currentMerchant, updateMerchantProfile } = usePlatform()
+  const { currentMerchant, divisions, updateMerchantProfile } = usePlatform()
 
   const [businessName, setBusinessName] = useState(
     currentMerchant?.businessName ?? "",
@@ -47,7 +54,16 @@ export default function MerchantBusinessPage() {
   const [email, setEmail] = useState(currentMerchant?.email ?? "")
   const [phone, setPhone] = useState(currentMerchant?.phone ?? "")
   const [address, setAddress] = useState(currentMerchant?.address ?? "")
+  const [divisionId, setDivisionId] = useState(
+    currentMerchant?.divisionId ?? "",
+  )
   const [saving, setSaving] = useState(false)
+
+  // Active divisions, plus the merchant's current one even if since disabled.
+  const divisionOptions = useMemo(
+    () => divisions.filter((d) => d.isActive || d.id === divisionId),
+    [divisions, divisionId],
+  )
 
   if (!currentMerchant) {
     return (
@@ -70,18 +86,21 @@ export default function MerchantBusinessPage() {
     email: email.trim(),
     phone: phone.trim(),
     address: address.trim(),
+    divisionId,
   }
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed.email)
   const requiredFilled =
     trimmed.businessName.length > 0 &&
     trimmed.phone.length > 0 &&
-    trimmed.address.length > 0
+    trimmed.address.length > 0 &&
+    trimmed.divisionId.length > 0
   const unchanged =
     trimmed.businessName === currentMerchant.businessName &&
     trimmed.email === currentMerchant.email &&
     trimmed.phone === currentMerchant.phone &&
-    trimmed.address === currentMerchant.address
+    trimmed.address === currentMerchant.address &&
+    trimmed.divisionId === (currentMerchant.divisionId ?? "")
   const formValid = requiredFilled && emailValid && !unchanged
 
   async function handleSubmit(e: React.FormEvent) {
@@ -172,6 +191,28 @@ export default function MerchantBusinessPage() {
                   rows={3}
                   aria-invalid={trimmed.address.length === 0}
                 />
+              </div>
+              <div className="flex flex-col gap-2 sm:col-span-2">
+                <Label htmlFor="business-division">Division</Label>
+                <Select
+                  value={divisionId}
+                  onValueChange={(v) => setDivisionId(v ?? "")}
+                >
+                  <SelectTrigger
+                    id="business-division"
+                    className="w-full"
+                    aria-invalid={divisionId.length === 0}
+                  >
+                    <SelectValue placeholder="Select a division" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {divisionOptions.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
             <CardFooter className="justify-end">

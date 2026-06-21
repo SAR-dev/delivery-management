@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { pickupLocation } from "@/lib/db/schema"
+import { division, pickupLocation } from "@/lib/db/schema"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -34,7 +34,21 @@ export async function POST(req: Request) {
 
   const parsed = await parseBody(req, pickupLocationSchema)
   if (parsed.error) return parsed.error
-  const { label, address, mapLink, imageLinks } = parsed.data
+  const { label, address, divisionId, mapLink, imageLinks } = parsed.data
+
+  // The division must exist and be active so parcels picked up here can be
+  // routed to a hub serving that division.
+  const [div] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(and(eq(division.id, divisionId), eq(division.isActive, true)))
+    .limit(1)
+  if (!div) {
+    return NextResponse.json(
+      { error: "Select a valid division." },
+      { status: 400 },
+    )
+  }
 
   const [created] = await db
     .insert(pickupLocation)
@@ -42,6 +56,7 @@ export async function POST(req: Request) {
       merchantId: me.merchantId,
       label: label.trim(),
       address: address.trim(),
+      divisionId,
       mapLink: mapLink?.trim() ? mapLink.trim() : null,
       imageLinks:
         imageLinks && imageLinks.length > 0

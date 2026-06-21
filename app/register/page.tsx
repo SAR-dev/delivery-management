@@ -1,11 +1,18 @@
 "use client"
 
-import { FormEvent, useState } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Loader2, Store, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Card,
   CardContent,
@@ -20,6 +27,7 @@ interface FormState {
   email: string
   phone: string
   address: string
+  divisionId: string
   password: string
 }
 
@@ -29,14 +37,35 @@ const EMPTY: FormState = {
   email: "",
   phone: "",
   address: "",
+  divisionId: "",
   password: "",
+}
+
+interface DivisionOption {
+  id: string
+  name: string
 }
 
 export default function RegisterPage() {
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [divisions, setDivisions] = useState<DivisionOption[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submittedName, setSubmittedName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Load the active divisions for the selector (public, no auth required).
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/divisions/public")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: DivisionOption[]) => {
+        if (!cancelled) setDivisions(rows)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -57,6 +86,7 @@ export default function RegisterPage() {
           email: form.email.trim(),
           phone: form.phone.trim(),
           address: form.address.trim(),
+          divisionId: form.divisionId,
           password: form.password,
         }),
       })
@@ -237,6 +267,25 @@ export default function RegisterPage() {
                       onChange={(e) => update("address", e.target.value)}
                       required
                     />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="division">Division</Label>
+                    <Select
+                      value={form.divisionId}
+                      onValueChange={(v) => update("divisionId", v ?? "")}
+                      required
+                    >
+                      <SelectTrigger id="division" className="w-full">
+                        <SelectValue placeholder="Select a division" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {divisions.map((d) => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="password">Password</Label>

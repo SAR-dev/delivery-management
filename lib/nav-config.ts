@@ -16,6 +16,7 @@ import {
   Warehouse as WarehouseIcon,
   UserCog,
   Building2,
+  Map as MapIcon,
   type LucideIcon,
 } from "lucide-react"
 import type { Role } from "@/lib/types"
@@ -51,6 +52,12 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
     { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
+    {
+      href: "/dashboard/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+    },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
     {
       href: "/dashboard/account",
@@ -65,6 +72,12 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
     { href: "/dashboard/team", label: "Admins", icon: Users },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
+    {
+      href: "/dashboard/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+    },
     {
       href: "/dashboard/account",
       label: "Account",

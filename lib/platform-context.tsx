@@ -20,6 +20,7 @@ import type {
   CreateOrderInput,
   Rider,
   Warehouse,
+  Division,
   PayoutRequest,
 } from "@/lib/types"
 import { authClient } from "@/lib/auth-client"
@@ -52,6 +53,7 @@ interface RiderUpdateInput {
 interface PickupLocationInput {
   label: string
   address: string
+  divisionId: string
   mapLink?: string
   imageLinks?: string[]
 }
@@ -113,6 +115,7 @@ interface PlatformContextValue {
       email: string
       phone: string
       address: string
+      divisionId: string
     },
   ) => Promise<{ ok: boolean; error?: string }>
 
@@ -160,8 +163,40 @@ interface PlatformContextValue {
     orderId: string,
   ) => Promise<{ ok: boolean; error?: string }>
 
+  // --- Divisions (geographic regions; managed by Super Admin) ---
+  divisions: Division[]
+  // Super Admin creates a new division.
+  createDivision: (name: string) => Promise<{ ok: boolean; error?: string }>
+  // Super Admin renames a division.
+  updateDivision: (
+    id: string,
+    input: { name?: string; isActive?: boolean },
+  ) => Promise<{ ok: boolean; error?: string }>
+  // Super Admin deletes a division (only if unused).
+  deleteDivision: (id: string) => Promise<{ ok: boolean; error?: string }>
+
   // --- Phase 6: parcel submitted to warehouse (warehouse admin) ---
   warehouses: Warehouse[]
+  // Super Admin creates a new warehouse.
+  createWarehouse: (input: {
+    name: string
+    address: string
+    city: string
+    divisionId: string
+  }) => Promise<{ ok: boolean; error?: string }>
+  // Super Admin edits a warehouse or toggles its active state.
+  updateWarehouse: (
+    id: string,
+    input: {
+      name?: string
+      address?: string
+      city?: string
+      divisionId?: string
+      isActive?: boolean
+    },
+  ) => Promise<{ ok: boolean; error?: string }>
+  // Super Admin deletes a warehouse (only if unused).
+  deleteWarehouse: (id: string) => Promise<{ ok: boolean; error?: string }>
   // The warehouse managed by the currently logged-in Warehouse Admin.
   currentWarehouse: Warehouse | null
   // Warehouse Admin logs a PICKED_UP parcel into their warehouse -> IN_WAREHOUSE.
@@ -286,6 +321,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [divisions, setDivisions] = useState<Division[]>([])
   // Surfaced when the initial platform data load fails so pages can degrade
   // gracefully (show a retry prompt) instead of rendering empty/stale UI.
   const [dataError, setDataError] = useState<string | null>(null)
@@ -325,6 +361,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       setPickupLocations([])
       setRiders([])
       setWarehouses([])
+      setDivisions([])
       setSecurityConfig(null)
       setDataError(null)
       return
@@ -342,6 +379,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           pickupLocationsRes,
           ridersRes,
           warehousesRes,
+          divisionsRes,
           securityConfigRes,
         ] = await Promise.all([
           fetch("/api/team"),
@@ -351,6 +389,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           fetch("/api/pickup-locations"),
           fetch("/api/riders"),
           fetch("/api/warehouses"),
+          fetch("/api/divisions"),
           fetch("/api/security-config"),
         ])
         if (cancelled) return
@@ -365,6 +404,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
           pickupLocationsRes,
           ridersRes,
           warehousesRes,
+          divisionsRes,
           securityConfigRes,
         ]
         if (responses.some((r) => !r.ok)) {
@@ -378,6 +418,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         setPickupLocations(await pickupLocationsRes.json())
         setRiders(await ridersRes.json())
         setWarehouses(await warehousesRes.json())
+        setDivisions(await divisionsRes.json())
         setSecurityConfig(await securityConfigRes.json())
         if (!cancelled) setDataError(null)
       } catch (err) {
@@ -722,6 +763,132 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     setPickupLocations((prev) => prev.filter((p) => p.id !== id))
     return { ok: true }
   }, [])
+
+  // --- Division management (Super Admin) ----------------------------------
+
+  const createDivision = useCallback<PlatformContextValue["createDivision"]>(
+    async (name) => {
+      const res = await fetch("/api/divisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not create the division.",
+        }
+      }
+      setDivisions((prev) =>
+        [...prev, data].sort((a, b) => a.name.localeCompare(b.name)),
+      )
+      return { ok: true }
+    },
+    [],
+  )
+
+  const updateDivision = useCallback<PlatformContextValue["updateDivision"]>(
+    async (id, input) => {
+      const res = await fetch(`/api/divisions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not update the division.",
+        }
+      }
+      setDivisions((prev) =>
+        prev
+          .map((d) => (d.id === id ? data : d))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+      return { ok: true }
+    },
+    [],
+  )
+
+  const deleteDivision = useCallback<PlatformContextValue["deleteDivision"]>(
+    async (id) => {
+      const res = await fetch(`/api/divisions/${id}`, { method: "DELETE" })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not delete the division.",
+        }
+      }
+      setDivisions((prev) => prev.filter((d) => d.id !== id))
+      return { ok: true }
+    },
+    [],
+  )
+
+  const createWarehouse = useCallback<PlatformContextValue["createWarehouse"]>(
+    async (input) => {
+      const res = await fetch("/api/warehouses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not create the warehouse.",
+        }
+      }
+      setWarehouses((prev) =>
+        [...prev, data].sort((a, b) => a.name.localeCompare(b.name)),
+      )
+      return { ok: true }
+    },
+    [],
+  )
+
+  const updateWarehouse = useCallback<PlatformContextValue["updateWarehouse"]>(
+    async (id, input) => {
+      const res = await fetch(`/api/warehouses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not update the warehouse.",
+        }
+      }
+      setWarehouses((prev) =>
+        prev
+          .map((w) => (w.id === id ? data : w))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+      return { ok: true }
+    },
+    [],
+  )
+
+  const deleteWarehouse = useCallback<PlatformContextValue["deleteWarehouse"]>(
+    async (id) => {
+      const res = await fetch(`/api/warehouses/${id}`, { method: "DELETE" })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not delete the warehouse.",
+        }
+      }
+      setWarehouses((prev) => prev.filter((w) => w.id !== id))
+      return { ok: true }
+    },
+    [],
+  )
 
   // Shared helper for every order-lifecycle PATCH. We optimistically apply the
   // expected status immediately so the UI feels instant, then reconcile with
@@ -1072,7 +1239,14 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
         approveAndAssignOrder,
         currentRider,
         markOrderPickedUp,
+        divisions,
+        createDivision,
+        updateDivision,
+        deleteDivision,
         warehouses,
+        createWarehouse,
+        updateWarehouse,
+        deleteWarehouse,
         currentWarehouse,
         receiveOrderAtWarehouse,
         warehouseDeliveryRiders,

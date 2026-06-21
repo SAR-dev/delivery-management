@@ -21,6 +21,7 @@ import { auth } from "@/lib/auth"
 import { db, pool } from "@/lib/db"
 import {
   user,
+  division,
   warehouse,
   rider,
   merchant,
@@ -30,7 +31,21 @@ import {
   order,
   payoutRequest,
 } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
+
+// ---------------------------------------------------------------------------
+// Division IDs — stable so seeded entities can reference them by name.
+// ---------------------------------------------------------------------------
+const DIVISION_IDS = {
+  Dhaka: "division_dhaka",
+  Chattogram: "division_chattogram",
+  Khulna: "division_khulna",
+  Rajshahi: "division_rajshahi",
+  Barishal: "division_barishal",
+  Sylhet: "division_sylhet",
+  Rangpur: "division_rangpur",
+  Mymensingh: "division_mymensingh",
+} as const
 import { SEED_CREDENTIALS } from "./seed-credentials"
 
 // ---------------------------------------------------------------------------
@@ -111,6 +126,83 @@ async function createUser(input: {
 }
 
 // ---------------------------------------------------------------------------
+// 0. Divisions (Bangladesh divisions)
+// ---------------------------------------------------------------------------
+
+async function seedDivisions() {
+  log("Seeding divisions…")
+
+  const rows = Object.entries(DIVISION_IDS).map(([name, id]) => ({
+    id,
+    name,
+    isActive: true,
+  }))
+
+  for (const row of rows) {
+    const exists = await db
+      .select()
+      .from(division)
+      .where(eq(division.id, row.id))
+    if (exists.length > 0) {
+      log(`  skip division ${row.name}`)
+      continue
+    }
+    await db.insert(division).values(row)
+    log(`  created division ${row.name}`)
+  }
+}
+
+// Backfill divisionId on any pre-existing rows that were seeded before the
+// division feature existed. Idempotent: only touches rows where the division
+// reference is still null. All originally-seeded data lives in Dhaka except
+// the Chattogram warehouse/merchant and the Sylhet depot.
+async function backfillDivisions() {
+  log("Backfilling divisions on existing rows…")
+
+  // Warehouses — map by city.
+  const warehouseByCity: Record<string, string> = {
+    Dhaka: DIVISION_IDS.Dhaka,
+    Chattogram: DIVISION_IDS.Chattogram,
+    Sylhet: DIVISION_IDS.Sylhet,
+  }
+  for (const [city, divisionId] of Object.entries(warehouseByCity)) {
+    await db
+      .update(warehouse)
+      .set({ divisionId })
+      .where(and(eq(warehouse.city, city), isNull(warehouse.divisionId)))
+  }
+
+  // Merchants — Urban Crate is in Chattogram; everyone else seeded in Dhaka.
+  await db
+    .update(merchant)
+    .set({ divisionId: DIVISION_IDS.Chattogram })
+    .where(
+      and(
+        eq(merchant.id, "nsfktk64zjut01r2x93hnweu"),
+        isNull(merchant.divisionId),
+      ),
+    )
+  await db
+    .update(merchant)
+    .set({ divisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(merchant.divisionId))
+
+  // Pickup locations — all seeded in Dhaka.
+  await db
+    .update(pickupLocation)
+    .set({ divisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(pickupLocation.divisionId))
+
+  // Orders — all seeded receivers are in Dhaka.
+  await db
+    .update(order)
+    .set({ deliveryDivisionId: DIVISION_IDS.Dhaka })
+    .where(isNull(order.deliveryDivisionId))
+
+  log("  backfill complete")
+}
+
+// ---------------------------------------------------------------------------
 // 1. Warehouses
 // ---------------------------------------------------------------------------
 
@@ -123,6 +215,7 @@ async function seedWarehouses() {
       name: "Dhaka Central Hub",
       address: "Plot 22, Tejgaon Industrial Area",
       city: "Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
       managedBy: null as string | null, // back-filled after users are seeded
       isActive: true,
     },
@@ -131,6 +224,7 @@ async function seedWarehouses() {
       name: "Chattogram Port Hub",
       address: "Agrabad Commercial Area, Block C",
       city: "Chattogram",
+      divisionId: DIVISION_IDS.Chattogram,
       managedBy: null,
       isActive: true,
     },
@@ -139,6 +233,7 @@ async function seedWarehouses() {
       name: "Sylhet Regional Depot",
       address: "Zindabazar Main Road",
       city: "Sylhet",
+      divisionId: DIVISION_IDS.Sylhet,
       managedBy: null,
       isActive: false,
     },
@@ -258,6 +353,7 @@ async function seedMerchants() {
       email: "imran@threadline.com",
       phone: "+8801712345601",
       address: "House 14, Road 7, Dhanmondi, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
       status: "ACTIVE" as const,
       baseRate: 60,
       extraRatePerKg: 15,
@@ -274,6 +370,7 @@ async function seedMerchants() {
       email: "farzana@greenleaf.com",
       phone: "+8801712345602",
       address: "Shop 3, Gulshan Avenue, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
       status: "ACTIVE" as const,
       baseRate: 55,
       extraRatePerKg: 20,
@@ -290,6 +387,7 @@ async function seedMerchants() {
       email: "sabbir@pixelcase.com",
       phone: "+8801712345603",
       address: "Level 4, Bashundhara City, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
       status: "PENDING" as const,
       baseRate: 0,
       extraRatePerKg: 15,
@@ -306,6 +404,7 @@ async function seedMerchants() {
       email: "naila@bloomco.com",
       phone: "+8801712345604",
       address: "Plot 9, Uttara Sector 4, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
       status: "PENDING" as const,
       baseRate: 0,
       extraRatePerKg: 15,
@@ -322,6 +421,7 @@ async function seedMerchants() {
       email: "rezaul@urbancrate.com",
       phone: "+8801712345605",
       address: "Agrabad Commercial Area, Chattogram",
+      divisionId: DIVISION_IDS.Chattogram,
       status: "SUSPENDED" as const,
       baseRate: 70,
       extraRatePerKg: 15,
@@ -360,18 +460,21 @@ async function seedPickupLocations() {
       merchantId: "ucteju8w92cww2x029etxv67",
       label: "Main Store — Dhanmondi",
       address: "House 14, Road 7, Dhanmondi, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
     },
     {
       id: "zf18qsus6o4l4cgt98s0d5ng",
       merchantId: "ucteju8w92cww2x029etxv67",
       label: "Warehouse — Tejgaon",
       address: "Plot 5, Tejgaon Industrial Area, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
     },
     {
       id: "i8407hm6he3upn30fse0qj4w",
       merchantId: "uuz3r7ln1o2ipbr12rnowx2q",
       label: "GreenLeaf Outlet — Gulshan",
       address: "Shop 3, Gulshan Avenue, Dhaka",
+      divisionId: DIVISION_IDS.Dhaka,
     },
   ]
 
@@ -1249,6 +1352,7 @@ async function main() {
   )
 
   try {
+    await seedDivisions() // must come first — other entities reference divisions
     await seedWarehouses()
     await seedRiders()
     await seedMerchants()
@@ -1263,6 +1367,9 @@ async function main() {
     } else {
       log("Skipping orders, payout requests, and payout-linked orders (--min)")
     }
+
+    // Backfill divisions on any rows seeded before this feature existed.
+    await backfillDivisions()
 
     console.log("\n=== Seed complete ✓ ===")
   } catch (err) {

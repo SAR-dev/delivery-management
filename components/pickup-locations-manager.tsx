@@ -35,16 +35,30 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface FormState {
   label: string
   address: string
+  divisionId: string
   mapLink: string
   imageLinks: string[]
 }
 
 function emptyForm(): FormState {
-  return { label: "", address: "", mapLink: "", imageLinks: [""] }
+  return {
+    label: "",
+    address: "",
+    divisionId: "",
+    mapLink: "",
+    imageLinks: [""],
+  }
 }
 
 function formFromLocation(loc: PickupLocation): FormState {
@@ -52,6 +66,7 @@ function formFromLocation(loc: PickupLocation): FormState {
   return {
     label: loc.label,
     address: loc.address,
+    divisionId: loc.divisionId ?? "",
     mapLink: loc.mapLink ?? "",
     imageLinks: links.length > 0 ? links : [""],
   }
@@ -60,6 +75,7 @@ function formFromLocation(loc: PickupLocation): FormState {
 export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
   const {
     pickupLocations,
+    divisions,
     createPickupLocation,
     updatePickupLocation,
     deletePickupLocation,
@@ -112,9 +128,19 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
     }))
   }
 
+  // Show active divisions, plus the currently-selected one even if it has been
+  // disabled since, so editing an existing shop never loses its value.
+  const divisionOptions = useMemo(
+    () => divisions.filter((d) => d.isActive || d.id === form.divisionId),
+    [divisions, form.divisionId],
+  )
+
   const trimmedLabel = form.label.trim()
   const trimmedAddress = form.address.trim()
-  const formValid = trimmedLabel.length > 0 && trimmedAddress.length > 0
+  const formValid =
+    trimmedLabel.length > 0 &&
+    trimmedAddress.length > 0 &&
+    form.divisionId.length > 0
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -122,6 +148,7 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
     const payload = {
       label: trimmedLabel,
       address: trimmedAddress,
+      divisionId: form.divisionId,
       mapLink: form.mapLink.trim() || undefined,
       imageLinks: form.imageLinks
         .map((l) => l.trim())
@@ -291,6 +318,31 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
                 rows={3}
                 aria-invalid={trimmedAddress.length === 0}
               />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="shop-division">Division</Label>
+              <Select
+                value={form.divisionId}
+                onValueChange={(v) =>
+                  setForm((prev) => ({ ...prev, divisionId: v ?? "" }))
+                }
+              >
+                <SelectTrigger
+                  id="shop-division"
+                  className="w-full"
+                  aria-invalid={form.divisionId.length === 0}
+                >
+                  <SelectValue placeholder="Select a division" />
+                </SelectTrigger>
+                <SelectContent>
+                  {divisionOptions.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-2">
