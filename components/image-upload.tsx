@@ -7,6 +7,7 @@ import type { UploadFolder } from "@/lib/storage/config"
 import { uploadImage } from "@/lib/upload-image"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { ImageZoom } from "@/components/image-zoom"
 
 // --- Single image uploader (used for avatar + delivery proof) ---------------
 
@@ -188,9 +189,8 @@ export function ImageGalleryUpload({
               key={url}
               className="group border-border relative aspect-square overflow-hidden rounded-lg border"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url || "/placeholder.svg"}
+              <ImageZoom
+                src={url}
                 alt={`Photo ${index + 1}`}
                 className="size-full object-cover"
               />

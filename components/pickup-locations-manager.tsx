@@ -308,7 +308,10 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
                   aria-invalid={form.divisionId.length === 0}
                 >
                   <SelectValue placeholder="Select a division">
-                    {divisionOptions.find((d) => d.id === form.divisionId)?.name}
+                    {
+                      divisionOptions.find((d) => d.id === form.divisionId)
+                        ?.name
+                    }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>

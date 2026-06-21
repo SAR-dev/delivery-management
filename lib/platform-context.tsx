@@ -136,9 +136,7 @@ interface PlatformContextValue {
     id: string,
     input: PickupLocationInput,
   ) => Promise<{ ok: boolean; error?: string }>
-  deletePickupLocation: (
-    id: string,
-  ) => Promise<{ ok: boolean; error?: string }>
+  deletePickupLocation: (id: string) => Promise<{ ok: boolean; error?: string }>
   // The merchant business for the currently logged-in merchant user.
   currentMerchant: Merchant | null
   createOrder: (
@@ -169,6 +167,7 @@ interface PlatformContextValue {
   // Rider marks an APPROVED order assigned to them as PICKED_UP.
   markOrderPickedUp: (
     orderId: string,
+    proofRefs: string[],
   ) => Promise<{ ok: boolean; error?: string }>
 
   // --- Divisions (geographic regions; managed by Super Admin) ---
@@ -571,9 +570,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
       if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
         setWarehouses((prev) =>
           prev.map((w) =>
-            w.id === newUser.warehouseId
-              ? { ...w, managedBy: newUser.id }
-              : w,
+            w.id === newUser.warehouseId ? { ...w, managedBy: newUser.id } : w,
           ),
         )
       }
@@ -621,9 +618,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     const updatedProfile = await res.json()
     setTeam((prev) =>
       prev.map((u) =>
-        u.id === id
-          ? { ...u, warehouseId: updatedProfile.warehouseId }
-          : u,
+        u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
       ),
     )
     // Reflect the managedBy change on the cached warehouse list so the create
@@ -631,8 +626,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
     setWarehouses((prev) =>
       prev.map((w) => {
         if (w.managedBy === id) return { ...w, managedBy: null }
-        if (warehouseId && w.id === warehouseId)
-          return { ...w, managedBy: id }
+        if (warehouseId && w.id === warehouseId) return { ...w, managedBy: id }
         return w
       }),
     )
@@ -1060,7 +1054,10 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
 
   const markOrderPickedUp = useCallback<
     PlatformContextValue["markOrderPickedUp"]
-  >((orderId) => patchOrder(orderId, "picked-up"), [patchOrder])
+  >(
+    (orderId, proofRefs) => patchOrder(orderId, "picked-up", { proofRefs }),
+    [patchOrder],
+  )
 
   // --- Phase 6: Parcel submitted to warehouse (warehouse admin) -----------
 

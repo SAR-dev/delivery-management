@@ -1,11 +1,12 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { order, pickupLocation, warehouse } from "@/lib/db/schema"
+import { orderPickedUpSchema, parseBody } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function PATCH(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
@@ -13,6 +14,10 @@ export async function PATCH(
   if (me.role !== "RIDER" || !me.riderId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
+
+  const parsed = await parseBody(req, orderPickedUpSchema)
+  if (parsed.error) return parsed.error
+  const { proofRefs } = parsed.data
 
   const { id } = await params
 
@@ -70,6 +75,7 @@ export async function PATCH(
       status: "PICKED_UP",
       pickedUpAt: new Date().toISOString(),
       warehouseId: destinationWarehouseId,
+      pickupProofRefs: proofRefs,
     })
     .where(eq(order.id, id))
     .returning()

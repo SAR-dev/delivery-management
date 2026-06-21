@@ -123,10 +123,7 @@ export default function TeamPage() {
     )
   }
 
-  async function handleChangeWarehouse(
-    user: User,
-    warehouseId: string | null,
-  ) {
+  async function handleChangeWarehouse(user: User, warehouseId: string | null) {
     if ((user.warehouseId ?? null) === warehouseId) return
     await updateAccountWarehouse(user.id, warehouseId)
     toast.success(

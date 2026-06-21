@@ -10,7 +10,8 @@ import { dirname, join, normalize, sep } from "node:path"
 
 // Where uploaded files are written inside the container/host. Override with
 // UPLOADS_DIR if you want a different mount point.
-export const UPLOADS_DIR = process.env.UPLOADS_DIR || join(process.cwd(), "uploads")
+export const UPLOADS_DIR =
+  process.env.UPLOADS_DIR || join(process.cwd(), "uploads")
 
 // Public path prefix files are served from (handled by
 // app/uploads/[...path]/route.ts). Must match that route's location.

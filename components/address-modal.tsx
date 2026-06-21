@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { ImageZoom } from "@/components/image-zoom"
 
 interface AddressModalProps {
   order: Pick<
@@ -133,25 +134,12 @@ export function AddressModal({
             {imageLinks.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
                 {imageLinks.map((link, i) => (
-                  <a
+                  <ImageZoom
                     key={i}
-                    href={link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group border-border bg-muted relative aspect-square overflow-hidden rounded-md border"
-                    title={`Open image ${i + 1}`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={link || "/placeholder.svg"}
-                      alt={`Location reference ${i + 1}`}
-                      crossOrigin="anonymous"
-                      className="size-full object-cover transition-transform group-hover:scale-105"
-                    />
-                    <span className="bg-background/80 text-foreground absolute right-1 bottom-1 inline-flex items-center rounded p-1">
-                      <ExternalLink className="size-3" />
-                    </span>
-                  </a>
+                    src={link}
+                    alt={`Location reference ${i + 1}`}
+                    className="size-full object-cover transition-transform group-hover:scale-105"
+                  />
                 ))}
               </div>
             ) : (

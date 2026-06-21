@@ -40,7 +40,11 @@ export async function POST(req: Request) {
   if (!UPLOAD_FOLDERS.includes(folderRaw as UploadFolder)) {
     return NextResponse.json({ error: "Invalid folder." }, { status: 400 })
   }
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+  if (
+    !ALLOWED_IMAGE_TYPES.includes(
+      file.type as (typeof ALLOWED_IMAGE_TYPES)[number],
+    )
+  ) {
     return NextResponse.json(
       { error: "Only PNG, JPG, WEBP, or GIF images are allowed." },
       { status: 400 },

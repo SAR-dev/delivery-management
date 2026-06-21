@@ -24,6 +24,7 @@ import { usePlatform } from "@/lib/platform-context"
 import type { Order, OrderStatus } from "@/lib/types"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
+import { ImageZoom } from "@/components/image-zoom"
 
 function maskPhone(phone: string) {
   const digits = phone.replace(/\s+/g, "")
@@ -214,7 +215,7 @@ function TrackContent() {
           o.id.toUpperCase() === normalized,
       ) ?? null
     )
-  }, [orders, isReady, submittedCode])
+  }, [orders, isReady])
 
   const merchant = useMemo(
     () =>
@@ -227,7 +228,7 @@ function TrackContent() {
       order?.pickupRiderId
         ? (riders.find((r) => r.id === order.pickupRiderId) ?? null)
         : null,
-    [riders, order],
+    [riders, order?.pickupRiderId],
   )
 
   const deliveryRider = useMemo(
@@ -235,7 +236,7 @@ function TrackContent() {
       order?.deliveryRiderId
         ? (riders.find((r) => r.id === order.deliveryRiderId) ?? null)
         : null,
-    [riders, order],
+    [riders, order?.deliveryRiderId],
   )
 
   const warehouse = useMemo(
@@ -243,7 +244,7 @@ function TrackContent() {
       order?.warehouseId
         ? (warehouses.find((w) => w.id === order.warehouseId) ?? null)
         : null,
-    [warehouses, order],
+    [warehouses, order?.warehouseId],
   )
 
   function handleSubmit(e: { preventDefault(): void }) {
@@ -597,26 +598,42 @@ function InlineTimeline({
                     )}
                   </div>
                 )}
+                {step.key === "PICKED_UP" && reached && (
+                  <div className="mt-2.5">
+                    <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                      Pickup proof
+                    </p>
+                    {order.pickupProofRefs &&
+                    order.pickupProofRefs.length > 0 ? (
+                      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                        {order.pickupProofRefs.map((link, i) => (
+                          <ImageZoom
+                            key={i}
+                            src={link}
+                            alt={`Pickup proof ${i + 1}`}
+                            className="size-full object-cover transition-transform hover:scale-105"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/60 mt-1 inline-flex items-center gap-1.5 text-xs italic">
+                        <ImageOff className="size-3.5" />
+                        No proof photo uploaded.
+                      </span>
+                    )}
+                  </div>
+                )}
                 {step.key === "DELIVERED" && reached && (
                   <div className="mt-2.5">
                     <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                       Proof of delivery
                     </p>
                     {order.deliveryProofRef ? (
-                      <a
-                        href={order.deliveryProofRef}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="border-border bg-muted mt-1.5 block size-24 overflow-hidden rounded-md border"
-                        title="Open proof of delivery photo"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={order.deliveryProofRef || "/placeholder.svg"}
-                          alt="Proof of delivery"
-                          className="size-full object-cover transition-transform hover:scale-105"
-                        />
-                      </a>
+                      <ImageZoom
+                        src={order.deliveryProofRef}
+                        alt="Proof of delivery"
+                        className="border-border bg-muted mt-1.5 block size-24 overflow-hidden rounded-md border object-cover transition-transform hover:scale-105"
+                      />
                     ) : (
                       <span className="text-muted-foreground/60 mt-1 inline-flex items-center gap-1.5 text-xs italic">
                         <ImageOff className="size-3.5" />

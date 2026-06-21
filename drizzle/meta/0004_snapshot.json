@@ -1,6 +1,6 @@
 {
-  "id": "318f912f-55be-428a-ad97-c1f9ad1f576c",
-  "prevId": "2fedc945-1b62-40d5-8541-39c49b172350",
+  "id": "6b5246ce-6862-45f4-9390-4cdcdfaaed86",
+  "prevId": "318f912f-55be-428a-ad97-c1f9ad1f576c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -409,6 +409,12 @@
         "pickedUpAt": {
           "name": "pickedUpAt",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupProofRefs": {
+          "name": "pickupProofRefs",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": false
         },
