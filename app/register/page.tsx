@@ -276,7 +276,9 @@ export default function RegisterPage() {
                       required
                     >
                       <SelectTrigger id="division" className="w-full">
-                        <SelectValue placeholder="Select a division" />
+                        <SelectValue placeholder="Select a division">
+                          {divisions.find((d) => d.id === form.divisionId)?.name}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {divisions.map((d) => (

@@ -307,7 +307,9 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
                   className="w-full"
                   aria-invalid={form.divisionId.length === 0}
                 >
-                  <SelectValue placeholder="Select a division" />
+                  <SelectValue placeholder="Select a division">
+                    {divisionOptions.find((d) => d.id === form.divisionId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {divisionOptions.map((d) => (

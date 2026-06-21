@@ -12,7 +12,7 @@
  * Safe to re-run: each section checks for existing rows and skips them.
  *
  * Insertion order matters for FK constraints:
- *   warehouse → rider → merchant → pickup_location → security_config
+ *   division → warehouse → rider → merchant → pickup_location → security_config
  *   → user (via Better Auth) → profile → order → payout_request
  */
 
@@ -31,7 +31,7 @@ import {
   order,
   payoutRequest,
 } from "@/lib/db/schema"
-import { and, eq, isNull } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Division IDs — stable so seeded entities can reference them by name.
@@ -150,56 +150,6 @@ async function seedDivisions() {
     await db.insert(division).values(row)
     log(`  created division ${row.name}`)
   }
-}
-
-// Backfill divisionId on any pre-existing rows that were seeded before the
-// division feature existed. Idempotent: only touches rows where the division
-// reference is still null. All originally-seeded data lives in Dhaka except
-// the Chattogram warehouse/merchant and the Sylhet depot.
-async function backfillDivisions() {
-  log("Backfilling divisions on existing rows…")
-
-  // Warehouses — map by city.
-  const warehouseByCity: Record<string, string> = {
-    Dhaka: DIVISION_IDS.Dhaka,
-    Chattogram: DIVISION_IDS.Chattogram,
-    Sylhet: DIVISION_IDS.Sylhet,
-  }
-  for (const [city, divisionId] of Object.entries(warehouseByCity)) {
-    await db
-      .update(warehouse)
-      .set({ divisionId })
-      .where(and(eq(warehouse.city, city), isNull(warehouse.divisionId)))
-  }
-
-  // Merchants — Urban Crate is in Chattogram; everyone else seeded in Dhaka.
-  await db
-    .update(merchant)
-    .set({ divisionId: DIVISION_IDS.Chattogram })
-    .where(
-      and(
-        eq(merchant.id, "nsfktk64zjut01r2x93hnweu"),
-        isNull(merchant.divisionId),
-      ),
-    )
-  await db
-    .update(merchant)
-    .set({ divisionId: DIVISION_IDS.Dhaka })
-    .where(isNull(merchant.divisionId))
-
-  // Pickup locations — all seeded in Dhaka.
-  await db
-    .update(pickupLocation)
-    .set({ divisionId: DIVISION_IDS.Dhaka })
-    .where(isNull(pickupLocation.divisionId))
-
-  // Orders — all seeded receivers are in Dhaka.
-  await db
-    .update(order)
-    .set({ deliveryDivisionId: DIVISION_IDS.Dhaka })
-    .where(isNull(order.deliveryDivisionId))
-
-  log("  backfill complete")
 }
 
 // ---------------------------------------------------------------------------
@@ -696,6 +646,7 @@ async function seedOrders() {
       recipientPhone: "+8801811112233",
       deliveryAddress: "Flat B2, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       parcelWeightKg: 2,
       deliveryType: "STANDARD" as const,
       productCost: 5000,
@@ -732,6 +683,7 @@ async function seedOrders() {
       recipientPhone: "+8801822223344",
       deliveryAddress: "House 7, Sector 10, Uttara, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%207%2C%20Sector%2010%2C%20Uttara%2C%20Dhaka",
       parcelWeightKg: 0.8,
@@ -764,6 +716,7 @@ async function seedOrders() {
       recipientPhone: "+8801833334455",
       deliveryAddress: "Plot 19, Bashundhara R/A, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryImageLinks: [
         "https://picsum.photos/seed/PF-100258-gate/600/600",
         "https://picsum.photos/seed/PF-100258-building/600/600",
@@ -787,6 +740,7 @@ async function seedOrders() {
       recipientPhone: "+8801844445566",
       deliveryAddress: "Flat 5C, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=Flat%205C%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
       deliveryImageLinks: [
@@ -812,6 +766,7 @@ async function seedOrders() {
       recipientPhone: "+8801855556677",
       deliveryAddress: "House 22, Road 5, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%2022%2C%20Road%205%2C%20Dhanmondi%2C%20Dhaka",
       deliveryImageLinks: [
@@ -837,6 +792,7 @@ async function seedOrders() {
       recipientPhone: "+8801866667788",
       deliveryAddress: "Flat 4A, Road 12, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       parcelWeightKg: 1.2,
       deliveryType: "STANDARD" as const,
       productCost: 1800,
@@ -860,6 +816,7 @@ async function seedOrders() {
       recipientPhone: "+8801877778899",
       deliveryAddress: "House 9, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%209%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
       parcelWeightKg: 2.5,
@@ -885,6 +842,7 @@ async function seedOrders() {
       recipientPhone: "+8801888889900",
       deliveryAddress: "House 31, Road 8, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryImageLinks: [
         "https://picsum.photos/seed/PF-100264-gate/600/600",
         "https://picsum.photos/seed/PF-100264-building/600/600",
@@ -913,6 +871,7 @@ async function seedOrders() {
       recipientPhone: "+8801899990011",
       deliveryAddress: "Flat 7B, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=Flat%207B%2C%20Road%2011%2C%20Banani%2C%20Dhaka",
       deliveryImageLinks: [
@@ -943,6 +902,7 @@ async function seedOrders() {
       recipientPhone: "+8801800001122",
       deliveryAddress: "House 5, Road 16, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%205%2C%20Road%2016%2C%20Dhanmondi%2C%20Dhaka",
       deliveryImageLinks: [
@@ -976,6 +936,7 @@ async function seedOrders() {
       recipientPhone: "+8801800002233",
       deliveryAddress: "Flat 9C, Road 7, Uttara Sector 4, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       parcelWeightKg: 0.9,
       deliveryType: "FRAGILE" as const,
       productCost: 1100,
@@ -1003,6 +964,7 @@ async function seedOrders() {
       recipientPhone: "+8801800003344",
       deliveryAddress: "House 22, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%2022%2C%20Road%2011%2C%20Banani%2C%20Dhaka",
       parcelWeightKg: 1.1,
@@ -1035,6 +997,7 @@ async function seedOrders() {
       recipientPhone: "+8801800004455",
       deliveryAddress: "Flat 4B, Road 27, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryImageLinks: [
         "https://picsum.photos/seed/PF-100269-gate/600/600",
         "https://picsum.photos/seed/PF-100269-building/600/600",
@@ -1070,6 +1033,7 @@ async function seedOrders() {
       recipientPhone: "+8801800005566",
       deliveryAddress: "House 8, Road 3, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%208%2C%20Road%203%2C%20Dhanmondi%2C%20Dhaka",
       deliveryImageLinks: [
@@ -1111,6 +1075,7 @@ async function seedOrders() {
       recipientPhone: "+8801800006677",
       deliveryAddress: "House 12, Road 9, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%2012%2C%20Road%209%2C%20Dhanmondi%2C%20Dhaka",
       deliveryImageLinks: [
@@ -1152,6 +1117,7 @@ async function seedOrders() {
       recipientPhone: "+8801800007788",
       deliveryAddress: "Flat 6A, Road 11, Banani, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       parcelWeightKg: 2.4,
       deliveryType: "FRAGILE" as const,
       productCost: 6200,
@@ -1257,6 +1223,7 @@ async function seedPayoutLinkedOrders() {
       recipientPhone: "+8801800008899",
       deliveryAddress: "House 3, Road 27, Gulshan 1, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryMapLink:
         "https://www.google.com/maps/search/?api=1&query=House%203%2C%20Road%2027%2C%20Gulshan%201%2C%20Dhaka",
       parcelWeightKg: 1.2,
@@ -1297,6 +1264,7 @@ async function seedPayoutLinkedOrders() {
       recipientPhone: "+8801800009900",
       deliveryAddress: "House 5, Road 16, Dhanmondi, Dhaka",
       deliveryCity: "Dhaka",
+      deliveryDivisionId: DIVISION_IDS.Dhaka,
       deliveryImageLinks: [
         "https://picsum.photos/seed/PF-100274-gate/600/600",
         "https://picsum.photos/seed/PF-100274-building/600/600",
@@ -1367,9 +1335,6 @@ async function main() {
     } else {
       log("Skipping orders, payout requests, and payout-linked orders (--min)")
     }
-
-    // Backfill divisions on any rows seeded before this feature existed.
-    await backfillDivisions()
 
     console.log("\n=== Seed complete ✓ ===")
   } catch (err) {
