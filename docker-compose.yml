@@ -10,7 +10,7 @@ services:
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
     volumes:
       - uploads_data:/app/uploads
     restart: unless-stopped
