@@ -9,8 +9,6 @@ services:
       - "3000:3000"
     env_file:
       - .env
-    environment:
-      - NODE_ENV=development
     volumes:
       - uploads_data:/app/uploads
     restart: unless-stopped
