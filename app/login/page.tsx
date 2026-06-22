@@ -41,7 +41,7 @@ const grouped = ROLES_ORDER.map((role) => ({
 }))
 
 const BrandIcon = siteConfig.icon
-const isDev = process.env.NEXT_PUBLIC_SHOW_DEV_TOOLS === "true"
+const isDev = process.env.NODE_ENV === "development"
 
 export default function LoginPage() {
   const router = useRouter()
