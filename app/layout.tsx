@@ -68,7 +68,7 @@ export default function RootLayout({
           <AuthProvider>{children}</AuthProvider>
           <Toaster />
         </ThemeProvider>
-        {process.env.NODE_ENV === "production" && <Analytics />}
+        {process.env.NEXT_PUBLIC_SHOW_DEV_TOOLS === "production" && <Analytics />}
       </body>
     </html>
   )
