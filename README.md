@@ -49,7 +49,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Scripts
 
 | Command          | What it does                       |
-| ---------------- | ---------------------------------- |
+|------------------|------------------------------------|
 | `pnpm dev`       | Start the development server       |
 | `pnpm build`     | Production build                   |
 | `pnpm start`     | Run the production build           |
@@ -61,12 +61,29 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 
 ## Roles & Areas
 
-| Role      | Area         | What they do                                      |
-| --------- | ------------ | ------------------------------------------------- |
-| Admin     | `/dashboard` | Orders, merchants, payouts, team, reconciliation  |
-| Merchant  | `/merchant`  | Create orders, track deliveries, request payouts  |
-| Warehouse | `/warehouse` | Intake, dispatch, exceptions, cash reconciliation |
-| Rider     | `/rider`     | Pickup queue and delivery queue                   |
+| Role      | Area         | What they do                                                         |
+|-----------|--------------|----------------------------------------------------------------------|
+| Admin     | `/dashboard` | Orders, merchants, riders, payouts, team, reconciliation             |
+| Merchant  | `/merchant`  | Create orders, track deliveries, request payouts                     |
+| Warehouse | `/warehouse` | Intake, dispatch, order progress, hub riders, exceptions, cash recon |
+| Rider     | `/rider`     | Pickup queue and delivery queue                                      |
+
+### Riders
+
+Every rider belongs to exactly one **home warehouse** and has a **task type**
+that is independent of that warehouse:
+
+| Task type  | Does                                      |
+|------------|-------------------------------------------|
+| `PICKUP`   | Collects parcels from merchants           |
+| `DELIVERY` | Runs the final-mile delivery from the hub |
+| `BOTH`     | Handles either leg                        |
+
+Admins see and manage the full rider roster and can reassign both a rider's
+task type and home warehouse. Warehouse Admins see and manage only the riders
+based at **their own hub** — they can edit details, task type, and active
+status, but cannot move a rider to a different warehouse. These scopes are
+enforced server-side in the rider API routes (Neon has no RLS).
 
 Public order tracking is available at `/track`.
 
@@ -78,7 +95,7 @@ Public order tracking is available at `/track`.
 After seeding, sign in at `/login` with any of the following:
 
 | Role            | Name            | Email                      | Password        |
-| --------------- | --------------- | -------------------------- | --------------- |
+|-----------------|-----------------|----------------------------|-----------------|
 | Super Admin     | Nadia Rahman    | `superadmin@parcelflow.io` | `superadmin123` |
 | Admin           | Tanvir Hossain  | `tanvir@parcelflow.io`     | `admin123`      |
 | Admin           | Sadia Karim     | `sadia@parcelflow.io`      | `admin123`      |

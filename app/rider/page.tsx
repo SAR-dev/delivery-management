@@ -11,16 +11,21 @@ import {
   Phone,
 } from "lucide-react"
 import Link from "next/link"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
-import { PickupLocationModal } from "@/components/pickup-location-modal"
-import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
-import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
-import { TrackingCell } from "@/components/tracking-cell"
-import { AddressModal } from "@/components/address-modal"
+import { pageContent } from "@/config/content"
+import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attempt-dialog"
+import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -88,8 +93,11 @@ function TaskSection({
 }
 
 export default function RiderTodoPage() {
-  const { currentUser, currentRider, orders, merchants, pickupLocations } =
-    usePlatform()
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
 
   const [pickupTarget, setPickupTarget] = useState<Order | null>(null)
   const [pickupDialogOpen, setPickupDialogOpen] = useState(false)
@@ -317,8 +325,10 @@ export default function RiderTodoPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Today's tasks, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Every pickup and delivery that needs your attention right now, in one place."
+        title={pageContent.rider.todo.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.todo.description}
       />
 
       <StatCardList

@@ -182,14 +182,40 @@ export const payoutRejectSchema = z.object({
   reason: requiredString("A rejection reason"),
 })
 
+const riderTaskTypeSchema = z.enum(["PICKUP", "DELIVERY", "BOTH"], {
+  error: "Select a valid task type",
+})
+
 export const riderCreateSchema = z.object({
   name: requiredString("Name"),
   email: z.email("A valid email is required"),
   phone: requiredString("Phone"),
   zone: requiredString("Zone"),
-  // Home warehouse for delivery riders; null/omitted for pickup-only riders.
-  warehouseId: z.string().nullish(),
+  // Every rider belongs to a warehouse.
+  warehouseId: requiredString("Warehouse"),
+  // Defaults to DELIVERY when omitted.
+  taskType: riderTaskTypeSchema.optional(),
 })
+
+export const riderUpdateSchema = z
+  .object({
+    name: requiredString("Name").optional(),
+    phone: requiredString("Phone").optional(),
+    zone: requiredString("Zone").optional(),
+    warehouseId: requiredString("Warehouse").optional(),
+    taskType: riderTaskTypeSchema.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.phone !== undefined ||
+      d.zone !== undefined ||
+      d.warehouseId !== undefined ||
+      d.taskType !== undefined ||
+      d.isActive !== undefined,
+    { error: "Provide at least one field to update" },
+  )
 
 export const profileUpdateSchema = z
   .object({

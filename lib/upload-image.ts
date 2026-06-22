@@ -1,7 +1,7 @@
 "use client"
 
 import Compressor from "compressorjs"
-import type { UploadFolder } from "@/lib/storage/config"
+import { UPLOAD_MAX_DIMENSIONS, type UploadFolder } from "@/lib/storage/config"
 
 export type UploadResult =
   | { ok: true; url: string }
@@ -32,15 +32,20 @@ function compressImage(file: File, options: CompressOptions): Promise<File> {
 export async function uploadImage(
   file: File,
   folder: UploadFolder,
-  compressOptions: CompressOptions = {
-    maxWidth: 1920,
-    maxHeight: 1920,
-    convertSize: 1_000_000,
-  },
+  compressOptions?: CompressOptions,
 ): Promise<UploadResult> {
+  // Default the downscale target to the folder's configured max edge: avatars
+  // shrink to 500px, photos to 1024px. Callers can still override explicitly.
+  const maxDimension = UPLOAD_MAX_DIMENSIONS[folder]
+  const options: CompressOptions = compressOptions ?? {
+    maxWidth: maxDimension,
+    maxHeight: maxDimension,
+    convertSize: 1_000_000,
+  }
+
   let fileToUpload: File
   try {
-    fileToUpload = await compressImage(file, compressOptions)
+    fileToUpload = await compressImage(file, options)
   } catch {
     return { ok: false, error: "Could not compress the image. Try again." }
   }

@@ -9,15 +9,19 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
-import { TrackingCell } from "@/components/tracking-cell"
-import { AddressModal } from "@/components/address-modal"
-import { PickupLocationModal } from "@/components/pickup-location-modal"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { MerchantStatusBadge } from "@/features/merchants/components/merchant-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -30,8 +34,10 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
 export default function MerchantOverviewPage() {
-  const { currentUser, currentMerchant, orders, pickupLocations } =
-    usePlatform()
+  const { currentUser } = useAuth()
+  const { currentMerchant } = useMerchants()
+  const { orders } = useOrders()
+  const { pickupLocations } = usePickupLocations()
 
   const myOrders = currentMerchant
     ? orders.filter((o) => o.merchantId === currentMerchant.id)
@@ -138,8 +144,10 @@ export default function MerchantOverviewPage() {
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Merchant"}`}
-        description="Book new deliveries and follow every parcel from pickup to doorstep in real time."
+        title={pageContent.merchant.overview.title(
+          currentUser?.name.split(" ")[0] ?? "Merchant",
+        )}
+        description={pageContent.merchant.overview.description}
       >
         {isActive ? (
           <Button

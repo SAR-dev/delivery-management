@@ -10,6 +10,17 @@ export async function GET() {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
+  // Warehouse Admins only manage the riders based at their own hub. Admins and
+  // Super Admins see the full roster.
+  if (me.role === "WAREHOUSE_ADMIN") {
+    if (!me.warehouseId) return NextResponse.json([])
+    const scoped = await db
+      .select()
+      .from(rider)
+      .where(eq(rider.warehouseId, me.warehouseId))
+    return NextResponse.json(scoped)
+  }
+
   const rows = await db.select().from(rider)
   return NextResponse.json(rows)
 }
@@ -23,7 +34,7 @@ export async function POST(req: Request) {
 
   const parsed = await parseBody(req, riderCreateSchema)
   if (parsed.error) return parsed.error
-  const { name, email, phone, zone, warehouseId } = parsed.data
+  const { name, email, phone, zone, warehouseId, taskType } = parsed.data
 
   // 1. Create the rider profile row first so we have its id.
   const [createdRider] = await db
@@ -32,7 +43,8 @@ export async function POST(req: Request) {
       name,
       phone,
       zone,
-      warehouseId: warehouseId || null,
+      warehouseId,
+      taskType: taskType ?? "DELIVERY",
       isActive: true,
     })
     .returning()

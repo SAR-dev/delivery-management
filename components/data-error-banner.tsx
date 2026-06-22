@@ -1,13 +1,13 @@
 "use client"
 
 import { AlertTriangle, RefreshCw } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useDataError } from "@/lib/hooks/use-data-error"
 import { Button } from "@/components/ui/button"
 
 // Renders only when the platform data load failed. Lets the user retry the
 // fetch in place so the app degrades gracefully instead of showing empty data.
 export function DataErrorBanner() {
-  const { dataError, refreshData } = usePlatform()
+  const { dataError, refreshData } = useDataError()
 
   if (!dataError) return null
 

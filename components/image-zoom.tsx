@@ -1,7 +1,13 @@
 "use client"
 
 import { ReactNode, useState } from "react"
-import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogClose,
+  DialogOverlay,
+  DialogPortal,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { X } from "lucide-react"
 
@@ -9,12 +15,12 @@ import { X } from "lucide-react"
 // thumbnail (pickup-proof photos, delivery-proof photos, location reference
 // photos, etc.) should be inspectable without leaving the page.
 export function ImageZoom({
-                            src,
-                            alt = "",
-                            className,
-                            children,
-                            asChild = false,
-                          }: {
+  src,
+  alt = "",
+  className,
+  children,
+  asChild = false,
+}: {
   src: string
   alt?: string
   className?: string
@@ -46,6 +52,7 @@ export function ImageZoom({
         }
       >
         {asChild ? undefined : (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imgSrc}
             alt={alt}
@@ -73,6 +80,7 @@ export function ImageZoom({
           />
 
           {/* Image — sits above the backdrop button */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
             alt={alt}

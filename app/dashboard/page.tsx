@@ -14,8 +14,15 @@ import {
   Bike,
   Truck,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useTeam } from "@/features/team/hooks/use-team"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useSecurityConfig } from "@/features/security/hooks/use-security-config"
 import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
 import {
   Card,
   CardContent,
@@ -28,7 +35,7 @@ import { cn } from "@/lib/utils"
 import { StatCardList } from "@/components/stat-card-list"
 
 export default function OverviewPage() {
-  const { currentUser } = usePlatform()
+  const { currentUser } = useAuth()
   if (currentUser?.role === "ADMIN") return <AdminOverview />
   return <SuperAdminOverview />
 }
@@ -65,7 +72,10 @@ function PendingOrdersBanner({ count }: { count: number }) {
 // Admin overview — operations-focused (orders, riders, merchants).
 // -------------------------------------------------------------------------
 function AdminOverview() {
-  const { currentUser, merchants, orders, riders } = usePlatform()
+  const { currentUser } = useAuth()
+  const { merchants } = useMerchants()
+  const { orders } = useOrders()
+  const { riders } = useRiders()
 
   const pendingOrders = orders.filter((o) => o.status === "PENDING").length
   const inProgressOrders = orders.filter(
@@ -100,8 +110,10 @@ function AdminOverview() {
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Your command center for approvals, riders, merchants, and daily delivery operations."
+        title={pageContent.dashboard.overview.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.dashboard.overview.description}
       />
 
       <StatCardList
@@ -172,8 +184,12 @@ function AdminOverview() {
 // Super Admin overview — platform setup checklist & security rules.
 // -------------------------------------------------------------------------
 function SuperAdminOverview() {
-  const { currentUser, team, securityConfig, merchants, orders, warehouses } =
-    usePlatform()
+  const { currentUser } = useAuth()
+  const { team } = useTeam()
+  const { securityConfig } = useSecurityConfig()
+  const { merchants } = useMerchants()
+  const { orders } = useOrders()
+  const { warehouses } = useWarehouses()
 
   const adminCount = team.filter((u) => u.role === "ADMIN").length
   const warehouseAdminCount = team.filter(
@@ -220,8 +236,10 @@ function SuperAdminOverview() {
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Finish the setup checklist below to start onboarding merchants and moving parcels."
+        title={pageContent.dashboard.overview.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.dashboard.overview.setupDescription}
       />
 
       <StatCardList
