@@ -1,4 +1,4 @@
-# ParcelFlow (delivery-management) — v0 Setup Notes
+# ParcelFlow Setup Notes
 
 Quick-load reference so the project can be bootstrapped fast in future chats.
 
