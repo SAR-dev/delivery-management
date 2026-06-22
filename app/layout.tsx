@@ -1,7 +1,8 @@
 import { Analytics } from "@vercel/analytics/next"
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { PlatformProvider } from "@/lib/platform-context"
+import { AuthProvider } from "@/features/account/hooks/use-auth"
+import { siteConfig } from "@/config/site"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import NextTopLoader from "nextjs-toploader"
@@ -15,9 +16,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "ParcelFlow",
-  description:
-    "Platform for the ParcelFlow B2B delivery network.",
+  title: siteConfig.name,
+  description: siteConfig.description,
   generator: "sarn.top",
   icons: {
     icon: [
@@ -65,7 +65,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <PlatformProvider>{children}</PlatformProvider>
+          <AuthProvider>{children}</AuthProvider>
           <Toaster />
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}

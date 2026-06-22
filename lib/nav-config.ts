@@ -32,8 +32,6 @@ export interface SidebarConfig {
   brandIcon: LucideIcon
   roleLabel: string
   items: SidebarNavItem[]
-  // Optional override for the mobile dropdown nav; falls back to `items`.
-  mobileItems?: SidebarNavItem[]
 }
 
 // Super Admins oversee the whole platform and are the only role that can
@@ -59,25 +57,6 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
       icon: WarehouseIcon,
     },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-    {
-      href: "/dashboard/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-  mobileItems: [
-    { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-    { href: "/dashboard/orders", label: "Orders", icon: Package },
-    { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-    { href: "/dashboard/team", label: "Admins", icon: Users },
-    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
-    {
-      href: "/dashboard/warehouses",
-      label: "Warehouses",
-      icon: WarehouseIcon,
-    },
     {
       href: "/dashboard/account",
       label: "Account",
@@ -159,6 +138,18 @@ export const WAREHOUSE_SIDEBAR: SidebarConfig = {
       href: "/warehouse/dispatch",
       label: "Dispatch desk",
       icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/warehouse/orders",
+      label: "Order progress",
+      icon: Package,
+      exact: true,
+    },
+    {
+      href: "/warehouse/riders",
+      label: "Riders",
+      icon: Bike,
       exact: true,
     },
     {

@@ -2,14 +2,19 @@
 
 import { useMemo, useState } from "react"
 import { AlertTriangle, RotateCcw, Undo2, Wrench } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { TrackingCell } from "@/components/tracking-cell"
-import { AddressModal } from "@/components/address-modal"
-import { FailedDeliveryDialog } from "@/components/dialog/failed-delivery-dialog"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,14 +24,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "NEEDS_ACTION" | "RESOLVED"
 
 export default function WarehouseExceptionsPage() {
-  const {
-    currentUser,
-    currentWarehouse,
-    orders,
-    merchants,
-    riders,
-    warehouseFailedOrders,
-  } = usePlatform()
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, warehouseFailedOrders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -168,10 +170,12 @@ export default function WarehouseExceptionsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Exceptions desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Resolve failed delivery attempts at ${
-          currentWarehouse?.name ?? "your warehouse"
-        } — re-attempt the delivery or close the parcel as a return.`}
+        title={pageContent.warehouse.exceptions.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.exceptions.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
       />
 
       <StatCardList

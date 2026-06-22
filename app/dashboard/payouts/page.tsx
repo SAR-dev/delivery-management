@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Wallet, Clock, Banknote, Loader2, Check, X } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { usePayouts } from "@/features/payouts/hooks/use-payouts"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { formatTk } from "@/lib/pricing"
 import type { PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { PayoutStatusBadge } from "@/components/dialog/payout-status-badge"
+import { pageContent } from "@/config/content"
+import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -27,13 +29,9 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
 
 export default function PayoutsPage() {
-  const {
-    payoutRequests,
-    merchants,
-    approvePayout,
-    rejectPayout,
-    markPayoutPaid,
-  } = usePlatform()
+  const { payoutRequests, approvePayout, rejectPayout, markPayoutPaid } =
+    usePayouts()
+  const { merchants } = useMerchants()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [busy, setBusy] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<PayoutRequest | null>(null)
@@ -241,8 +239,8 @@ export default function PayoutsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Merchant payouts"
-        description="Review payout requests against delivered, COD-settled orders. Approving locks the amount; rejecting releases the orders back to the merchant."
+        title={pageContent.dashboard.payouts.title}
+        description={pageContent.dashboard.payouts.description}
       />
 
       <StatCardList

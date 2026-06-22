@@ -136,7 +136,10 @@ const STEPS: {
   },
 ]
 
-const STATUS_COPY: Record<OrderStatus, { headline: string; sub: string; color: string }> = {
+const STATUS_COPY: Record<
+  OrderStatus,
+  { headline: string; sub: string; color: string }
+> = {
   PENDING: {
     headline: "Awaiting approval",
     sub: "Your order is in the queue — we'll pick it up shortly.",
@@ -212,10 +215,18 @@ async function fetchOrderData(idOrCode: string) {
         ? db.select().from(rider).where(eq(rider.id, o.pickupRiderId)).limit(1)
         : Promise.resolve([]),
       o.deliveryRiderId
-        ? db.select().from(rider).where(eq(rider.id, o.deliveryRiderId)).limit(1)
+        ? db
+            .select()
+            .from(rider)
+            .where(eq(rider.id, o.deliveryRiderId))
+            .limit(1)
         : Promise.resolve([]),
       o.warehouseId
-        ? db.select().from(warehouse).where(eq(warehouse.id, o.warehouseId)).limit(1)
+        ? db
+            .select()
+            .from(warehouse)
+            .where(eq(warehouse.id, o.warehouseId))
+            .limit(1)
         : Promise.resolve([]),
     ])
 
@@ -257,7 +268,9 @@ export default async function TrackDetailPage({ params }: Props) {
             <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md shadow-sm transition-shadow group-hover:shadow-md">
               <Package className="size-3.5" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">ParcelFlow</span>
+            <span className="text-sm font-semibold tracking-tight">
+              ParcelFlow
+            </span>
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-muted-foreground hidden text-xs font-medium sm:inline">
@@ -278,11 +291,7 @@ export default async function TrackDetailPage({ params }: Props) {
           Track another parcel
         </Link>
 
-        {!data ? (
-          <NotFound code={idOrCode} />
-        ) : (
-          <OrderDetail {...data} />
-        )}
+        {!data ? <NotFound code={idOrCode} /> : <OrderDetail {...data} />}
       </div>
     </main>
   )
@@ -304,7 +313,11 @@ function NotFound({ code }: { code: string }) {
       </p>
 
       {/* Inline search so user doesn't need to navigate back */}
-      <form method="GET" action="/track" className="mx-auto flex max-w-sm gap-2.5">
+      <form
+        method="GET"
+        action="/track"
+        className="mx-auto flex max-w-sm gap-2.5"
+      >
         <div className="relative flex-1">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <input
@@ -343,10 +356,17 @@ function OrderDetail({
         <div className="p-5 pb-4">
           <div className="mb-1 flex items-start justify-between gap-4">
             <div>
-              <p className={cn("text-lg font-semibold tracking-tight", statusInfo.color)}>
+              <p
+                className={cn(
+                  "text-lg font-semibold tracking-tight",
+                  statusInfo.color,
+                )}
+              >
                 {statusInfo.headline}
               </p>
-              <p className="text-muted-foreground mt-0.5 text-xs">{statusInfo.sub}</p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {statusInfo.sub}
+              </p>
             </div>
             <span className="text-muted-foreground bg-muted mt-0.5 shrink-0 rounded-md px-2.5 py-1 font-mono text-xs">
               {o.code}
@@ -363,7 +383,9 @@ function OrderDetail({
                 <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                   From
                 </p>
-                <p className="truncate text-xs font-medium">{merchantData.businessName}</p>
+                <p className="truncate text-xs font-medium">
+                  {merchantData.businessName}
+                </p>
               </div>
             </div>
           )}
@@ -443,7 +465,9 @@ function Timeline({
       ? {
           role: "Pickup rider",
           name: pickupRider.name,
-          detail: [maskPhone(pickupRider.phone), pickupRider.zone].filter(Boolean).join(" · "),
+          detail: [maskPhone(pickupRider.phone), pickupRider.zone]
+            .filter(Boolean)
+            .join(" · "),
         }
       : null,
     IN_WAREHOUSE: warehouseData
@@ -462,14 +486,18 @@ function Timeline({
       ? {
           role: "Delivery rider",
           name: deliveryRider.name,
-          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone].filter(Boolean).join(" · "),
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
         }
       : null,
     DELIVERED: deliveryRider
       ? {
           role: "Delivery rider",
           name: deliveryRider.name,
-          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone].filter(Boolean).join(" · "),
+          detail: [maskPhone(deliveryRider.phone), deliveryRider.zone]
+            .filter(Boolean)
+            .join(" · "),
         }
       : null,
   }
@@ -547,18 +575,26 @@ function Timeline({
                   )}
                 </div>
                 {stamp ? (
-                  <p className="text-muted-foreground mt-1 text-xs tabular-nums">{stamp}</p>
+                  <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                    {stamp}
+                  </p>
                 ) : (
-                  <p className="text-muted-foreground/50 mt-1 text-xs">{step.description}</p>
+                  <p className="text-muted-foreground/50 mt-1 text-xs">
+                    {step.description}
+                  </p>
                 )}
                 {handler && reached && (
                   <div className="mt-2">
                     <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
                       {handler.role}
                     </p>
-                    <p className="text-foreground text-xs font-medium">{handler.name}</p>
+                    <p className="text-foreground text-xs font-medium">
+                      {handler.name}
+                    </p>
                     {handler.detail && (
-                      <p className="text-muted-foreground text-xs">{handler.detail}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {handler.detail}
+                      </p>
                     )}
                   </div>
                 )}
@@ -615,12 +651,18 @@ function Timeline({
                   <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-full border">
                     <XCircle className="size-4" />
                   </span>
-                  <span className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full" aria-hidden="true" />
+                  <span
+                    className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full"
+                    aria-hidden="true"
+                  />
                 </div>
                 <div className="pt-0.5 pb-7">
-                  <p className="text-destructive text-sm font-medium">Delivery attempt failed</p>
+                  <p className="text-destructive text-sm font-medium">
+                    Delivery attempt failed
+                  </p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {formatStamp(o.failedAttemptAt) ?? "A new attempt will be scheduled."}
+                    {formatStamp(o.failedAttemptAt) ??
+                      "A new attempt will be scheduled."}
                   </p>
                   {o.failureNote ? (
                     <p className="bg-destructive/10 text-destructive mt-2 rounded-md px-2.5 py-1.5 text-xs leading-snug">
@@ -637,12 +679,16 @@ function Timeline({
                   <span className="border-border bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full border">
                     <Undo2 className="size-4" />
                   </span>
-                  <span className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full" aria-hidden="true" />
+                  <span
+                    className="bg-border my-1 min-h-7 w-0.5 flex-1 rounded-full"
+                    aria-hidden="true"
+                  />
                 </div>
                 <div className="pt-0.5 pb-7">
                   <p className="text-sm font-medium">Returned to merchant</p>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {formatStamp(o.returnedAt) ?? "This parcel was returned and will not be delivered."}
+                    {formatStamp(o.returnedAt) ??
+                      "This parcel was returned and will not be delivered."}
                   </p>
                 </div>
               </li>

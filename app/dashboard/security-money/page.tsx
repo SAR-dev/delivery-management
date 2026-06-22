@@ -3,8 +3,9 @@
 import { useState } from "react"
 import { Coins, Save, RotateCcw, Calculator } from "lucide-react"
 import { toast } from "sonner"
-import { usePlatform } from "@/lib/platform-context"
+import { useSecurityConfig } from "@/features/security/hooks/use-security-config"
 import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
 import {
   Card,
   CardContent,
@@ -28,7 +29,7 @@ function calcSecurityMoney(
 }
 
 export default function SecurityMoneyPage() {
-  const { securityConfig, updateSecurityConfig } = usePlatform()
+  const { securityConfig, updateSecurityConfig } = useSecurityConfig()
 
   const [threshold, setThreshold] = useState(
     String(securityConfig?.lowValueThreshold ?? ""),
@@ -99,8 +100,8 @@ export default function SecurityMoneyPage() {
   return (
     <>
       <PageHeader
-        title="Security money rules"
-        description="Configure how the refundable security amount is calculated on every order. These rules apply to all merchants."
+        title={pageContent.dashboard.securityMoney.title}
+        description={pageContent.dashboard.securityMoney.description}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">

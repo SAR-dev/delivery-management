@@ -38,6 +38,7 @@ export type MerchantStatus = (typeof merchant.$inferSelect)["status"]
 export type DeliveryType = (typeof order.$inferSelect)["deliveryType"]
 export type OrderStatus = (typeof order.$inferSelect)["status"]
 export type PayoutRequestStatus = (typeof payoutRequest.$inferSelect)["status"]
+export type RiderTaskType = (typeof rider.$inferSelect)["taskType"]
 
 // --- User: Better Auth's `user` row joined 1:1 with our `profile` row ------
 // `userId` is just profile's PK/FK back to user.id, and profile.createdAt

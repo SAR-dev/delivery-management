@@ -10,20 +10,30 @@ export async function PATCH(
 ) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+  const isAdmin = me.role === "SUPER_ADMIN" || me.role === "ADMIN"
+  const isWarehouseAdmin = me.role === "WAREHOUSE_ADMIN"
+  if (!isAdmin && !isWarehouseAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const { id } = await params
 
   const [current] = await db
-    .select({ isActive: rider.isActive })
+    .select({ isActive: rider.isActive, warehouseId: rider.warehouseId })
     .from(rider)
     .where(eq(rider.id, id))
     .limit(1)
 
   if (!current)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  // Warehouse Admins can only toggle riders based at their own hub.
+  if (
+    isWarehouseAdmin &&
+    (!me.warehouseId || current.warehouseId !== me.warehouseId)
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
 
   const [updated] = await db
     .update(rider)

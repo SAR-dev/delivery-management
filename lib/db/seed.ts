@@ -210,6 +210,9 @@ async function seedWarehouses() {
 async function seedRiders() {
   log("Seeding riders…")
 
+  // Every rider belongs to a warehouse. taskType is independent of the hub:
+  // PICKUP riders collect from merchants, DELIVERY riders run the final mile,
+  // and BOTH handle either leg.
   const rows = [
     {
       id: "wcsub4pe1pk4x5zd7gri7ee2",
@@ -217,7 +220,8 @@ async function seedRiders() {
       phone: "+8801911000001",
       zone: "Dhanmondi / Mohammadpur",
       isActive: true,
-      warehouseId: null,
+      taskType: "PICKUP" as const,
+      warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
       id: "q4am2x0nkz1m2a2m47if7vra",
@@ -225,7 +229,8 @@ async function seedRiders() {
       phone: "+8801911000002",
       zone: "Gulshan / Banani",
       isActive: true,
-      warehouseId: null,
+      taskType: "PICKUP" as const,
+      warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
       id: "gililvghb53wij1p965csiax",
@@ -233,7 +238,8 @@ async function seedRiders() {
       phone: "+8801911000003",
       zone: "Uttara / Tongi",
       isActive: true,
-      warehouseId: null,
+      taskType: "BOTH" as const,
+      warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
       id: "ksd77tlqpuvwkaygj5ucjjjs",
@@ -241,7 +247,8 @@ async function seedRiders() {
       phone: "+8801911000004",
       zone: "Tejgaon / Bashundhara",
       isActive: false,
-      warehouseId: null,
+      taskType: "PICKUP" as const,
+      warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
       id: "khelbntdjda5h8y3pa7etjd4",
@@ -249,6 +256,7 @@ async function seedRiders() {
       phone: "+8801911000010",
       zone: "Dhanmondi / Banani",
       isActive: true,
+      taskType: "DELIVERY" as const,
       warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
@@ -257,6 +265,7 @@ async function seedRiders() {
       phone: "+8801911000011",
       zone: "Uttara / Mirpur",
       isActive: true,
+      taskType: "DELIVERY" as const,
       warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
@@ -265,6 +274,7 @@ async function seedRiders() {
       phone: "+8801911000012",
       zone: "Bashundhara / Badda",
       isActive: false,
+      taskType: "DELIVERY" as const,
       warehouseId: "b5mujkfyyq6qqw5t1unbm8b7",
     },
     {
@@ -273,6 +283,7 @@ async function seedRiders() {
       phone: "+8801911000013",
       zone: "Agrabad / Halishahar",
       isActive: true,
+      taskType: "DELIVERY" as const,
       warehouseId: "op3s6e6t0q4oaerl6boqng1r",
     },
   ]

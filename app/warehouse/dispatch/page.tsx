@@ -2,13 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { Truck, PackageOpen, Bike, Send } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { AddressModal } from "@/components/address-modal"
-import { WarehouseDispatchDialog } from "@/components/dialog/warehouse-dispatch-dialog"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -18,14 +23,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "READY" | "DISPATCHED"
 
 export default function WarehouseDispatchPage() {
-  const {
-    currentUser,
-    currentWarehouse,
-    orders,
-    merchants,
-    riders,
-    warehouseDeliveryRiders,
-  } = usePlatform()
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders, warehouseDeliveryRiders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("READY")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -163,10 +165,12 @@ export default function WarehouseDispatchPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Dispatch desk, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Assign delivery riders to parcels waiting in ${
-          currentWarehouse?.name ?? "your warehouse"
-        } and send them out for the final mile.`}
+        title={pageContent.warehouse.dispatch.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.dispatch.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
       />
 
       <StatCardList
