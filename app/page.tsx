@@ -3,11 +3,11 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { usePlatform, homeForRole } from "@/lib/platform-context"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
 
 export default function Page() {
   const router = useRouter()
-  const { currentUser, isReady } = usePlatform()
+  const { currentUser, isReady } = useAuth()
 
   useEffect(() => {
     if (!isReady) return

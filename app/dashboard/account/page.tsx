@@ -1,4 +1,4 @@
-import { AccountSettings } from "@/components/account/account-settings"
+import { AccountSettings } from "@/features/account/components/account-settings"
 
 export default function DashboardAccountPage() {
   return <AccountSettings />

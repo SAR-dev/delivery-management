@@ -19,7 +19,9 @@ for (const [label, connectionString] of Object.entries(targets)) {
     try {
       const u = await pool.query(`SELECT count(*)::int AS n FROM "user"`)
       userCount = u.rows[0].n
-    } catch {}
+    } catch {
+      // table may not exist yet; leave userCount as "n/a"
+    }
     console.log(`\n=== ${label} ===`)
     console.log("schemas:", schemas.rows)
     console.log("user rows:", userCount)

@@ -4,8 +4,11 @@ import type {
   Role,
   PayoutRequestStatus,
 } from "@/lib/types"
+import { siteConfig } from "@/config/site"
 
-export const BRAND_NAME = "ParcelFlow"
+// Re-exported from the centralized site config (config/site.json) so the brand
+// name has a single source of truth across the app.
+export const BRAND_NAME = siteConfig.name
 export const CURRENCY_SUFFIX = "TK"
 export const MAX_BULK_ORDERS = 50
 

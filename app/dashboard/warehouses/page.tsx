@@ -4,10 +4,16 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Plus, Pencil, Trash2, Warehouse as WarehouseIcon } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useDivisions } from "@/features/divisions/hooks/use-divisions"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useTeam } from "@/features/team/hooks/use-team"
 import type { Warehouse } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { FormDialog } from "@/components/dialog/form-dialog"
+import { pageContent } from "@/config/content"
+import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -43,17 +49,13 @@ const emptyForm: WarehouseForm = {
 
 export default function WarehousesPage() {
   const router = useRouter()
-  const {
-    currentUser,
-    warehouses,
-    divisions,
-    orders,
-    riders,
-    team,
-    createWarehouse,
-    updateWarehouse,
-    deleteWarehouse,
-  } = usePlatform()
+  const { currentUser } = useAuth()
+  const { warehouses, createWarehouse, updateWarehouse, deleteWarehouse } =
+    useWarehouses()
+  const { divisions } = useDivisions()
+  const { orders } = useOrders()
+  const { riders } = useRiders()
+  const { team } = useTeam()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -276,8 +278,8 @@ export default function WarehousesPage() {
   return (
     <>
       <PageHeader
-        title="Warehouses"
-        description="Manage the warehouse hubs parcels are routed through, dispatched from, and reconciled at."
+        title={pageContent.dashboard.warehouses.title}
+        description={pageContent.dashboard.warehouses.description}
       >
         <Button type="button" onClick={openCreate}>
           <Plus className="size-4" />

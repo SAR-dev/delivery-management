@@ -30,7 +30,9 @@ export default async function TrackPage({ searchParams }: Props) {
             <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md shadow-sm transition-shadow group-hover:shadow-md">
               <Package className="size-3.5" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">ParcelFlow</span>
+            <span className="text-sm font-semibold tracking-tight">
+              ParcelFlow
+            </span>
           </Link>
           <div className="flex items-center gap-3">
             <span className="text-muted-foreground hidden text-xs font-medium sm:inline">
@@ -51,12 +53,17 @@ export default async function TrackPage({ searchParams }: Props) {
             Track your parcel
           </h1>
           <p className="text-muted-foreground mx-auto max-w-xs text-sm leading-relaxed">
-            Enter your tracking code for live delivery updates — no account needed.
+            Enter your tracking code for live delivery updates — no account
+            needed.
           </p>
         </div>
 
         {/* Search form — uses GET so it's fully SSR, no JS required */}
-        <form method="GET" action="/track" className="mx-auto flex max-w-lg gap-2.5">
+        <form
+          method="GET"
+          action="/track"
+          className="mx-auto flex max-w-lg gap-2.5"
+        >
           <div className="relative flex-1">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
             <input

@@ -17,3 +17,13 @@ export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5MB
 // scatter files across arbitrary paths.
 export const UPLOAD_FOLDERS = ["avatars", "delivery-proofs", "pickups"] as const
 export type UploadFolder = (typeof UPLOAD_FOLDERS)[number]
+
+// Longest edge (px) each upload is downscaled to client-side before it's sent.
+// Avatars only ever render small and square, so 500px keeps them crisp while
+// staying tiny; photos (delivery proof, pickup locations) keep more detail at
+// 1024px.
+export const UPLOAD_MAX_DIMENSIONS: Record<UploadFolder, number> = {
+  avatars: 500,
+  "delivery-proofs": 1024,
+  pickups: 1024,
+}

@@ -10,11 +10,16 @@ import {
   Bike,
   Loader2,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -24,15 +29,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "UNSETTLED" | "SETTLED"
 
 export default function WarehouseReconciliationPage() {
-  const {
-    currentUser,
-    currentWarehouse,
-    orders,
-    merchants,
-    riders,
-    warehouseUnsettledOrders,
-    settleOrderCod,
-  } = usePlatform()
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, warehouseUnsettledOrders, settleOrderCod } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("UNSETTLED")
   const [settling, setSettling] = useState<string | null>(null)
 
@@ -193,8 +194,10 @@ export default function WarehouseReconciliationPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`COD reconciliation, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description="Match collected cash against delivered orders. The platform keeps delivery charge and security money; product cost becomes payable to the merchant."
+        title={pageContent.warehouse.reconciliation.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.reconciliation.description}
       />
 
       <StatCardList

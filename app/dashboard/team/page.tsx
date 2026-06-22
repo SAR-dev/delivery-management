@@ -3,11 +3,14 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useTeam } from "@/features/team/hooks/use-team"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import type { User } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { RoleBadge } from "@/components/badge/role-badge"
-import { CreateAccountDialog } from "@/components/dialog/create-account-dialog"
+import { pageContent } from "@/config/content"
+import { RoleBadge } from "@/components/role-badge"
+import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
@@ -85,14 +88,14 @@ function WarehouseSelect({
 
 export default function TeamPage() {
   const router = useRouter()
+  const { currentUser } = useAuth()
   const {
-    currentUser,
     team,
-    warehouses,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
-  } = usePlatform()
+  } = useTeam()
+  const { warehouses } = useWarehouses()
 
   // Managing Admin accounts is a Super Admin-only capability. Admins who reach
   // this route directly are redirected back to their console overview.
@@ -224,8 +227,8 @@ export default function TeamPage() {
   return (
     <>
       <PageHeader
-        title="Team & admins"
-        description="Create and manage Admin and Warehouse Admin accounts, and control who can set merchant pricing."
+        title={pageContent.dashboard.team.title}
+        description={pageContent.dashboard.team.description}
       >
         <CreateAccountDialog />
       </PageHeader>

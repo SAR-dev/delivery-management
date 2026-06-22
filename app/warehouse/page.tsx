@@ -2,13 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { AddressModal } from "@/components/address-modal"
-import { WarehouseReceiveDialog } from "@/components/dialog/warehouse-receive-dialog"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseReceiveDialog } from "@/features/orders/dialogs/warehouse-receive-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -18,8 +23,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "INCOMING" | "RECEIVED"
 
 export default function WarehouseIntakePage() {
-  const { currentUser, currentWarehouse, orders, merchants, riders } =
-    usePlatform()
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("INCOMING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -150,10 +158,12 @@ export default function WarehouseIntakePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Warehouse intake, ${currentUser?.name.split(" ")[0] ?? "Admin"}`}
-        description={`Receive picked-up parcels into ${
-          currentWarehouse?.name ?? "your warehouse"
-        } and log them into inventory.`}
+        title={pageContent.warehouse.intake.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.intake.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
       />
 
       <StatCardList

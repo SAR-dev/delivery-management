@@ -2,13 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { PackageCheck } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { TrackingCell } from "@/components/tracking-cell"
-import { PickupConfirmDialog } from "@/components/dialog/pickup-confirm-dialog"
-import { PickupLocationModal } from "@/components/pickup-location-modal"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -17,8 +22,11 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 type FilterTab = "TO_COLLECT" | "COLLECTED"
 
 export default function RiderPickupQueuePage() {
-  const { currentUser, currentRider, orders, merchants, pickupLocations } =
-    usePlatform()
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
   const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -135,8 +143,10 @@ export default function RiderPickupQueuePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Pickup queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Collect approved parcels from merchants and confirm each pickup as you go."
+        title={pageContent.rider.pickup.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.pickup.description}
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>

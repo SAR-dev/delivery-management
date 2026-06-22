@@ -11,15 +11,19 @@ import {
   ShieldCheck,
   Bike,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
 import { cn } from "@/lib/utils"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { AddressModal } from "@/components/address-modal"
-import { PickupLocationModal } from "@/components/pickup-location-modal"
-import { ApproveOrderDialog } from "@/components/dialog/approve-order-dialog"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,7 +34,10 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
-  const { orders, merchants, riders, pickupLocations } = usePlatform()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const { pickupLocations } = usePickupLocations()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [query, setQuery] = useState("")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -200,8 +207,8 @@ export default function OrdersPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Order approvals"
-        description="Review pending orders, verify weight compliance, then approve and assign a pickup rider."
+        title={pageContent.dashboard.orders.title}
+        description={pageContent.dashboard.orders.description}
       />
 
       {/* Stats */}

@@ -3,10 +3,10 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { usePlatform, homeForRole } from "@/lib/platform-context"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { RiderSidebar } from "@/components/sidebar/rider-sidebar"
-import { MobileHeader } from "@/components/layout/mobile-header"
+import { RiderSidebar } from "@/components/navigation/rider-sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
 import { RIDER_SIDEBAR } from "@/lib/nav-config"
 
 export default function RiderLayout({
@@ -15,7 +15,7 @@ export default function RiderLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { currentUser, isReady } = usePlatform()
+  const { currentUser, isReady } = useAuth()
 
   useEffect(() => {
     if (!isReady) return
@@ -39,7 +39,7 @@ export default function RiderLayout({
       <RiderSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={RIDER_SIDEBAR} items={[]} />
+        <MobileHeader config={RIDER_SIDEBAR} />
 
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">

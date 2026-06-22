@@ -10,14 +10,17 @@ import {
   Package,
   AlertCircle,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { usePayouts } from "@/features/payouts/hooks/use-payouts"
 import { formatTk } from "@/lib/pricing"
 import type { Order, PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { PayoutStatusBadge } from "@/components/dialog/payout-status-badge"
-import { PayoutRequestDialog } from "@/components/dialog/payout-request-dialog"
-import { TrackingCell } from "@/components/tracking-cell"
-import { AddressModal } from "@/components/address-modal"
+import { pageContent } from "@/config/content"
+import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
+import { PayoutRequestDialog } from "@/features/payouts/dialogs/payout-request-dialog"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -30,8 +33,9 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
 export default function MerchantFinancePage() {
-  const { currentMerchant, merchantPayableOrders, merchantPayoutRequests } =
-    usePlatform()
+  const { currentMerchant } = useMerchants()
+  const { merchantPayableOrders } = useOrders()
+  const { merchantPayoutRequests } = usePayouts()
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const available = merchantPayableOrders.reduce(
@@ -174,8 +178,8 @@ export default function MerchantFinancePage() {
   return (
     <>
       <PageHeader
-        title="Finances & payouts"
-        description="Track your available balance and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform."
+        title={pageContent.merchant.finance.title}
+        description={pageContent.merchant.finance.description}
       >
         <Button onClick={() => setDialogOpen(true)} disabled={!canRequest}>
           <Wallet className="size-4" />

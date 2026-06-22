@@ -3,8 +3,9 @@
 import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Loader2, Lock, ShieldCheck, FlaskConical } from "lucide-react"
-import { usePlatform, homeForRole } from "@/lib/platform-context"
+import { Loader2, Lock, FlaskConical } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { siteConfig } from "@/config/site"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Input } from "@/components/ui/input"
@@ -39,9 +40,12 @@ const grouped = ROLES_ORDER.map((role) => ({
   users: SEED_CREDENTIALS.filter((u) => u.role === role),
 }))
 
+const BrandIcon = siteConfig.icon
+const isDev = process.env.NEXT_PUBLIC_ENV === "development"
+
 export default function LoginPage() {
   const router = useRouter()
-  const { login, currentUser, isReady } = usePlatform()
+  const { login, currentUser, isReady } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -86,16 +90,16 @@ export default function LoginPage() {
       <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
         <div className="flex items-center gap-2">
           <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
-            <ShieldCheck className="size-5" />
+            <BrandIcon className="size-5" />
           </div>
           <span className="text-lg font-semibold tracking-tight">
-            ParcelFlow
+            {siteConfig.name}
           </span>
         </div>
 
         <div className="max-w-md">
           <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
-            B2B Delivery Platform
+            {siteConfig.tagline}
           </p>
           <h1 className="mt-4 text-4xl leading-tight font-semibold text-balance">
             Everything you need, in one place.
@@ -107,7 +111,8 @@ export default function LoginPage() {
         </div>
 
         <p className="text-sidebar-foreground/50 text-xs">
-          {"\u00A9"} {new Date().getFullYear()} ParcelFlow. Internal use only.
+          {"\u00A9"} {new Date().getFullYear()} {siteConfig.name}. Internal use
+          only.
         </p>
       </section>
 
@@ -116,10 +121,10 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2 lg:hidden">
             <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
-              <ShieldCheck className="size-5" />
+              <BrandIcon className="size-5" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
-              ParcelFlow
+              {siteConfig.name}
             </span>
           </div>
 
@@ -131,34 +136,37 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Dev credentials picker */}
-              <div className="border-border bg-muted/40 mb-4 rounded-md border border-dashed p-3">
-                <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
-                  <FlaskConical className="size-3.5" />
-                  Dev — fill seed credentials
-                </p>
-                <Select onValueChange={fillCredentials}>
-                  <SelectTrigger className="h-8 w-full text-xs">
-                    <SelectValue placeholder="Pick a user…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {grouped.map(({ role, users }) => (
-                      <SelectGroup key={role}>
-                        <SelectLabel className="text-xs">{role}</SelectLabel>
-                        {users.map((u) => (
-                          <SelectItem
-                            key={u.email}
-                            value={u.email}
-                            className="text-xs"
-                          >
-                            {u.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Dev credentials picker — only rendered in development so the
+                  seed accounts are never exposed in production builds. */}
+              {isDev ? (
+                <div className="border-border bg-muted/40 mb-4 rounded-md border border-dashed p-3">
+                  <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
+                    <FlaskConical className="size-3.5" />
+                    Dev — fill seed credentials
+                  </p>
+                  <Select onValueChange={fillCredentials}>
+                    <SelectTrigger className="h-8 w-full text-xs">
+                      <SelectValue placeholder="Pick a user…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grouped.map(({ role, users }) => (
+                        <SelectGroup key={role}>
+                          <SelectLabel className="text-xs">{role}</SelectLabel>
+                          {users.map((u) => (
+                            <SelectItem
+                              key={u.email}
+                              value={u.email}
+                              className="text-xs"
+                            >
+                              {u.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
 
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">

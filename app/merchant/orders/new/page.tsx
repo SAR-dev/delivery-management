@@ -15,10 +15,15 @@ import {
   ImageIcon,
 } from "lucide-react"
 import { toast } from "sonner"
-import { usePlatform } from "@/lib/platform-context"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { useDivisions } from "@/features/divisions/hooks/use-divisions"
+import { useSecurityConfig } from "@/features/security/hooks/use-security-config"
+import { useOrders } from "@/features/orders/hooks/use-orders"
 import { calcDeliveryCharge, calcSecurityMoney, formatTk } from "@/lib/pricing"
 import type { CreateOrderInput, DeliveryType } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -70,13 +75,11 @@ function emptyParcel(): ParcelState {
 
 export default function NewOrderPage() {
   const router = useRouter()
-  const {
-    currentMerchant,
-    pickupLocations,
-    divisions,
-    securityConfig,
-    createOrders,
-  } = usePlatform()
+  const { currentMerchant } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const { divisions } = useDivisions()
+  const { securityConfig } = useSecurityConfig()
+  const { createOrders } = useOrders()
 
   // Only active divisions can be chosen for a new order's receiver.
   const activeDivisions = useMemo(
@@ -263,8 +266,8 @@ export default function NewOrderPage() {
   return (
     <>
       <PageHeader
-        title="New delivery order"
-        description="Add one or more parcels and watch delivery charges update live as you enter details."
+        title={pageContent.merchant.newOrder.title}
+        description={pageContent.merchant.newOrder.description}
       >
         <Button
           variant="outline"

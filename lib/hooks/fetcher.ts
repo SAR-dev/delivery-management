@@ -1,0 +1,39 @@
+import type { SWRConfiguration } from "swr"
+
+// Carries a server-provided error message through a thrown rejection so
+// optimistic mutations can roll back (via SWR) and still hand the caller the
+// same `{ ok: false, error }` shape the old context returned.
+export class ApiError extends Error {}
+
+// Every resource endpoint the old loadAll() fetched, in one place. Used by the
+// data-error aggregator to subscribe to / revalidate the full set.
+export const RESOURCE_KEYS = [
+  "/api/team",
+  "/api/merchants",
+  "/api/orders",
+  "/api/payouts",
+  "/api/pickup-locations",
+  "/api/riders",
+  "/api/warehouses",
+  "/api/divisions",
+  "/api/security-config",
+] as const
+
+// Shared fetcher for every resource hook. Throws on non-2xx so SWR surfaces
+// the failure through its `error` channel (mirrors the old loadAll() behavior
+// of treating any failed response as a failed load).
+export async function jsonFetcher<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`Request to ${url} failed with status ${res.status}`)
+  }
+  return res.json() as Promise<T>
+}
+
+// The old PlatformProvider loaded all data exactly once per session (no focus
+// or reconnect refetching). Mirror that so the data-layer swap doesn't change
+// observable loading/refetch behavior.
+export const swrOptions: SWRConfiguration = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+}

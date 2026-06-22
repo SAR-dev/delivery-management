@@ -14,7 +14,7 @@ export const auth = betterAuth({
     autoSignIn: true,
   },
   trustedOrigins: [
-    ...(process.env.NODE_ENV === "development"
+    ...(process.env.NEXT_PUBLIC_ENV === "development"
       ? ["http://localhost:3000"]
       : []),
     ...(process.env.BETTER_AUTH_DEV_URL

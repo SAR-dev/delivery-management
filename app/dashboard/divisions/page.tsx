@@ -4,10 +4,16 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Plus, Pencil, Trash2, MapPin } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useDivisions } from "@/features/divisions/hooks/use-divisions"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { useOrders } from "@/features/orders/hooks/use-orders"
 import type { Division } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { FormDialog } from "@/components/dialog/form-dialog"
+import { pageContent } from "@/config/content"
+import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -21,17 +27,13 @@ interface DivisionRow extends Division {
 
 export default function DivisionsPage() {
   const router = useRouter()
-  const {
-    currentUser,
-    divisions,
-    warehouses,
-    merchants,
-    pickupLocations,
-    orders,
-    createDivision,
-    updateDivision,
-    deleteDivision,
-  } = usePlatform()
+  const { currentUser } = useAuth()
+  const { divisions, createDivision, updateDivision, deleteDivision } =
+    useDivisions()
+  const { warehouses } = useWarehouses()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const { orders } = useOrders()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -202,8 +204,8 @@ export default function DivisionsPage() {
   return (
     <>
       <PageHeader
-        title="Divisions"
-        description="Manage the geographic divisions used across warehouses, merchants, pickup locations, and delivery addresses."
+        title={pageContent.dashboard.divisions.title}
+        description={pageContent.dashboard.divisions.description}
       >
         <Button type="button" onClick={openCreate}>
           <Plus className="size-4" />

@@ -3,10 +3,10 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
 import { DataErrorBanner } from "@/components/data-error-banner"
-import { Sidebar } from "@/components/sidebar/sidebar"
-import { MobileHeader } from "@/components/layout/mobile-header"
+import { Sidebar } from "@/components/navigation/sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
 import { dashboardSidebarForRole } from "@/lib/nav-config"
 
 export default function DashboardLayout({
@@ -15,7 +15,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { currentUser, isReady } = usePlatform()
+  const { currentUser, isReady } = useAuth()
 
   useEffect(() => {
     if (!isReady) return

@@ -13,12 +13,13 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
-import { usePlatform } from "@/lib/platform-context"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { formatTk } from "@/lib/pricing"
 import type { Merchant, MerchantStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
-import { PricingDialog } from "@/components/dialog/pricing-dialog"
+import { pageContent } from "@/config/content"
+import { MerchantStatusBadge } from "@/features/merchants/components/merchant-status-badge"
+import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,7 +38,7 @@ type FilterTab = "ALL" | MerchantStatus
 
 export default function MerchantsPage() {
   const { merchants, approveMerchant, suspendMerchant, reactivateMerchant } =
-    usePlatform()
+    useMerchants()
   const [tab, setTab] = useState<FilterTab>("ALL")
   const [query, setQuery] = useState("")
   const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
@@ -212,8 +213,8 @@ export default function MerchantsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Merchants"
-        description="Review new registrations, approve businesses, and set each merchant's delivery pricing."
+        title={pageContent.dashboard.merchants.title}
+        description={pageContent.dashboard.merchants.description}
       />
 
       {/* Stats */}

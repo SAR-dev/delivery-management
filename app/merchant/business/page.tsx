@@ -11,11 +11,14 @@ import {
   User,
 } from "lucide-react"
 import { toast } from "sonner"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { formatTk } from "@/lib/pricing"
 import { PageHeader } from "@/components/page-header"
-import { MerchantStatusBadge } from "@/components/badge/merchant-status-badge"
-import { PickupLocationsManager } from "@/components/pickup-locations-manager"
+import { pageContent } from "@/config/content"
+import { MerchantStatusBadge } from "@/features/merchants/components/merchant-status-badge"
+import { PickupLocationsManager } from "@/features/pickup-locations/components/pickup-locations-manager"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -46,13 +49,16 @@ function PricingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function MerchantBusinessPage() {
+  const { isReady } = useAuth()
   const {
     currentMerchant,
-    divisions,
     updateMerchantProfile,
-    isReady,
-    isDataReady,
-  } = usePlatform()
+    isLoading: merchantsLoading,
+  } = useMerchants()
+  const { divisions, isLoading: divisionsLoading } = useDivisions()
+  // Old context exposed a single isDataReady flag flipped once all resources
+  // had loaded. Here we gate on the two resources this page actually reads.
+  const isDataReady = !merchantsLoading && !divisionsLoading
 
   const [businessName, setBusinessName] = useState(
     () => currentMerchant?.businessName ?? "",
@@ -68,6 +74,7 @@ export default function MerchantBusinessPage() {
   // Populate form fields once currentMerchant is available (async after reload).
   useEffect(() => {
     if (!currentMerchant) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBusinessName(currentMerchant.businessName)
     setEmail(currentMerchant.email)
     setPhone(currentMerchant.phone)
@@ -87,8 +94,8 @@ export default function MerchantBusinessPage() {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
-          title="Business profile"
-          description="Manage your business details and view your delivery pricing."
+          title={pageContent.merchant.business.title}
+          description={pageContent.merchant.business.missingDescription}
         />
         <Card>
           <CardContent className="text-muted-foreground py-12 text-center text-sm">
@@ -140,8 +147,8 @@ export default function MerchantBusinessPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Business profile"
-        description="Keep your business contact details current and review the delivery pricing set for your account."
+        title={pageContent.merchant.business.title}
+        description={pageContent.merchant.business.description}
       >
         <MerchantStatusBadge status={currentMerchant.status} />
       </PageHeader>

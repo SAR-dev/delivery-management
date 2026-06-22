@@ -14,14 +14,19 @@ import {
   Warehouse as WarehouseIcon,
   Weight,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
 import { formatTk } from "@/lib/pricing"
 import { CURRENCY_SUFFIX } from "@/lib/constants"
 import type { Order } from "@/lib/types"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { AddressModal } from "@/components/address-modal"
-import { PickupLocationModal } from "@/components/pickup-location-modal"
-import { TrackingTimeline } from "@/components/tracking-timeline"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -72,8 +77,12 @@ function Section({
 
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>()
-  const { isReady, orders, merchants, riders, warehouses, pickupLocations } =
-    usePlatform()
+  const { isReady } = useAuth()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const { warehouses } = useWarehouses()
+  const { pickupLocations } = usePickupLocations()
 
   const order: Order | undefined = orders.find((o) => o.id === params.id)
 

@@ -7,11 +7,14 @@ import {
   Users,
   Warehouse as WarehouseIcon,
 } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import type { Rider } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { CreateRiderDialog } from "@/components/dialog/create-rider-dialog"
-import { EditRiderDialog } from "@/components/dialog/edit-rider-dialog"
+import { pageContent } from "@/config/content"
+import { CreateRiderDialog } from "@/features/riders/dialogs/create-rider-dialog"
+import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
+import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
@@ -19,7 +22,8 @@ import { StatCardList } from "@/components/stat-card-list"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 export default function RidersPage() {
-  const { riders, warehouses } = usePlatform()
+  const { riders } = useRiders()
+  const { warehouses } = useWarehouses()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
 
@@ -34,8 +38,12 @@ export default function RidersPage() {
   }
 
   const activeCount = riders.filter((r) => r.isActive).length
-  const deliveryCount = riders.filter((r) => r.warehouseId).length
-  const pickupCount = riders.length - deliveryCount
+  const deliveryCount = riders.filter(
+    (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
+  ).length
+  const pickupCount = riders.filter(
+    (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
+  ).length
 
   const columns: DataTableColumn<Rider>[] = [
     {
@@ -69,10 +77,21 @@ export default function RidersPage() {
       cell: (r) => <span className="text-sm">{r.zone}</span>,
     },
     {
-      id: "assignment",
-      header: "Assignment",
+      id: "taskType",
+      header: "Task type",
       sortable: true,
-      sortValue: (r) => warehouseName(r.warehouseId) ?? "Pickup only",
+      sortValue: (r) => r.taskType,
+      cell: (r) => (
+        <Badge variant="outline" className="font-normal">
+          {taskTypeLabel(r.taskType)}
+        </Badge>
+      ),
+    },
+    {
+      id: "assignment",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (r) => warehouseName(r.warehouseId) ?? "",
       cell: (r) => {
         const name = warehouseName(r.warehouseId)
         return name ? (
@@ -80,7 +99,7 @@ export default function RidersPage() {
             {name}
           </Badge>
         ) : (
-          <span className="text-muted-foreground text-sm">Pickup only</span>
+          <span className="text-muted-foreground text-sm">—</span>
         )
       },
     },
@@ -104,8 +123,8 @@ export default function RidersPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Riders"
-        description="Manage the rider roster. Pickup riders collect parcels from merchants; warehouse-based riders handle deliveries."
+        title={pageContent.dashboard.riders.title}
+        description={pageContent.dashboard.riders.description}
       >
         <CreateRiderDialog />
       </PageHeader>

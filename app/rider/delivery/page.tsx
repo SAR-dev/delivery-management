@@ -2,15 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { CheckCircle2, Navigation } from "lucide-react"
-import { usePlatform } from "@/lib/platform-context"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
-import { OrderStatusBadge } from "@/components/badge/order-status-badge"
-import { TrackingCell } from "@/components/tracking-cell"
-import { AddressModal } from "@/components/address-modal"
-import { DeliveryAttemptDialog } from "@/components/dialog/delivery-attempt-dialog"
-import { OutForDeliveryDialog } from "@/components/dialog/out-for-delivery-dialog"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attempt-dialog"
+import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,7 +22,9 @@ import { DataTable, type DataTableColumn } from "@/components/data-table"
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
 export default function RiderDeliveryQueuePage() {
-  const { currentUser, currentRider, orders } = usePlatform()
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders } = useOrders()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -146,8 +151,10 @@ export default function RiderDeliveryQueuePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Delivery queue, ${currentUser?.name.split(" ")[0] ?? "Rider"}`}
-        description="Take dispatched parcels out for delivery and record each outcome on the spot."
+        title={pageContent.rider.delivery.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.delivery.description}
       />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>

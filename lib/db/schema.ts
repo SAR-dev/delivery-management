@@ -164,6 +164,11 @@ export const warehouse = pgTable("warehouse", {
 // Riders (standalone entity — not tightly coupled to a user row)
 // =============================================================================
 
+// What a rider is allowed to do. Decoupled from the warehouse association so a
+// rider can, e.g., be a PICKUP rider that still belongs to a hub, or handle
+// BOTH legs. Drizzle-only `enum` hint — the column stays plain `text`.
+export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
+
 export const rider = pgTable("rider", {
   id: text("id")
     .primaryKey()
@@ -173,11 +178,15 @@ export const rider = pgTable("rider", {
   // Service zone the rider primarily covers.
   zone: text("zone").notNull(),
   isActive: boolean("isActive").notNull().default(true),
-  // Home warehouse this rider dispatches from. Null means the rider handles
-  // pickups only and is not associated with any warehouse.
-  warehouseId: text("warehouseId").references(() => warehouse.id, {
-    onDelete: "set null",
-  }),
+  // What the rider is allowed to do, independent of their home warehouse.
+  taskType: text("taskType", { enum: riderTaskTypes })
+    .notNull()
+    .default("DELIVERY"),
+  // Home warehouse this rider dispatches from. Every rider belongs to exactly
+  // one warehouse. `restrict` prevents deleting a hub that still has riders.
+  warehouseId: text("warehouseId")
+    .notNull()
+    .references(() => warehouse.id, { onDelete: "restrict" }),
 })
 
 // =============================================================================
