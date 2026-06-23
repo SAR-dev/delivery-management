@@ -116,6 +116,9 @@ export const merchantPricingSchema = z
     path: ["freeWeightKg"],
   })
 
+const noteField = (label: string) =>
+  z.string().trim().max(100, `${label} cannot exceed 100 characters`).nullish()
+
 export const orderCreateSchema = z.object({
   pickupLocationId: requiredString("Pickup location"),
   recipientName: requiredString("Recipient name"),
@@ -134,6 +137,15 @@ export const orderCreateSchema = z.object({
   parcelWeightKg: z.number().positive("Parcel weight must be greater than 0"),
   deliveryType: z.enum(["STANDARD", "FRAGILE"]).optional(),
   productCost: z.number().nonnegative("Product cost cannot be negative"),
+  merchantNote: noteField("Merchant note"),
+})
+
+export const orderReceiverNoteSchema = z.object({
+  receiverNote: z
+    .string()
+    .trim()
+    .max(100, "Receiver note cannot exceed 100 characters")
+    .min(1, "Note cannot be empty"),
 })
 
 export const orderBulkCreateSchema = z.object({

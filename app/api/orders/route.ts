@@ -77,6 +77,7 @@ export async function POST(req: Request) {
     parcelWeightKg,
     deliveryType,
     productCost,
+    merchantNote,
   } = parsed.data
 
   // Receiver division must exist and be active.
@@ -184,6 +185,7 @@ export async function POST(req: Request) {
       totalCollectible,
       status: "PENDING",
       deliveryAttempts: 0,
+      merchantNote: merchantNote?.trim() || null,
     })
     .returning()
 

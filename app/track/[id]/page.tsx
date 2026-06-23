@@ -17,6 +17,7 @@ import {
   User,
   ImageOff,
   ArrowLeft,
+  StickyNote,
 } from "lucide-react"
 import { db } from "@/lib/db"
 import { order, merchant, rider, warehouse } from "@/lib/db/schema"
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import type { Order, OrderStatus } from "@/lib/types"
 import { ImageZoom } from "@/components/image-zoom"
+import { ReceiverNoteWidget } from "@/features/orders/components/receiver-note-widget"
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -424,6 +426,26 @@ function OrderDetail({
           deliveryRider={deliveryRider}
         />
       </div>
+
+      {/* Merchant note (read-only) */}
+      {o.merchantNote && (
+        <div className="border-border bg-card rounded-xl border p-5 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <StickyNote className="text-muted-foreground size-4" />
+            <p className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
+              Note from merchant
+            </p>
+          </div>
+          <p className="text-sm leading-relaxed">{o.merchantNote}</p>
+        </div>
+      )}
+
+      {/* Receiver note widget — lets the recipient leave a delivery instruction */}
+      <ReceiverNoteWidget
+        orderId={o.id}
+        initialNote={o.receiverNote}
+        isTerminal={o.status === "DELIVERED" || o.status === "RETURNED"}
+      />
 
       {/* Search again button */}
       <div className="pt-2 text-center">
