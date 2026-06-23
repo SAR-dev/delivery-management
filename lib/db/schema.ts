@@ -415,3 +415,23 @@ export const order = pgTable("order", {
   // included in a second payout request.
   payoutRequestId: text("payoutRequestId").references(() => payoutRequest.id),
 })
+
+// =============================================================================
+// Failed mail log
+//
+// A row is inserted whenever sendMail() exhausts all retries without success.
+// Useful for debugging delivery failures and manual re-sending.
+// =============================================================================
+
+export const failedMail = pgTable("failed_mail", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  to: text("to").notNull(),               // comma-joined if multiple recipients
+  subject: text("subject").notNull(),
+  html: text("html"),
+  text: text("text"),
+  error: text("error").notNull(),          // lastError.message
+  attempts: integer("attempts").notNull(), // total attempts made (retries + 1)
+  failedAt: ts("failedAt").notNull().defaultNow(),
+})

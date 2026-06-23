@@ -43,6 +43,13 @@
       "when": 1782112837798,
       "tag": "0005_conscious_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782188392708,
+      "tag": "0006_fuzzy_naoko",
+      "breakpoints": true
     }
   ]
 }

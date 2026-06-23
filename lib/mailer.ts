@@ -5,8 +5,12 @@
 //
 // Usage:
 //   await sendMail({ to: "x@y.com", subject: "Hi", html: "<b>Hello</b>" })
+//
+// Failed mails (exhausted all retries) are stored in the `failed_mail` table.
 
 import nodemailer, { type SendMailOptions } from "nodemailer"
+import { db } from "@/lib/db"
+import { failedMail } from "@/lib/db/schema"
 
 export interface MailPayload {
   to: string | string[]
@@ -70,6 +74,22 @@ export async function sendMail(
       onRetry?.(attempt, lastError)
       await sleep(delay)
     }
+  }
+
+  // All retries exhausted — persist to DB so it can be investigated / re-sent.
+  try {
+    await db.insert(failedMail).values({
+      to: Array.isArray(payload.to) ? payload.to.join(", ") : payload.to,
+      subject: payload.subject,
+      html: payload.html ?? null,
+      text: payload.text ?? null,
+      error: lastError?.message ?? "Unknown error",
+      attempts: totalAttempts,
+    })
+    console.error(`[mailer] Logged failed email to DB (to: ${payload.to})`)
+  } catch (dbErr) {
+    // Don't let a DB failure swallow the original mail error.
+    console.error("[mailer] Failed to log failed email to DB:", dbErr)
   }
 
   throw new Error(
