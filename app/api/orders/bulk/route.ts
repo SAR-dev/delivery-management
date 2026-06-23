@@ -134,6 +134,7 @@ export async function POST(req: Request) {
         totalCollectible,
         status: "PENDING" as const,
         deliveryAttempts: 0,
+        merchantNote: input.merchantNote?.trim() || null,
       }
     })
 
