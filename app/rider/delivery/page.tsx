@@ -175,11 +175,6 @@ export default function RiderDeliveryQueuePage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, recipient, city"
-            getSearchText={(o) =>
-              `${o.code} ${o.recipientName} ${o.deliveryCity} ${o.deliveryAddress}`
-            }
             emptyMessage={
               tab === "TO_DELIVER"
                 ? "No deliveries waiting. Parcels appear here once a Warehouse Admin dispatches them to you."

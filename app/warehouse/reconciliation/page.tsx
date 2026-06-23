@@ -239,13 +239,6 @@ export default function WarehouseReconciliationPage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, merchant, rider"
-            getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${
-                rider(o.deliveryRiderId)?.name ?? ""
-              }`
-            }
             emptyMessage={
               tab === "UNSETTLED"
                 ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."

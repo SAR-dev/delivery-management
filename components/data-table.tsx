@@ -8,13 +8,11 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Download,
-  Search,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { toCsv, downloadCsv } from "@/lib/csv"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -45,18 +43,6 @@ export interface DataTableColumn<T> {
   cellClassName?: string
 }
 
-/** A faceted filter rendered as a select in the toolbar. */
-export interface DataTableFilter<T> {
-  /** Stable identifier for the filter. */
-  id: string
-  /** Accessible label / placeholder shown when nothing is selected. */
-  label: string
-  /** The selectable values (the "All" option is added automatically). */
-  options: { label: string; value: string }[]
-  /** Returns the row's value for this filter, compared against the option value. */
-  getValue: (row: T) => string
-}
-
 /** Enables a "Download CSV" toolbar button. `parser` is required — CSV
  * export only activates when the caller supplies a way to flatten a row. */
 export interface DataTableCsv<T> {
@@ -85,16 +71,6 @@ interface DataTableProps<T> {
   emptyMessage?: React.ReactNode
   onRowClick?: (row: T) => void
   className?: string
-  /** Show a search box in the toolbar. Requires `getSearchText`. */
-  searchable?: boolean
-  /** Placeholder for the search box. */
-  searchPlaceholder?: string
-  /** Text used to match a row against the search query. */
-  getSearchText?: (row: T) => string
-  /** Faceted select filters rendered in the toolbar. */
-  filters?: DataTableFilter<T>[]
-  /** Extra controls rendered on the right of the toolbar (e.g. tabs, buttons). */
-  toolbarActions?: React.ReactNode
   /** Enables a "Download CSV" button in the toolbar. */
   csv?: DataTableCsv<T>
 }
@@ -124,11 +100,6 @@ export function DataTable<T>({
   emptyMessage = "No records to display.",
   onRowClick,
   className,
-  searchable = false,
-  searchPlaceholder = "Search…",
-  getSearchText,
-  filters,
-  toolbarActions,
   csv,
 }: DataTableProps<T>) {
   const [sortId, setSortId] = React.useState<string | null>(
@@ -137,39 +108,9 @@ export function DataTable<T>({
   const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
   const [size, setSize] = React.useState(pageSize)
   const [page, setPage] = React.useState(1)
-  const [query, setQuery] = React.useState("")
-  const [filterValues, setFilterValues] = React.useState<
-    Record<string, string>
-  >({})
-
   const paginated = size > 0
 
-  const hasSearch = searchable && Boolean(getSearchText)
-  const hasFilters = Boolean(filters && filters.length > 0)
-  const showToolbar =
-    hasSearch || hasFilters || Boolean(toolbarActions) || Boolean(csv)
-
-  // Apply text search + faceted filters before sorting.
-  const filtered = React.useMemo(() => {
-    let rows = data
-    if (hasSearch && getSearchText) {
-      const q = query.trim().toLowerCase()
-      if (q) {
-        rows = rows.filter((row) =>
-          getSearchText(row).toLowerCase().includes(q),
-        )
-      }
-    }
-    if (hasFilters && filters) {
-      for (const f of filters) {
-        const selected = filterValues[f.id]
-        if (selected && selected !== "__all__") {
-          rows = rows.filter((row) => f.getValue(row) === selected)
-        }
-      }
-    }
-    return rows
-  }, [data, getSearchText, query, hasSearch, hasFilters, filters, filterValues])
+  const filtered = React.useMemo(() => data, [data])
 
   const sorted = React.useMemo(() => {
     if (!sortId) return filtered
@@ -242,64 +183,6 @@ export function DataTable<T>({
 
   return (
     <div className={cn("flex flex-col", className)}>
-      {showToolbar ? (
-        <div className="border-border flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-            {hasSearch ? (
-              <div className="relative w-full sm:max-w-xs">
-                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={searchPlaceholder}
-                  className="pl-9"
-                />
-              </div>
-            ) : null}
-            {hasFilters && filters
-              ? filters.map((f) => (
-                  <label key={f.id} className="flex items-center gap-1.5">
-                    <span className="sr-only">{f.label}</span>
-                    <select
-                      value={filterValues[f.id] ?? "__all__"}
-                      onChange={(e) =>
-                        setFilterValues((prev) => ({
-                          ...prev,
-                          [f.id]: e.target.value,
-                        }))
-                      }
-                      className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
-                    >
-                      <option value="__all__">{f.label}: All</option>
-                      {f.options.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))
-              : null}
-          </div>
-          {toolbarActions || csv ? (
-            <div className="flex items-center gap-2">
-              {toolbarActions}
-              {csv ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleDownloadCsv}
-                  className="gap-1.5"
-                >
-                  <Download className="size-4" />
-                  Download CSV
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       <Table>
         <TableHeader>
           <TableRow>
@@ -382,7 +265,7 @@ export function DataTable<T>({
         </TableBody>
       </Table>
 
-      {paginated && sorted.length > 0 ? (
+      {paginated ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="text-muted-foreground flex items-center gap-3">
             <span className="tabular-nums">
@@ -406,6 +289,19 @@ export function DataTable<T>({
                   ))}
                 </select>
               </label>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-center">
+            {csv ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadCsv}
+                className="gap-1.5"
+              >
+                <Download className="size-4" />
+                Download CSV
+              </Button>
             ) : null}
           </div>
           <div className="flex items-center gap-2">

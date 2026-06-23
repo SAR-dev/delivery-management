@@ -234,13 +234,6 @@ export default function WarehouseIntakePage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, merchant, rider, city"
-            getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${
-                rider(o.pickupRiderId)?.name ?? ""
-              } ${o.deliveryCity} ${o.recipientName}`
-            }
             emptyMessage={
               tab === "INCOMING"
                 ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
