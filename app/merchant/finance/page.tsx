@@ -256,6 +256,25 @@ export default function MerchantFinancePage() {
               data={merchantPayableOrders}
               getRowKey={(o) => o.id}
               initialSortId="tracking"
+              csv={{
+                filename: "available-for-payout",
+                headers: [
+                  "Tracking",
+                  "Recipient",
+                  "City",
+                  "Delivered",
+                  "Product cost",
+                ],
+                parser: (o) => [
+                  o.code,
+                  o.recipientName,
+                  o.deliveryCity,
+                  o.deliveredAt
+                    ? new Date(o.deliveredAt).toLocaleDateString()
+                    : "",
+                  o.productCost,
+                ],
+              }}
             />
           )}
         </CardContent>
@@ -294,6 +313,27 @@ export default function MerchantFinancePage() {
               getSearchText={(p) =>
                 `${p.code} ${p.payoutMethod} ${p.payoutDetails}`
               }
+              csv={{
+                filename: "payout-requests",
+                headers: [
+                  "Request",
+                  "Method",
+                  "Details",
+                  "Orders",
+                  "Requested",
+                  "Amount",
+                  "Status",
+                ],
+                parser: (p) => [
+                  p.code,
+                  p.payoutMethod,
+                  p.payoutDetails,
+                  p.orderIds.length,
+                  new Date(p.requestedAt).toLocaleDateString(),
+                  p.amount,
+                  p.status,
+                ],
+              }}
             />
           )}
         </CardContent>

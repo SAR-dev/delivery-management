@@ -1,0 +1,38 @@
+/**
+ * Generic CSV helpers. Cross-cutting concern, so it lives in `lib/` rather
+ * than under a feature — mirrors how `lib/storage` centralizes uploads.
+ */
+
+type CsvCell = string | number | null | undefined
+
+function escapeCell(cell: CsvCell): string {
+  const value = cell == null ? "" : String(cell)
+  // Quote whenever the value contains a comma, quote, or newline; double up
+  // any embedded quotes per RFC 4180.
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+/** Builds RFC 4180 CSV text from rows of cells, with an optional header row. */
+export function toCsv(rows: CsvCell[][], headers?: string[]): string {
+  const lines = headers ? [headers, ...rows] : rows
+  return lines.map((line) => line.map(escapeCell).join(",")).join("\r\n")
+}
+
+/** Triggers a browser download of `content` as a file named `filename`. */
+export function downloadCsv(filename: string, content: string): void {
+  // Prefix a BOM so Excel opens UTF-8 CSVs without mangling non-ASCII text.
+  const blob = new Blob(["\ufeff", content], {
+    type: "text/csv;charset=utf-8;",
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename.endsWith(".csv") ? filename : `${filename}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}

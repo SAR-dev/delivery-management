@@ -7,10 +7,12 @@ import {
   ChevronRight,
   ChevronsUpDown,
   ChevronUp,
+  Download,
   Search,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { toCsv, downloadCsv } from "@/lib/csv"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -55,6 +57,20 @@ export interface DataTableFilter<T> {
   getValue: (row: T) => string
 }
 
+/** Enables a "Download CSV" toolbar button. `parser` is required — CSV
+ * export only activates when the caller supplies a way to flatten a row. */
+export interface DataTableCsv<T> {
+  /** Converts one row into an array of cell values, in column order. */
+  parser: (row: T) => (string | number | null | undefined)[]
+  /** Header row labels, in the same order as `parser`'s output. */
+  headers?: string[]
+  /** Filename without extension. Defaults to "export". */
+  filename?: string
+  /** Export all rows matching the current search/filter/sort ("all", the
+   * default) or only the rows on the current page ("page"). */
+  scope?: "all" | "page"
+}
+
 interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
@@ -79,6 +95,8 @@ interface DataTableProps<T> {
   filters?: DataTableFilter<T>[]
   /** Extra controls rendered on the right of the toolbar (e.g. tabs, buttons). */
   toolbarActions?: React.ReactNode
+  /** Enables a "Download CSV" button in the toolbar. */
+  csv?: DataTableCsv<T>
 }
 
 type SortDir = "asc" | "desc"
@@ -111,6 +129,7 @@ export function DataTable<T>({
   getSearchText,
   filters,
   toolbarActions,
+  csv,
 }: DataTableProps<T>) {
   const [sortId, setSortId] = React.useState<string | null>(
     initialSortId ?? null,
@@ -127,7 +146,8 @@ export function DataTable<T>({
 
   const hasSearch = searchable && Boolean(getSearchText)
   const hasFilters = Boolean(filters && filters.length > 0)
-  const showToolbar = hasSearch || hasFilters || Boolean(toolbarActions)
+  const showToolbar =
+    hasSearch || hasFilters || Boolean(toolbarActions) || Boolean(csv)
 
   // Apply text search + faceted filters before sorting.
   const filtered = React.useMemo(() => {
@@ -208,6 +228,13 @@ export function DataTable<T>({
     }
   }
 
+  function handleDownloadCsv() {
+    if (!csv) return
+    const rows = csv.scope === "page" ? visible : sorted
+    const content = toCsv(rows.map(csv.parser), csv.headers)
+    downloadCsv(csv.filename ?? "export", content)
+  }
+
   const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
   const to = paginated
     ? Math.min(currentPage * size, sorted.length)
@@ -254,8 +281,21 @@ export function DataTable<T>({
                 ))
               : null}
           </div>
-          {toolbarActions ? (
-            <div className="flex items-center gap-2">{toolbarActions}</div>
+          {toolbarActions || csv ? (
+            <div className="flex items-center gap-2">
+              {toolbarActions}
+              {csv ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDownloadCsv}
+                  className="gap-1.5"
+                >
+                  <Download className="size-4" />
+                  Download CSV
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}
