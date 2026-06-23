@@ -230,7 +230,9 @@ export const profileUpdateSchema = z
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),
   address: requiredString("Address"),
-  divisionId: requiredString("Division"),
+  // The merchant's own division is enforced server-side; any divisionId the
+  // client sends is ignored and overwritten.
+  divisionId: z.string().optional(),
   mapLink: z.url("Map link must be a valid URL").optional().or(z.literal("")),
   imageLinks: z
     .array(imageUrl("Each image link"))

@@ -321,7 +321,10 @@ export default function MerchantBusinessPage() {
         </div>
       </div>
 
-      <PickupLocationsManager merchantId={currentMerchant.id} />
+      <PickupLocationsManager
+        merchantId={currentMerchant.id}
+        merchantDivisionId={currentMerchant.divisionId ?? null}
+      />
     </div>
   )
 }
