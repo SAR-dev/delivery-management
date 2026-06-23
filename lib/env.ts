@@ -71,14 +71,27 @@ export function validateEnv(): void {
       minLength(e, "BETTER_AUTH_SECRET", 32, "Auth secret key")
     }
 
-    const env = oneOf(e, "NEXT_PUBLIC_ENV", ["development", "production"], "development")
+    const env = oneOf(
+      e,
+      "NEXT_PUBLIC_ENV",
+      ["development", "production"],
+      "development",
+    )
     if (env === "production") {
-      required(e, "BETTER_AUTH_PRD_URL", "Production app base URL (BETTER_AUTH_PRD_URL)")
+      required(
+        e,
+        "BETTER_AUTH_PRD_URL",
+        "Production app base URL (BETTER_AUTH_PRD_URL)",
+      )
     }
 
     // --- Email (Gmail SMTP) -------------------------------------------------
     required(e, "GMAIL_USER", "Gmail address for sending emails")
-    required(e, "GMAIL_APP_PASSWORD", "Gmail App Password (not your login password)")
+    required(
+      e,
+      "GMAIL_APP_PASSWORD",
+      "Gmail App Password (not your login password)",
+    )
 
     // --- Storage ------------------------------------------------------------
     const provider = oneOf(e, "STORAGE_PROVIDER", ["local", "r2"], "local")
@@ -100,6 +113,6 @@ export function validateEnv(): void {
 
   throw new Error(
     `\n\nMissing or invalid environment variables (${errors.length}):\n\n${lines}\n\n` +
-    `Check your .env file against .env.example and restart the server.\n`,
+      `Check your .env file against .env.example and restart the server.\n`,
   )
 }

@@ -64,6 +64,7 @@ export function ImageUpload({
       {value ? (
         <div className="flex items-start gap-3">
           {hidePreview ? null : (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={value || "/placeholder.svg"}
               alt="Uploaded preview"
@@ -115,7 +116,7 @@ export function ImageUpload({
             <ImageIcon className="size-5" />
           )}
           <span>{uploading ? "Uploading…" : label}</span>
-          <span className="text-xs px-1">PNG, JPG, WEBP up to 5MB</span>
+          <span className="px-1 text-xs">PNG, JPG, WEBP up to 5MB</span>
         </button>
       )}
     </div>

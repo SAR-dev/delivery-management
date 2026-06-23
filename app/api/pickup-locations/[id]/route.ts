@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { division, order, pickupLocation } from "@/lib/db/schema"
+import { division, merchant, order, pickupLocation } from "@/lib/db/schema"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
@@ -49,7 +49,25 @@ export async function PATCH(
 
   const parsed = await parseBody(req, pickupLocationSchema)
   if (parsed.error) return parsed.error
-  const { label, address, divisionId, mapLink, imageLinks } = parsed.data
+  const { label, address, mapLink, imageLinks } = parsed.data
+
+  // A shop's division is never client-controlled — it always mirrors the
+  // merchant's own business division, regardless of what the client sends.
+  const [merchantRow] = await db
+    .select({ divisionId: merchant.divisionId })
+    .from(merchant)
+    .where(eq(merchant.id, owned.row.merchantId))
+    .limit(1)
+  const divisionId = merchantRow?.divisionId ?? null
+  if (!divisionId) {
+    return NextResponse.json(
+      {
+        error:
+          "Set your business's division in your profile before updating a shop.",
+      },
+      { status: 400 },
+    )
+  }
 
   const [div] = await db
     .select({ id: division.id })
@@ -58,7 +76,9 @@ export async function PATCH(
     .limit(1)
   if (!div) {
     return NextResponse.json(
-      { error: "Select a valid division." },
+      {
+        error: "Your business's division is no longer active. Contact support.",
+      },
       { status: 400 },
     )
   }

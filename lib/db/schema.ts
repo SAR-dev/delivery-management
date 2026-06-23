@@ -427,11 +427,11 @@ export const failedMail = pgTable("failed_mail", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  to: text("to").notNull(),               // comma-joined if multiple recipients
+  to: text("to").notNull(), // comma-joined if multiple recipients
   subject: text("subject").notNull(),
   html: text("html"),
   text: text("text"),
-  error: text("error").notNull(),          // lastError.message
+  error: text("error").notNull(), // lastError.message
   attempts: integer("attempts").notNull(), // total attempts made (retries + 1)
   failedAt: ts("failedAt").notNull().defaultNow(),
 })
