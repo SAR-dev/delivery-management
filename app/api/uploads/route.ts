@@ -7,14 +7,15 @@ import {
   UPLOAD_FOLDERS,
   type UploadFolder,
 } from "@/lib/storage/config"
-import { saveR2File } from "@/lib/storage/r2"
+import { saveFile } from "@/lib/storage"
 
 // Accepts a single image file (multipart/form-data) and stores it, returning
 // the public URL. Any signed-in user may upload, since this backs avatars,
 // delivery proof, and pickup-location photos.
 //
-// Files are uploaded to Cloudflare R2 (see lib/storage/r2.ts) and served
-// directly from R2's public URL — no local disk or Docker volume needed.
+// The storage backend is selected by STORAGE_PROVIDER in .env:
+//   local — writes to disk, served via app/uploads/[...path]/route.ts
+//   r2    — uploads to Cloudflare R2, served from R2's public URL
 
 export async function POST(req: Request) {
   const me = await requireSession()
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
   const buffer = Buffer.from(await file.arrayBuffer())
 
   try {
-    const { publicUrl } = await saveR2File(path, buffer, file.type)
+    const { publicUrl } = await saveFile(path, buffer, file.type)
     return NextResponse.json({ url: publicUrl })
   } catch {
     return NextResponse.json(
