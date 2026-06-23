@@ -89,9 +89,7 @@ export default function LoginPage() {
       {/* Brand panel */}
       <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
         <div className="flex items-center gap-2">
-          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
-            <BrandIcon className="size-5" />
-          </div>
+          <BrandIcon className="size-5" />
           <span className="text-lg font-semibold tracking-tight">
             {siteConfig.name}
           </span>

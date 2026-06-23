@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react"
 import Link from "next/link"
-import { CheckCircle2, Loader2, Store, ArrowRight } from "lucide-react"
+import { CheckCircle2, Loader2, ArrowRight } from "lucide-react"
+import { SiteIcon, siteConfig } from "@/config/site"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -108,11 +109,9 @@ export default function RegisterPage() {
       {/* Brand panel */}
       <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
         <div className="flex items-center gap-2">
-          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
-            <Store className="size-5" />
-          </div>
+          <SiteIcon className="size-5" />
           <span className="text-lg font-semibold tracking-tight">
-            ParcelFlow
+            {siteConfig.name}
           </span>
         </div>
 
@@ -152,10 +151,10 @@ export default function RegisterPage() {
         <div className="w-full max-w-md">
           <div className="mb-8 flex items-center gap-2 lg:hidden">
             <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
-              <Store className="size-5" />
+              <SiteIcon className="size-5" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
-              ParcelFlow
+              {siteConfig.name}
             </span>
           </div>
 

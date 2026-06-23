@@ -11,8 +11,6 @@ import {
   PackageCheck,
   Bike,
   ListChecks,
-  ShieldCheck,
-  Shield,
   Warehouse as WarehouseIcon,
   UserCog,
   Building2,
@@ -20,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import type { Role } from "@/lib/types"
+import { ParcelIcon } from "@/icons/ParcelIcon"
 
 export interface SidebarNavItem {
   href: string
@@ -29,7 +28,9 @@ export interface SidebarNavItem {
 }
 
 export interface SidebarConfig {
-  brandIcon: LucideIcon
+  // The brand mark accepts either a Lucide icon or the inline SVG ParcelIcon —
+  // both satisfy React.ComponentType<React.SVGProps<SVGSVGElement>>.
+  brandIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>
   roleLabel: string
   items: SidebarNavItem[]
 }
@@ -37,7 +38,7 @@ export interface SidebarConfig {
 // Super Admins oversee the whole platform and are the only role that can
 // provision Admin / Warehouse Admin accounts (the "Admins" page).
 export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: ShieldCheck,
+  brandIcon: ParcelIcon,
   roleLabel: "Super Admin",
   items: [
     {
@@ -49,6 +50,7 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/orders", label: "Orders", icon: Package },
     { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
     { href: "/dashboard/team", label: "Admins", icon: Users },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
     { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
     {
@@ -69,7 +71,7 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
 // Admins handle day-to-day operations: order approval, merchant pricing, and
 // managing the rider roster (the "Riders" page).
 export const ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: Shield,
+  brandIcon: ParcelIcon,
   roleLabel: "Admin",
   items: [
     {
@@ -98,7 +100,7 @@ export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
 }
 
 export const MERCHANT_SIDEBAR: SidebarConfig = {
-  brandIcon: Store,
+  brandIcon: ParcelIcon,
   roleLabel: "Merchant",
   items: [
     {
@@ -125,7 +127,7 @@ export const MERCHANT_SIDEBAR: SidebarConfig = {
 }
 
 export const WAREHOUSE_SIDEBAR: SidebarConfig = {
-  brandIcon: WarehouseIcon,
+  brandIcon: ParcelIcon,
   roleLabel: "Warehouse",
   items: [
     {
@@ -174,7 +176,7 @@ export const WAREHOUSE_SIDEBAR: SidebarConfig = {
 }
 
 export const RIDER_SIDEBAR: SidebarConfig = {
-  brandIcon: Bike,
+  brandIcon: ParcelIcon,
   roleLabel: "Rider",
   items: [
     { href: "/rider", label: "To-do", icon: ListChecks, exact: true },

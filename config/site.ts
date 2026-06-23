@@ -1,14 +1,10 @@
-import { ShieldCheck, type LucideIcon } from "lucide-react"
 import siteData from "@/config/site.json"
+import { ParcelIcon } from "@/icons/ParcelIcon"
 
 // Single source of truth for the site's identity (name, tagline, brand icon).
-// Plain text lives in config/site.json so it can be edited without touching
-// code; the icon can't live in JSON, so we map the JSON `icon` name to a
-// concrete lucide component here. Add an entry to ICONS if you change the icon
-// in site.json.
-const ICONS: Record<string, LucideIcon> = {
-  ShieldCheck,
-}
+// The icon is an inline SVG React component sourced from /public/icon.svg so
+// it renders identically on every page — login, register, nav, and all app
+// sidebars — without relying on a Lucide component.
 
 export interface SiteConfig {
   /** Product / brand name, shown in nav, login, and metadata. */
@@ -17,16 +13,16 @@ export interface SiteConfig {
   tagline: string
   /** Used as the default <meta name="description"> for the app. */
   description: string
-  /** The brand mark, resolved from the JSON icon name. */
-  icon: LucideIcon
+  /** The brand mark as an inline-SVG React component. */
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
 }
 
 export const siteConfig: SiteConfig = {
   name: siteData.name,
   tagline: siteData.tagline,
   description: siteData.description,
-  icon: ICONS[siteData.icon] ?? ShieldCheck,
+  icon: ParcelIcon,
 }
 
 // Convenience alias so callers can render <SiteIcon /> directly.
-export const SiteIcon = siteConfig.icon
+export const SiteIcon = ParcelIcon
