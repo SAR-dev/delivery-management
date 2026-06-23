@@ -21,6 +21,7 @@
     "db:seed:min": "tsx lib/db/seed.ts --min"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
     "@base-ui/react": "^1.5.0",
     "@paralleldrive/cuid2": "^3.3.0",
     "@vercel/analytics": "1.6.1",
