@@ -76,6 +76,10 @@ export function validateEnv(): void {
       required(e, "BETTER_AUTH_PRD_URL", "Production app base URL (BETTER_AUTH_PRD_URL)")
     }
 
+    // --- Email (Gmail SMTP) -------------------------------------------------
+    required(e, "GMAIL_USER", "Gmail address for sending emails")
+    required(e, "GMAIL_APP_PASSWORD", "Gmail App Password (not your login password)")
+
     // --- Storage ------------------------------------------------------------
     const provider = oneOf(e, "STORAGE_PROVIDER", ["local", "r2"], "local")
 

@@ -31,7 +31,7 @@ import {
   order,
   payoutRequest,
 } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Division IDs — stable so seeded entities can reference them by name.
@@ -123,6 +123,22 @@ async function createUser(input: {
   })
 
   log(`  created user ${input.email} (${input.role})`)
+}
+
+// ---------------------------------------------------------------------------
+// Clean — delete everything in reverse FK order so constraints don't fire.
+// ---------------------------------------------------------------------------
+
+async function cleanDatabase() {
+  log("Cleaning existing data…")
+
+  // TRUNCATE with CASCADE lets Postgres resolve all FK dependencies in one shot,
+  // so we don't have to manually maintain deletion order.
+  await db.execute(
+    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division" CASCADE`
+  )
+
+  log("Clean complete.\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -1331,6 +1347,8 @@ async function main() {
   )
 
   try {
+    await cleanDatabase()
+
     await seedDivisions() // must come first — other entities reference divisions
     await seedWarehouses()
     await seedRiders()
