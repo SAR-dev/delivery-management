@@ -134,6 +134,33 @@ export default function WarehouseIntakePage() {
       ),
     },
     {
+      id: "notes",
+      header: "Notes",
+      cell: (o) => (
+        <div className="flex items-center gap-1.5">
+          {o.merchantNote ? (
+            <span
+              title={o.merchantNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400"
+            >
+              M
+            </span>
+          ) : null}
+          {o.receiverNote ? (
+            <span
+              title={o.receiverNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-600 dark:bg-red-950 dark:text-red-400"
+            >
+              R
+            </span>
+          ) : null}
+          {!o.merchantNote && !o.receiverNote ? (
+            <span className="text-muted-foreground/50 text-xs">—</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
       id: "status",
       header: "Status",
       sortable: true,

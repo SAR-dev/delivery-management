@@ -96,4 +96,5 @@ export interface CreateOrderInput {
   parcelWeightKg: number
   deliveryType: DeliveryType
   productCost: number
+  merchantNote?: string | null
 }

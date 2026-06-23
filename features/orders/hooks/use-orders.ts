@@ -224,6 +224,43 @@ export function useOrders() {
     [patchOrder],
   )
 
+  // Public mutation — used from the tracking page without a session. Updates
+  // receiverNote optimistically and reconciles with the server row.
+  const updateReceiverNote = useCallback(
+    async (orderId: string, receiverNote: string): Promise<Result> => {
+      try {
+        await mutate(
+          async (current?: Order[]) => {
+            const res = await fetch(`/api/orders/${orderId}/receiver-note`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ receiverNote }),
+            })
+            const resData = await res.json().catch(() => null)
+            if (!res.ok) {
+              throw new ApiError(resData?.error ?? "Failed to save note.")
+            }
+            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
+          },
+          {
+            optimisticData: (list: Order[] = []) =>
+              list.map((o) =>
+                o.id === orderId ? { ...o, receiverNote } : o,
+              ),
+            rollbackOnError: true,
+            populateCache: true,
+            revalidate: false,
+          },
+        )
+        return { ok: true }
+      } catch (err) {
+        if (err instanceof ApiError) return { ok: false, error: err.message }
+        return { ok: false, error: "Network error. Please try again." }
+      }
+    },
+    [mutate],
+  )
+
   return {
     orders,
     warehouseFailedOrders,
@@ -244,5 +281,6 @@ export function useOrders() {
     reattemptFailedOrder,
     returnFailedOrder,
     settleOrderCod,
+    updateReceiverNote,
   }
 }

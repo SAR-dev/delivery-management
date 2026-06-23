@@ -407,6 +407,11 @@ export const order = pgTable("order", {
   returnedAt: ts("returnedAt"),
   returnReason: text("returnReason"),
 
+  // Notes — merchant can add a note at order creation; receiver (recipient)
+  // can add a note via the tracking page before delivery.
+  merchantNote: text("merchantNote"),
+  receiverNote: text("receiverNote"),
+
   // COD reconciliation — rider settles cash with Warehouse Admin.
   codSettledAt: ts("codSettledAt"),
   codSettledBy: text("codSettledBy"),

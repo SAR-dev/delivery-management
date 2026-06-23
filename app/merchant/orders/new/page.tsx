@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -55,6 +56,7 @@ interface ParcelState {
   parcelWeightKg: string
   deliveryType: DeliveryType
   productCost: string
+  merchantNote: string
 }
 
 function emptyParcel(): ParcelState {
@@ -70,6 +72,7 @@ function emptyParcel(): ParcelState {
     parcelWeightKg: "1",
     deliveryType: "STANDARD",
     productCost: "",
+    merchantNote: "",
   }
 }
 
@@ -98,6 +101,7 @@ export default function NewOrderPage() {
   const [pickupLocationId, setPickupLocationId] = useState("")
   const [parcels, setParcels] = useState<ParcelState[]>([emptyParcel()])
   const [submitting, setSubmitting] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   function updateParcel<K extends keyof ParcelState>(
     id: string,
@@ -215,6 +219,7 @@ export default function NewOrderPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setSubmitAttempted(true)
     if (!pickupLocationId) {
       toast.error("Select a pickup location.")
       return
@@ -248,6 +253,7 @@ export default function NewOrderPage() {
       parcelWeightKg: Number(p.parcelWeightKg) || 0,
       deliveryType: p.deliveryType,
       productCost: Number(p.productCost) || 0,
+      merchantNote: p.merchantNote.trim() || null,
     }))
 
     setSubmitting(true)
@@ -466,7 +472,7 @@ export default function NewOrderPage() {
                               <SelectTrigger
                                 id={`division-${p.id}`}
                                 className="w-full"
-                                aria-invalid={p.deliveryDivisionId.length === 0}
+                                aria-invalid={submitAttempted && p.deliveryDivisionId.length === 0}
                               >
                                 <SelectValue placeholder="Select a division">
                                   {
@@ -637,6 +643,32 @@ export default function NewOrderPage() {
                               required
                             />
                           </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`note-${p.id}`}>
+                            Note{" "}
+                            <span className="text-muted-foreground font-normal">
+                              (optional, max 100 chars)
+                            </span>
+                          </Label>
+                          <Textarea
+                            id={`note-${p.id}`}
+                            value={p.merchantNote}
+                            onChange={(e) =>
+                              updateParcel(
+                                p.id,
+                                "merchantNote",
+                                e.target.value.slice(0, 100),
+                              )
+                            }
+                            placeholder="Any special instructions for this parcel…"
+                            rows={2}
+                            className="resize-none"
+                          />
+                          <p className="text-muted-foreground text-right text-xs tabular-nums">
+                            {p.merchantNote.length}/100
+                          </p>
                         </div>
 
                         {row.exceedsMax && (

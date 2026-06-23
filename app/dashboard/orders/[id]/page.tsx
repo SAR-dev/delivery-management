@@ -271,6 +271,32 @@ export default function OrderDetailPage() {
             </Section>
           </div>
 
+          {/* Notes */}
+          {(order.merchantNote || order.receiverNote) && (
+            <div className="bg-card border-border border p-6">
+              <Section title="Notes">
+                <div className="space-y-4">
+                  {order.merchantNote && (
+                    <div>
+                      <p className="text-muted-foreground mb-1 text-[11px] font-medium tracking-wide uppercase">
+                        Note from merchant
+                      </p>
+                      <p className="text-sm leading-relaxed">{order.merchantNote}</p>
+                    </div>
+                  )}
+                  {order.receiverNote && (
+                    <div>
+                      <p className="text-muted-foreground mb-1 text-[11px] font-medium tracking-wide uppercase">
+                        Note from recipient
+                      </p>
+                      <p className="text-sm leading-relaxed">{order.receiverNote}</p>
+                    </div>
+                  )}
+                </div>
+              </Section>
+            </div>
+          )}
+
           {/* Payment */}
           <div className="bg-card border-border rounded-b-xl border p-6 pb-0">
             <Section title="Payment">
