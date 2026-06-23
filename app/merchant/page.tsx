@@ -267,6 +267,29 @@ export default function MerchantOverviewPage() {
               data={myOrders}
               getRowKey={(o) => o.id}
               initialSortId="tracking"
+              csv={{
+                filename: "orders",
+                headers: [
+                  "Tracking",
+                  "Recipient",
+                  "City",
+                  "Pickup",
+                  "Weight (KG)",
+                  "Delivery charge",
+                  "Collectible",
+                  "Status",
+                ],
+                parser: (o) => [
+                  o.code,
+                  o.recipientName,
+                  o.deliveryCity,
+                  pickup(o.pickupLocationId)?.label ?? "",
+                  o.parcelWeightKg,
+                  o.deliveryCharge,
+                  o.totalCollectible,
+                  o.status,
+                ],
+              }}
             />
           )}
         </CardContent>
