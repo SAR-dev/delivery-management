@@ -53,22 +53,42 @@ interface FormState {
   imageLinks: string[]
 }
 
-function emptyForm(): FormState {
-  return { label: "", address: "", divisionId: "", mapLink: "", imageLinks: [] }
+function emptyForm(merchantDivisionId: string | null): FormState {
+  return {
+    label: "",
+    address: "",
+    divisionId: merchantDivisionId ?? "",
+    mapLink: "",
+    imageLinks: [],
+  }
 }
 
-function formFromLocation(loc: PickupLocation): FormState {
+function formFromLocation(
+  loc: PickupLocation,
+  merchantDivisionId: string | null,
+): FormState {
   const links = (loc.imageLinks ?? []).filter((l) => l.trim().length > 0)
   return {
     label: loc.label,
     address: loc.address,
-    divisionId: loc.divisionId ?? "",
+    // Always the merchant's own division — a shop can never belong to a
+    // different one, even if older data has drifted from it.
+    divisionId: merchantDivisionId ?? loc.divisionId ?? "",
     mapLink: loc.mapLink ?? "",
     imageLinks: links,
   }
 }
 
-export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
+export function PickupLocationsManager({
+  merchantId,
+  merchantDivisionId,
+}: {
+  merchantId: string
+  // The merchant's own business division. Every shop (pickup location) must
+  // belong to this division — it's preselected and locked from editing here,
+  // mirroring the same rule enforced server-side.
+  merchantDivisionId: string | null
+}) {
   const {
     pickupLocations,
     createPickupLocation,
@@ -85,7 +105,7 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
   // editing === null && dialogOpen means "adding"; editing set means "editing".
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<PickupLocation | null>(null)
-  const [form, setForm] = useState<FormState>(emptyForm())
+  const [form, setForm] = useState<FormState>(emptyForm(merchantDivisionId))
   const [saving, setSaving] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<PickupLocation | null>(null)
@@ -93,13 +113,13 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
 
   function openAdd() {
     setEditing(null)
-    setForm(emptyForm())
+    setForm(emptyForm(merchantDivisionId))
     setDialogOpen(true)
   }
 
   function openEdit(loc: PickupLocation) {
     setEditing(loc)
-    setForm(formFromLocation(loc))
+    setForm(formFromLocation(loc, merchantDivisionId))
     setDialogOpen(true)
   }
 
@@ -172,9 +192,20 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
           <CardDescription>
             Register your shops with a map link and photos so riders can find
             them quickly.
+            {!merchantDivisionId && (
+              <span className="text-destructive mt-1 block">
+                Set your business's division in the profile above before
+                adding a shop.
+              </span>
+            )}
           </CardDescription>
           <CardAction>
-            <Button type="button" size="sm" onClick={openAdd}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={openAdd}
+              disabled={!merchantDivisionId}
+            >
               <Plus className="size-3.5" />
               Add shop
             </Button>
@@ -302,6 +333,7 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
                 onValueChange={(v) =>
                   setForm((prev) => ({ ...prev, divisionId: v ?? "" }))
                 }
+                disabled
               >
                 <SelectTrigger
                   id="shop-division"
@@ -323,6 +355,10 @@ export function PickupLocationsManager({ merchantId }: { merchantId: string }) {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-muted-foreground text-xs">
+                Shops always belong to your business's division and can't be
+                changed here.
+              </p>
             </div>
 
             <div className="flex flex-col gap-2">

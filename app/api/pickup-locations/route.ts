@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { division, pickupLocation } from "@/lib/db/schema"
+import { division, merchant, pickupLocation } from "@/lib/db/schema"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
@@ -34,7 +34,25 @@ export async function POST(req: Request) {
 
   const parsed = await parseBody(req, pickupLocationSchema)
   if (parsed.error) return parsed.error
-  const { label, address, divisionId, mapLink, imageLinks } = parsed.data
+  const { label, address, mapLink, imageLinks } = parsed.data
+
+  // A shop's division is never client-controlled — it always mirrors the
+  // merchant's own business division, regardless of what the client sends.
+  const [merchantRow] = await db
+    .select({ divisionId: merchant.divisionId })
+    .from(merchant)
+    .where(eq(merchant.id, me.merchantId))
+    .limit(1)
+  const divisionId = merchantRow?.divisionId ?? null
+  if (!divisionId) {
+    return NextResponse.json(
+      {
+        error:
+          "Set your business's division in your profile before adding a shop.",
+      },
+      { status: 400 },
+    )
+  }
 
   // The division must exist and be active so parcels picked up here can be
   // routed to a hub serving that division.
@@ -45,7 +63,10 @@ export async function POST(req: Request) {
     .limit(1)
   if (!div) {
     return NextResponse.json(
-      { error: "Select a valid division." },
+      {
+        error:
+          "Your business's division is no longer active. Contact support.",
+      },
       { status: 400 },
     )
   }
