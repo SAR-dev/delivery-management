@@ -96,22 +96,22 @@ const justifyClass: Record<Align, string> = {
 }
 
 export function DataTable<T>({
-  columns,
-  data,
-  getRowKey,
-  pageSize = 10,
-  pageSizeOptions,
-  initialSortId,
-  initialSortDir = "asc",
-  emptyMessage = "No records to display.",
-  onRowClick,
-  className,
-  searchable = false,
-  searchPlaceholder = "Search…",
-  getSearchText,
-  filters,
-  toolbarActions,
-}: DataTableProps<T>) {
+                               columns,
+                               data,
+                               getRowKey,
+                               pageSize = 10,
+                               pageSizeOptions,
+                               initialSortId,
+                               initialSortDir = "asc",
+                               emptyMessage = "No records to display.",
+                               onRowClick,
+                               className,
+                               searchable = false,
+                               searchPlaceholder = "Search…",
+                               getSearchText,
+                               filters,
+                               toolbarActions,
+                             }: DataTableProps<T>) {
   const [sortId, setSortId] = React.useState<string | null>(
     initialSortId ?? null,
   )
@@ -149,7 +149,7 @@ export function DataTable<T>({
       }
     }
     return rows
-  }, [data, getSearchText, query, hasFilters, filters, filterValues])
+  }, [data, getSearchText, query, hasSearch, hasFilters, filters, filterValues])
 
   const sorted = React.useMemo(() => {
     if (!sortId) return filtered
@@ -181,21 +181,16 @@ export function DataTable<T>({
     ? Math.max(1, Math.ceil(sorted.length / size))
     : 1
 
-  // Keep the current page within range when data or page size changes.
-  React.useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), totalPages))
-  }, [totalPages])
-
-  // Reset to the first page whenever the query or filters change.
-  React.useEffect(() => {
-    setPage(1)
-  }, [query, filterValues])
+  // Clamp page during render — avoids the extra render cycle that
+  // setState-in-effect causes. Page resets to 1 when query/filters change
+  // because totalPages changes, which clamps down naturally.
+  const currentPage = Math.min(Math.max(1, page), totalPages)
 
   const visible = React.useMemo(() => {
     if (!paginated) return sorted
-    const start = (page - 1) * size
+    const start = (currentPage - 1) * size
     return sorted.slice(start, start + size)
-  }, [sorted, page, size])
+  }, [sorted, currentPage, size, paginated])
 
   function toggleSort(col: DataTableColumn<T>) {
     if (!col.sortable || !col.sortValue) return
@@ -213,8 +208,8 @@ export function DataTable<T>({
     }
   }
 
-  const from = sorted.length === 0 ? 0 : (page - 1) * size + 1
-  const to = paginated ? Math.min(page * size, sorted.length) : sorted.length
+  const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
+  const to = paginated ? Math.min(currentPage * size, sorted.length) : sorted.length
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -234,27 +229,27 @@ export function DataTable<T>({
             ) : null}
             {hasFilters && filters
               ? filters.map((f) => (
-                  <label key={f.id} className="flex items-center gap-1.5">
-                    <span className="sr-only">{f.label}</span>
-                    <select
-                      value={filterValues[f.id] ?? "__all__"}
-                      onChange={(e) =>
-                        setFilterValues((prev) => ({
-                          ...prev,
-                          [f.id]: e.target.value,
-                        }))
-                      }
-                      className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
-                    >
-                      <option value="__all__">{f.label}: All</option>
-                      {f.options.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))
+                <label key={f.id} className="flex items-center gap-1.5">
+                  <span className="sr-only">{f.label}</span>
+                  <select
+                    value={filterValues[f.id] ?? "__all__"}
+                    onChange={(e) =>
+                      setFilterValues((prev) => ({
+                        ...prev,
+                        [f.id]: e.target.value,
+                      }))
+                    }
+                    className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
+                  >
+                    <option value="__all__">{f.label}: All</option>
+                    {f.options.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))
               : null}
           </div>
           {toolbarActions ? (
@@ -380,7 +375,7 @@ export function DataTable<T>({
               size="icon"
               className="size-8"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
+              disabled={currentPage <= 1}
               aria-label="Previous page"
             >
               <ChevronLeft className="size-4" />
@@ -390,7 +385,7 @@ export function DataTable<T>({
               size="icon"
               className="size-8"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
+              disabled={currentPage >= totalPages}
               aria-label="Next page"
             >
               <ChevronRight className="size-4" />

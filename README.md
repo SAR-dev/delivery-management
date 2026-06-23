@@ -49,7 +49,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Scripts
 
 | Command          | What it does                       |
-|------------------|------------------------------------|
+| ---------------- | ---------------------------------- |
 | `pnpm dev`       | Start the development server       |
 | `pnpm build`     | Production build                   |
 | `pnpm start`     | Run the production build           |
@@ -62,7 +62,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Roles & Areas
 
 | Role      | Area         | What they do                                                         |
-|-----------|--------------|----------------------------------------------------------------------|
+| --------- | ------------ | -------------------------------------------------------------------- |
 | Admin     | `/dashboard` | Orders, merchants, riders, payouts, team, reconciliation             |
 | Merchant  | `/merchant`  | Create orders, track deliveries, request payouts                     |
 | Warehouse | `/warehouse` | Intake, dispatch, order progress, hub riders, exceptions, cash recon |
@@ -74,7 +74,7 @@ Every rider belongs to exactly one **home warehouse** and has a **task type**
 that is independent of that warehouse:
 
 | Task type  | Does                                      |
-|------------|-------------------------------------------|
+| ---------- | ----------------------------------------- |
 | `PICKUP`   | Collects parcels from merchants           |
 | `DELIVERY` | Runs the final-mile delivery from the hub |
 | `BOTH`     | Handles either leg                        |
@@ -95,7 +95,7 @@ Public order tracking is available at `/track`.
 After seeding, sign in at `/login` with any of the following:
 
 | Role            | Name            | Email                      | Password        |
-|-----------------|-----------------|----------------------------|-----------------|
+| --------------- | --------------- | -------------------------- | --------------- |
 | Super Admin     | Nadia Rahman    | `superadmin@parcelflow.io` | `superadmin123` |
 | Admin           | Tanvir Hossain  | `tanvir@parcelflow.io`     | `admin123`      |
 | Admin           | Sadia Karim     | `sadia@parcelflow.io`      | `admin123`      |

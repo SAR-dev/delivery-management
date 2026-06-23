@@ -227,7 +227,11 @@ HTML templates live in `lib/mail-templates.ts`.
 ```ts
 import { sendMail } from "@/lib/mailer"
 
-await sendMail({ to: "user@example.com", subject: "Your order", html: template })
+await sendMail({
+  to: "user@example.com",
+  subject: "Your order",
+  html: template,
+})
 ```
 
 Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`.
@@ -253,7 +257,9 @@ Example: the `rider.taskType` column added recently.
    ```ts
    export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
    // ...
-   taskType: text("taskType", { enum: riderTaskTypes }).notNull().default("DELIVERY")
+   taskType: text("taskType", { enum: riderTaskTypes })
+     .notNull()
+     .default("DELIVERY")
    ```
 2. **Type** — if a named union helps, add it to `lib/types.ts`:
    ```ts
@@ -281,11 +287,11 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
    `lib/validation.ts`.
 4. **API routes**:
-    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-      handler with `requireSession()`; gate writes by `me.role`.
-    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-      role-scoped — **enforce it server-side; Neon has no RLS.**
+   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+     handler with `requireSession()`; gate writes by `me.role`.
+   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+     role-scoped — **enforce it server-side; Neon has no RLS.**
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic

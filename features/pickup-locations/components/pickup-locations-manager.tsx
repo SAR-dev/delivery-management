@@ -194,8 +194,8 @@ export function PickupLocationsManager({
             them quickly.
             {!merchantDivisionId && (
               <span className="text-destructive mt-1 block">
-                Set your business's division in the profile above before
-                adding a shop.
+                Set your business's division in the profile above before adding
+                a shop.
               </span>
             )}
           </CardDescription>

@@ -135,7 +135,7 @@ async function cleanDatabase() {
   // TRUNCATE with CASCADE lets Postgres resolve all FK dependencies in one shot,
   // so we don't have to manually maintain deletion order.
   await db.execute(
-    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division" CASCADE`
+    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division" CASCADE`,
   )
 
   log("Clean complete.\n")

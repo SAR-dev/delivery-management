@@ -64,8 +64,7 @@ export async function POST(req: Request) {
   if (!div) {
     return NextResponse.json(
       {
-        error:
-          "Your business's division is no longer active. Contact support.",
+        error: "Your business's division is no longer active. Contact support.",
       },
       { status: 400 },
     )
