@@ -90,7 +90,7 @@ export const ORDER_TRANSITIONS = {
       if (!riderRow || !riderRow.isActive) {
         return { error: "Select an active pickup rider.", status: 400 }
       }
-      if (riderRow.warehouseId) {
+      if (riderRow.taskType === "DELIVERY") {
         return {
           error:
             "Select a pickup rider — this rider is a warehouse delivery rider.",
@@ -151,6 +151,12 @@ export const ORDER_TRANSITIONS = {
       if (riderRow.warehouseId !== session.warehouseId) {
         return {
           error: "Select a delivery rider based at this warehouse.",
+          status: 400,
+        }
+      }
+      if (riderRow.taskType === "PICKUP") {
+        return {
+          error: "Select a delivery rider — this rider is a pickup rider.",
           status: 400,
         }
       }

@@ -115,7 +115,7 @@ export function ImageUpload({
             <ImageIcon className="size-5" />
           )}
           <span>{uploading ? "Uploading…" : label}</span>
-          <span className="text-xs">PNG, JPG, WEBP up to 5MB</span>
+          <span className="text-xs px-1">PNG, JPG, WEBP up to 5MB</span>
         </button>
       )}
     </div>
