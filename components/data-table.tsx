@@ -96,22 +96,22 @@ const justifyClass: Record<Align, string> = {
 }
 
 export function DataTable<T>({
-                               columns,
-                               data,
-                               getRowKey,
-                               pageSize = 10,
-                               pageSizeOptions,
-                               initialSortId,
-                               initialSortDir = "asc",
-                               emptyMessage = "No records to display.",
-                               onRowClick,
-                               className,
-                               searchable = false,
-                               searchPlaceholder = "Search…",
-                               getSearchText,
-                               filters,
-                               toolbarActions,
-                             }: DataTableProps<T>) {
+  columns,
+  data,
+  getRowKey,
+  pageSize = 10,
+  pageSizeOptions,
+  initialSortId,
+  initialSortDir = "asc",
+  emptyMessage = "No records to display.",
+  onRowClick,
+  className,
+  searchable = false,
+  searchPlaceholder = "Search…",
+  getSearchText,
+  filters,
+  toolbarActions,
+}: DataTableProps<T>) {
   const [sortId, setSortId] = React.useState<string | null>(
     initialSortId ?? null,
   )
@@ -209,7 +209,9 @@ export function DataTable<T>({
   }
 
   const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
-  const to = paginated ? Math.min(currentPage * size, sorted.length) : sorted.length
+  const to = paginated
+    ? Math.min(currentPage * size, sorted.length)
+    : sorted.length
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -229,27 +231,27 @@ export function DataTable<T>({
             ) : null}
             {hasFilters && filters
               ? filters.map((f) => (
-                <label key={f.id} className="flex items-center gap-1.5">
-                  <span className="sr-only">{f.label}</span>
-                  <select
-                    value={filterValues[f.id] ?? "__all__"}
-                    onChange={(e) =>
-                      setFilterValues((prev) => ({
-                        ...prev,
-                        [f.id]: e.target.value,
-                      }))
-                    }
-                    className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
-                  >
-                    <option value="__all__">{f.label}: All</option>
-                    {f.options.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))
+                  <label key={f.id} className="flex items-center gap-1.5">
+                    <span className="sr-only">{f.label}</span>
+                    <select
+                      value={filterValues[f.id] ?? "__all__"}
+                      onChange={(e) =>
+                        setFilterValues((prev) => ({
+                          ...prev,
+                          [f.id]: e.target.value,
+                        }))
+                      }
+                      className="border-input bg-background text-foreground h-9 rounded-md border px-2 text-sm"
+                    >
+                      <option value="__all__">{f.label}: All</option>
+                      {f.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))
               : null}
           </div>
           {toolbarActions ? (

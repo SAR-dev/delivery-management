@@ -281,7 +281,9 @@ export default function OrderDetailPage() {
                       <p className="text-muted-foreground mb-1 text-[11px] font-medium tracking-wide uppercase">
                         Note from merchant
                       </p>
-                      <p className="text-sm leading-relaxed">{order.merchantNote}</p>
+                      <p className="text-sm leading-relaxed">
+                        {order.merchantNote}
+                      </p>
                     </div>
                   )}
                   {order.receiverNote && (
@@ -289,7 +291,9 @@ export default function OrderDetailPage() {
                       <p className="text-muted-foreground mb-1 text-[11px] font-medium tracking-wide uppercase">
                         Note from recipient
                       </p>
-                      <p className="text-sm leading-relaxed">{order.receiverNote}</p>
+                      <p className="text-sm leading-relaxed">
+                        {order.receiverNote}
+                      </p>
                     </div>
                   )}
                 </div>

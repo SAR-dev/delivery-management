@@ -10,7 +10,11 @@ interface Props {
   isTerminal: boolean
 }
 
-export function ReceiverNoteWidget({ orderId, initialNote, isTerminal }: Props) {
+export function ReceiverNoteWidget({
+  orderId,
+  initialNote,
+  isTerminal,
+}: Props) {
   const [note, setNote] = useState(initialNote ?? "")
   const [saved, setSaved] = useState(!!initialNote)
   const [saving, setSaving] = useState(false)
@@ -86,7 +90,7 @@ export function ReceiverNoteWidget({ orderId, initialNote, isTerminal }: Props) 
               <button
                 onClick={handleSave}
                 disabled={saving || !dirty || !note.trim()}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium shadow-sm transition-colors disabled:cursor-not-allowed"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
                   <>

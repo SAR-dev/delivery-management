@@ -117,11 +117,7 @@ export const merchantPricingSchema = z
   })
 
 const noteField = (label: string) =>
-  z
-    .string()
-    .trim()
-    .max(100, `${label} cannot exceed 100 characters`)
-    .nullish()
+  z.string().trim().max(100, `${label} cannot exceed 100 characters`).nullish()
 
 export const orderCreateSchema = z.object({
   pickupLocationId: requiredString("Pickup location"),

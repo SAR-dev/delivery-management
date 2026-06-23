@@ -244,9 +244,7 @@ export function useOrders() {
           },
           {
             optimisticData: (list: Order[] = []) =>
-              list.map((o) =>
-                o.id === orderId ? { ...o, receiverNote } : o,
-              ),
+              list.map((o) => (o.id === orderId ? { ...o, receiverNote } : o)),
             rollbackOnError: true,
             populateCache: true,
             revalidate: false,

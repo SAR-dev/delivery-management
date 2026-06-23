@@ -472,7 +472,10 @@ export default function NewOrderPage() {
                               <SelectTrigger
                                 id={`division-${p.id}`}
                                 className="w-full"
-                                aria-invalid={submitAttempted && p.deliveryDivisionId.length === 0}
+                                aria-invalid={
+                                  submitAttempted &&
+                                  p.deliveryDivisionId.length === 0
+                                }
                               >
                                 <SelectValue placeholder="Select a division">
                                   {
