@@ -219,13 +219,6 @@ export default function WarehouseExceptionsPage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, merchant, rider, city"
-            getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${
-                rider(o.deliveryRiderId)?.name ?? ""
-              } ${o.deliveryCity} ${o.recipientName}`
-            }
             emptyMessage={
               tab === "NEEDS_ACTION"
                 ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."

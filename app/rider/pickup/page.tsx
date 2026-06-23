@@ -167,13 +167,6 @@ export default function RiderPickupQueuePage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, merchant, pickup location"
-            getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${
-                pickup(o.pickupLocationId)?.label ?? ""
-              } ${o.deliveryCity}`
-            }
             emptyMessage={
               tab === "TO_COLLECT"
                 ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."

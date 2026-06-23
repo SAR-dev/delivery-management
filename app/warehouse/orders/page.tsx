@@ -217,13 +217,6 @@ export default function WarehouseOrdersPage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
-            searchable
-            searchPlaceholder="Search code, merchant, rider, city"
-            getSearchText={(o) =>
-              `${o.code} ${merchantName(o.merchantId)} ${
-                rider(o.deliveryRiderId)?.name ?? ""
-              } ${o.deliveryCity} ${o.recipientName}`
-            }
             emptyMessage="No orders to show for this view."
             onRowClick={openOrder}
           />

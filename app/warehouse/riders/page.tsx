@@ -140,9 +140,6 @@ export default function WarehouseRidersPage() {
             data={riders}
             getRowKey={(r) => r.id}
             initialSortId="name"
-            searchable
-            searchPlaceholder="Search name, zone, phone"
-            getSearchText={(r) => `${r.name} ${r.zone} ${r.phone}`}
             emptyMessage="No riders are based at this warehouse yet."
             onRowClick={handleRowClick}
           />

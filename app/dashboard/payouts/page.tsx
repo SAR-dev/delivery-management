@@ -284,11 +284,6 @@ export default function PayoutsPage() {
             getRowKey={(p) => p.id}
             initialSortId="requested"
             initialSortDir="desc"
-            searchable
-            searchPlaceholder="Search code, merchant, method"
-            getSearchText={(p) =>
-              `${p.code} ${merchantName(p.merchantId)} ${p.payoutMethod} ${p.payoutDetails}`
-            }
             emptyMessage={
               tab === "PENDING"
                 ? "No payout requests to review. New merchant requests will appear here."

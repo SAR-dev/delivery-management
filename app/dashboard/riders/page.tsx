@@ -161,9 +161,6 @@ export default function RidersPage() {
             data={riders}
             getRowKey={(r) => r.id}
             initialSortId="name"
-            searchable
-            searchPlaceholder="Search name, zone, phone"
-            getSearchText={(r) => `${r.name} ${r.zone} ${r.phone}`}
             emptyMessage="No riders yet. Add one to get started."
             onRowClick={handleRowClick}
           />

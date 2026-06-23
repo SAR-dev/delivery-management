@@ -308,11 +308,6 @@ export default function MerchantFinancePage() {
               getRowKey={(p) => p.id}
               initialSortId="requested"
               initialSortDir="desc"
-              searchable
-              searchPlaceholder="Search code, method"
-              getSearchText={(p) =>
-                `${p.code} ${p.payoutMethod} ${p.payoutDetails}`
-              }
               csv={{
                 filename: "payout-requests",
                 headers: [
