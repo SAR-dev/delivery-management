@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Warehouse } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -20,12 +20,37 @@ export function useWarehouses() {
     swrOptions,
   )
 
-  const warehouses = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The warehouse managed by the logged-in Warehouse Admin (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allWarehouses = data ?? []
+
+  // The warehouse managed by the logged-in Warehouse Admin (if any) — always
+  // derived from the unfiltered list, since many other hooks depend on this
+  // staying stable regardless of any search happening on the warehouses page.
   const currentWarehouse =
     currentUser?.role === "WAREHOUSE_ADMIN" && currentUser.warehouseId
-      ? (warehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
+      ? (allWarehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
       : null
 
   const createWarehouse = useCallback(
@@ -108,8 +133,11 @@ export function useWarehouses() {
 
   return {
     warehouses,
+    allWarehouses,
+    query,
+    setQuery,
     currentWarehouse,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createWarehouse,

@@ -144,8 +144,9 @@ auth/parse/guard/update plumbing inline.
 
 There is **no global data context**. Each resource has a focused hook in
 `features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
-key, the typed data, loading/error state, any derived selectors, and the
-mutation functions for that resource.
+key, the typed data, loading/error state, any derived selectors, the
+mutation functions for that resource, and — for searchable resources — the
+`query` state described below.
 
 ```ts
 export function useMerchants() {
@@ -176,6 +177,84 @@ Rules:
   (`useAuth()`), the one piece of shared state that remains a React context.
 - The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
   which aggregates the error state of every resource key.
+
+### Search state lives in the hook, not the page
+
+Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
+`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
+all seven hooks — copy `use-orders.ts` rather than improvising:
+
+```ts
+const KEY = "/api/orders"
+
+export function useOrders() {
+  const { currentUser } = useAuth()
+  // 1. Base key — untouched. Every mutation and useDataError still dedupes
+  //    against this exact string; never repoint it at the search key.
+  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 2. Debounced query state, owned by the hook.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  // 3. A second, parallel SWR call for the search results — only active once
+  //    there's a non-empty debounced query. Separate cache entry from KEY.
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 4. `orders` is search-aware; `allOrders` is always the full base list.
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
+
+  return {
+    orders,
+    allOrders,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    // ...mutations, all still writing through the base `mutate`/`KEY`
+  }
+}
+```
+
+Rules:
+
+- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
+  route — it narrows what a role-scoped `where` already returns, never
+  bypasses it. Every resource's `GET` composes the search clause onto the
+  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
+  same order the role scoping is already applied — see Recipe E's template.
+- **Always export both `orders` and `allOrders`** (substitute the resource
+  name). Any derived value that should stay stable while the user searches —
+  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
+  `currentWarehouse`, cross-resource usage counts — must be computed from the
+  `allX` list, never from the search-aware one. Get this wrong and a stat card
+  silently shrinks to the size of the search box's matches.
+- **Mutations always target `KEY`**, the literal base-key string, not the
+  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
+  does this correctly — don't reroute it.
+- A page with a search `<Input>` destructures `query`/`setQuery` from the
+  hook; it never keeps its own `useState` for this. Tab/status filters stay
+  client-side `useMemo`s layered **on top of** the hook's `orders` (or
+  equivalent), not on `allOrders`.
 
 ---
 
@@ -287,15 +366,16 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
    `lib/validation.ts`.
 4. **API routes**:
-   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-     handler with `requireSession()`; gate writes by `me.role`.
-   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-     role-scoped — **enforce it server-side; Neon has no RLS.**
+    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+      handler with `requireSession()`; gate writes by `me.role`.
+    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+      role-scoped — **enforce it server-side; Neon has no RLS.**
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
-   `mutate(..., { revalidate: false })`.
+   `mutate(..., { revalidate: false })`. If the resource needs a search box,
+   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
 6. **UI** — a page (Recipe C) and dialogs (Recipe D).
 7. **Seed** — add sample rows to `lib/db/seed.ts`.
 
@@ -313,7 +393,12 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    ```
 3. Get data from the resource hook(s) — never fetch in the page directly.
 4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`.
+   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
+   from the hook and render the search `<Input>` (with a `Search` icon, see
+   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
+   `useState` for it. `DataTable`'s own footer already places pagination on
+   the left and the CSV button on the right (disabled when no `csv` prop is
+   passed); don't rebuild that layout per page.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.
@@ -341,18 +426,34 @@ import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { thing } from "@/lib/db/schema"
 import { thingCreateSchema, parseBody } from "@/lib/validation"
+import { and, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+// Accept `req: Request` even if the resource has no search yet — adding `?q=`
+// later then doesn't require touching the function signature.
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
   // Scope role-limited readers server-side.
+  let where = undefined
   if (me.role === "WAREHOUSE_ADMIN") {
     if (!me.warehouseId) return NextResponse.json([])
-    // ...filtered query
+    // ...build the role-scoped where
   }
-  const rows = await db.select().from(thing)
+
+  // Optional free-text search, layered on top of the role-scoped where —
+  // search narrows what a role already sees, never widens it.
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    const searchClause = or(ilike(thing.name, likeQ) /* ...other fields */)
+    where = where ? and(where, searchClause) : searchClause
+  }
+
+  const rows = where
+    ? await db.select().from(thing).where(where)
+    : await db.select().from(thing)
   return NextResponse.json(rows)
 }
 

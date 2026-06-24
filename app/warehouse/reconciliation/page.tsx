@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
-  Wallet,
-  HandCoins,
-  CheckCircle2,
   Banknote,
   Bike,
+  CheckCircle2,
+  HandCoins,
   Loader2,
+  Search,
+  Wallet,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -22,6 +23,7 @@ import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -31,7 +33,14 @@ type FilterTab = "UNSETTLED" | "SETTLED"
 export default function WarehouseReconciliationPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
-  const { orders, warehouseUnsettledOrders, settleOrderCod } = useOrders()
+  const {
+    orders,
+    allOrders,
+    warehouseUnsettledOrders,
+    settleOrderCod,
+    query,
+    setQuery,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("UNSETTLED")
@@ -42,10 +51,48 @@ export default function WarehouseReconciliationPage() {
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
+  // Already derived from the unfiltered list (see useOrders), so stats/tab
+  // counts stay stable regardless of the current search.
   const unsettled = warehouseUnsettledOrders
 
   // Delivered parcels at this warehouse whose COD has been settled.
   const settled = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.status === "DELIVERED" &&
+              Boolean(o.codSettledAt),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const unsettledCash = unsettled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+  const settledCash = settled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleUnsettled = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "DELIVERED" &&
+              o.warehouseId === currentWarehouse.id &&
+              !o.codSettledAt,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleSettled = useMemo(
     () =>
       currentWarehouse
         ? orders.filter(
@@ -58,16 +105,7 @@ export default function WarehouseReconciliationPage() {
     [orders, currentWarehouse],
   )
 
-  const unsettledCash = unsettled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-  const settledCash = settled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-
-  const visible = tab === "UNSETTLED" ? unsettled : settled
+  const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
 
   async function handleSettle(order: Order) {
     setSettling(order.id)
@@ -223,14 +261,27 @@ export default function WarehouseReconciliationPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="UNSETTLED">
-            Awaiting settlement ({unsettled.length})
-          </TabsTrigger>
-          <TabsTrigger value="SETTLED">Settled ({settled.length})</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="UNSETTLED">
+              Awaiting settlement ({unsettled.length})
+            </TabsTrigger>
+            <TabsTrigger value="SETTLED">
+              Settled ({settled.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

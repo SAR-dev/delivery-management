@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { CreateOrderInput, Order } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -41,11 +41,37 @@ export function useOrders() {
     swrOptions,
   )
 
-  const orders = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is left untouched (mutations and useDataError both
+  // dedupe against it) — search results are a separate, parallel SWR entry
+  // that only activates once a debounced, non-empty query exists.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
 
   // FAILED_ATTEMPT parcels at the admin's warehouse awaiting a decision.
+  // Derived from the unfiltered list — these are fixed operational queues,
+  // not affected by what's currently being searched.
   const warehouseFailedOrders = currentWarehouse
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.status === "FAILED_ATTEMPT" &&
           o.warehouseId === currentWarehouse.id,
@@ -54,7 +80,7 @@ export function useOrders() {
 
   // DELIVERED parcels at the admin's warehouse whose COD is not yet settled.
   const warehouseUnsettledOrders = currentWarehouse
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.status === "DELIVERED" &&
           o.warehouseId === currentWarehouse.id &&
@@ -64,7 +90,7 @@ export function useOrders() {
 
   // Delivered, COD-settled orders not locked to an active payout request.
   const merchantPayableOrders = currentMerchant
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.merchantId === currentMerchant.id &&
           o.status === "DELIVERED" &&
@@ -261,10 +287,13 @@ export function useOrders() {
 
   return {
     orders,
+    allOrders,
+    query,
+    setQuery,
     warehouseFailedOrders,
     warehouseUnsettledOrders,
     merchantPayableOrders,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createOrder,

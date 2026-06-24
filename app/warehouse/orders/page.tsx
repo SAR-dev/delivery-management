@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Boxes, CheckCircle2, Clock, Truck, X } from "lucide-react"
+import { Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -17,6 +17,7 @@ import { TrackingTimeline } from "@/features/orders/components/tracking-timeline
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -34,7 +35,7 @@ const IN_PROGRESS_STATUSES: OrderStatus[] = [
 export default function WarehouseOrdersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("ALL")
@@ -48,35 +49,37 @@ export default function WarehouseOrdersPage() {
 
   // The orders API already scopes the list to this warehouse's parcels (plus
   // picked-up parcels incoming to any hub), so no extra hub filter is needed.
+  // Stats and tab counts use the unfiltered (but still warehouse-scoped)
+  // `allOrders`; the table itself uses the search-narrowed `orders`.
   const inProgress = useMemo(
-    () => orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
-    [orders],
+    () => allOrders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
+    [allOrders],
   )
   const delivered = useMemo(
-    () => orders.filter((o) => o.status === "DELIVERED"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "DELIVERED"),
+    [allOrders],
   )
   const exceptions = useMemo(
-    () => orders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
-    [orders],
+    () => allOrders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
+    [allOrders],
   )
   const inWarehouse = useMemo(
-    () => orders.filter((o) => o.status === "IN_WAREHOUSE"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "IN_WAREHOUSE"),
+    [allOrders],
   )
 
   const visible = useMemo(() => {
     switch (tab) {
       case "IN_PROGRESS":
-        return inProgress
+        return orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status))
       case "DELIVERED":
-        return delivered
+        return orders.filter((o) => o.status === "DELIVERED")
       case "EXCEPTIONS":
-        return exceptions
+        return orders.filter((o) => EXCEPTION_STATUSES.includes(o.status))
       default:
         return orders
     }
-  }, [tab, orders, inProgress, delivered, exceptions])
+  }, [tab, orders])
 
   function openOrder(order: Order) {
     setActiveOrder(order)
@@ -195,20 +198,31 @@ export default function WarehouseOrdersPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="ALL">All ({orders.length})</TabsTrigger>
-          <TabsTrigger value="IN_PROGRESS">
-            In progress ({inProgress.length})
-          </TabsTrigger>
-          <TabsTrigger value="DELIVERED">
-            Delivered ({delivered.length})
-          </TabsTrigger>
-          <TabsTrigger value="EXCEPTIONS">
-            Exceptions ({exceptions.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="ALL">All ({allOrders.length})</TabsTrigger>
+            <TabsTrigger value="IN_PROGRESS">
+              In progress ({inProgress.length})
+            </TabsTrigger>
+            <TabsTrigger value="DELIVERED">
+              Delivered ({delivered.length})
+            </TabsTrigger>
+            <TabsTrigger value="EXCEPTIONS">
+              Exceptions ({exceptions.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
