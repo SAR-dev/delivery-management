@@ -19,4 +19,4 @@ node_modules
 tsconfig.tsbuildinfo
 
 # Repomix output
-repomix-output.md
+REPOMIX.md
