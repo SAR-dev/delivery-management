@@ -7263,7 +7263,7 @@ export function useAuth() {
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Division } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -7285,7 +7285,30 @@ export function useDivisions() {
     swrOptions,
   )
 
-  const divisions = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Division[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const divisions = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allDivisions = data ?? []
 
   const createDivision = useCallback(
     async (name: string): Promise<Result> => {
@@ -7356,7 +7379,10 @@ export function useDivisions() {
 
   return {
     divisions,
-    isLoading,
+    allDivisions,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createDivision,
@@ -7585,7 +7611,7 @@ export function PricingDialog({
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Merchant, MerchantPricingInput } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -7604,12 +7630,36 @@ export function useMerchants() {
     swrOptions,
   )
 
-  const merchants = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The merchant business owned by the logged-in merchant user (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Merchant[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const merchants = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allMerchants = data ?? []
+
+  // The merchant business owned by the logged-in merchant user (if any) —
+  // always derived from the unfiltered list so it's never lost mid-search.
   const currentMerchant =
     currentUser?.role === "MERCHANT" && currentUser.merchantId
-      ? (merchants.find((m) => m.id === currentUser.merchantId) ?? null)
+      ? (allMerchants.find((m) => m.id === currentUser.merchantId) ?? null)
       : null
 
   const replaceOne = useCallback(
@@ -7697,8 +7747,11 @@ export function useMerchants() {
 
   return {
     merchants,
+    allMerchants,
+    query,
+    setQuery,
     currentMerchant,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     approveMerchant,
@@ -9773,7 +9826,7 @@ export function PayoutRequestDialog({
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import type { Order, PayoutRequest } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -9798,10 +9851,33 @@ export function usePayouts() {
     swrOptions,
   )
 
-  const payoutRequests = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<
+    PayoutRequest[]
+  >(searchKey, jsonFetcher, swrOptions)
+
+  const payoutRequests = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allPayoutRequests = data ?? []
+
+  // Derived from the unfiltered list — a merchant's own requests shouldn't
+  // disappear just because an admin's search elsewhere narrowed the page.
   const merchantPayoutRequests = currentMerchant
-    ? payoutRequests.filter((p) => p.merchantId === currentMerchant.id)
+    ? allPayoutRequests.filter((p) => p.merchantId === currentMerchant.id)
     : []
 
   const replaceOne = useCallback(
@@ -9891,8 +9967,11 @@ export function usePayouts() {
 
   return {
     payoutRequests,
+    allPayoutRequests,
+    query,
+    setQuery,
     merchantPayoutRequests,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     requestPayout,
@@ -10695,7 +10774,7 @@ export const taskTypeLabel = (value: RiderTaskType) =>
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Rider, RiderTaskType } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -10738,24 +10817,49 @@ export function useRiders() {
     swrOptions,
   )
 
-  const riders = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The rider profile for the logged-in rider user (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Rider[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const riders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allRiders = data ?? []
+
+  // The rider profile for the logged-in rider user (if any) — always derived
+  // from the unfiltered list so it's never lost mid-search.
   const currentRider =
     currentUser?.role === "RIDER" && currentUser.riderId
-      ? (riders.find((r) => r.id === currentUser.riderId) ?? null)
+      ? (allRiders.find((r) => r.id === currentUser.riderId) ?? null)
       : null
 
   // Every rider based at the logged-in admin's warehouse (any status / task
-  // type) — used by the warehouse rider-management screen.
+  // type) — used by the warehouse rider-management screen. Derived from the
+  // unfiltered list; search narrows the page's own `riders`, not this.
   const warehouseRiders = currentWarehouse
-    ? riders.filter((r) => r.warehouseId === currentWarehouse.id)
+    ? allRiders.filter((r) => r.warehouseId === currentWarehouse.id)
     : []
 
   // Active, delivery-capable riders at the admin's warehouse — the pool the
   // dispatch desk can assign parcels to.
   const warehouseDeliveryRiders = currentWarehouse
-    ? riders.filter(
+    ? allRiders.filter(
         (r) =>
           r.warehouseId === currentWarehouse.id && r.isActive && canDeliver(r),
       )
@@ -10810,10 +10914,13 @@ export function useRiders() {
 
   return {
     riders,
+    allRiders,
+    query,
+    setQuery,
     currentRider,
     warehouseRiders,
     warehouseDeliveryRiders,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createRider,
@@ -11106,7 +11213,7 @@ export function CreateAccountDialog() {
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import type { Role, User, Warehouse } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -11136,7 +11243,30 @@ export function useTeam() {
     swrOptions,
   )
 
-  const team = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<User[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const team = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allTeam = data ?? []
 
   const createAccount = useCallback(
     async (input: NewAccountInput & { password: string }) => {
@@ -11233,7 +11363,10 @@ export function useTeam() {
 
   return {
     team,
-    isLoading,
+    allTeam,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createAccount,
@@ -11248,7 +11381,7 @@ export function useTeam() {
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Warehouse } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -11268,12 +11401,37 @@ export function useWarehouses() {
     swrOptions,
   )
 
-  const warehouses = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The warehouse managed by the logged-in Warehouse Admin (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allWarehouses = data ?? []
+
+  // The warehouse managed by the logged-in Warehouse Admin (if any) — always
+  // derived from the unfiltered list, since many other hooks depend on this
+  // staying stable regardless of any search happening on the warehouses page.
   const currentWarehouse =
     currentUser?.role === "WAREHOUSE_ADMIN" && currentUser.warehouseId
-      ? (warehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
+      ? (allWarehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
       : null
 
   const createWarehouse = useCallback(
@@ -11356,8 +11514,11 @@ export function useWarehouses() {
 
   return {
     warehouses,
+    allWarehouses,
+    query,
+    setQuery,
     currentWarehouse,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createWarehouse,
@@ -12160,7 +12321,7 @@ export async function PATCH(
 "use client"
 
 import { useMemo, useState } from "react"
-import { Boxes, CheckCircle2, Clock, Truck, X } from "lucide-react"
+import { Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -12176,6 +12337,7 @@ import { TrackingTimeline } from "@/features/orders/components/tracking-timeline
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -12193,7 +12355,7 @@ const IN_PROGRESS_STATUSES: OrderStatus[] = [
 export default function WarehouseOrdersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("ALL")
@@ -12207,35 +12369,37 @@ export default function WarehouseOrdersPage() {
 
   // The orders API already scopes the list to this warehouse's parcels (plus
   // picked-up parcels incoming to any hub), so no extra hub filter is needed.
+  // Stats and tab counts use the unfiltered (but still warehouse-scoped)
+  // `allOrders`; the table itself uses the search-narrowed `orders`.
   const inProgress = useMemo(
-    () => orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
-    [orders],
+    () => allOrders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
+    [allOrders],
   )
   const delivered = useMemo(
-    () => orders.filter((o) => o.status === "DELIVERED"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "DELIVERED"),
+    [allOrders],
   )
   const exceptions = useMemo(
-    () => orders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
-    [orders],
+    () => allOrders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
+    [allOrders],
   )
   const inWarehouse = useMemo(
-    () => orders.filter((o) => o.status === "IN_WAREHOUSE"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "IN_WAREHOUSE"),
+    [allOrders],
   )
 
   const visible = useMemo(() => {
     switch (tab) {
       case "IN_PROGRESS":
-        return inProgress
+        return orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status))
       case "DELIVERED":
-        return delivered
+        return orders.filter((o) => o.status === "DELIVERED")
       case "EXCEPTIONS":
-        return exceptions
+        return orders.filter((o) => EXCEPTION_STATUSES.includes(o.status))
       default:
         return orders
     }
-  }, [tab, orders, inProgress, delivered, exceptions])
+  }, [tab, orders])
 
   function openOrder(order: Order) {
     setActiveOrder(order)
@@ -12354,20 +12518,31 @@ export default function WarehouseOrdersPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="ALL">All ({orders.length})</TabsTrigger>
-          <TabsTrigger value="IN_PROGRESS">
-            In progress ({inProgress.length})
-          </TabsTrigger>
-          <TabsTrigger value="DELIVERED">
-            Delivered ({delivered.length})
-          </TabsTrigger>
-          <TabsTrigger value="EXCEPTIONS">
-            Exceptions ({exceptions.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="ALL">All ({allOrders.length})</TabsTrigger>
+            <TabsTrigger value="IN_PROGRESS">
+              In progress ({inProgress.length})
+            </TabsTrigger>
+            <TabsTrigger value="DELIVERED">
+              Delivered ({delivered.length})
+            </TabsTrigger>
+            <TabsTrigger value="EXCEPTIONS">
+              Exceptions ({exceptions.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -12424,7 +12599,7 @@ export default function WarehouseOrdersPage() {
 "use client"
 
 import { useState } from "react"
-import { Bike, CheckCircle2, Truck, Users } from "lucide-react"
+import { Bike, CheckCircle2, Search, Truck, Users } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useRiders } from "@/features/riders/hooks/use-riders"
@@ -12435,6 +12610,7 @@ import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
 import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StatCardList } from "@/components/stat-card-list"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
@@ -12443,8 +12619,9 @@ export default function WarehouseRidersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
   // The riders API already scopes the roster to the signed-in Warehouse
-  // Admin's hub, so `riders` here only contains this warehouse's riders.
-  const { riders } = useRiders()
+  // Admin's hub (search composes with that scope server-side too), so
+  // `riders`/`allRiders` here only ever contain this warehouse's riders.
+  const { riders, allRiders, query, setQuery } = useRiders()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
 
@@ -12453,11 +12630,12 @@ export default function WarehouseRidersPage() {
     setEditOpen(true)
   }
 
-  const activeCount = riders.filter((r) => r.isActive).length
-  const deliveryCount = riders.filter(
+  // Stats always reflect the full roster, not the current search.
+  const activeCount = allRiders.filter((r) => r.isActive).length
+  const deliveryCount = allRiders.filter(
     (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
   ).length
-  const pickupCount = riders.filter(
+  const pickupCount = allRiders.filter(
     (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
   ).length
 
@@ -12534,7 +12712,7 @@ export default function WarehouseRidersPage() {
       <StatCardList
         columns={4}
         items={[
-          { label: "Total riders", value: riders.length, icon: Users },
+          { label: "Total riders", value: allRiders.length, icon: Users },
           {
             label: "Active",
             value: activeCount,
@@ -12555,6 +12733,18 @@ export default function WarehouseRidersPage() {
           },
         ]}
       />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, phone, zone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -15349,7 +15539,7 @@ export default function DashboardAccountPage() {
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Pencil, Trash2, MapPin } from "lucide-react"
+import { MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -15374,12 +15564,18 @@ interface DivisionRow extends Division {
 export default function DivisionsPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { divisions, createDivision, updateDivision, deleteDivision } =
-    useDivisions()
-  const { warehouses } = useWarehouses()
-  const { merchants } = useMerchants()
+  const {
+    divisions,
+    query,
+    setQuery,
+    createDivision,
+    updateDivision,
+    deleteDivision,
+  } = useDivisions()
+  const { allWarehouses } = useWarehouses()
+  const { allMerchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
-  const { orders } = useOrders()
+  const { allOrders } = useOrders()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -15397,16 +15593,18 @@ export default function DivisionsPage() {
 
   // Count how many records reference each division so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
+  // Usage counts always reflect the full sets of the other resources, never
+  // narrowed by an unrelated search on those resources' own pages.
   const rows = useMemo<DivisionRow[]>(() => {
     return divisions.map((d) => {
       const usageCount =
-        warehouses.filter((w) => w.divisionId === d.id).length +
-        merchants.filter((m) => m.divisionId === d.id).length +
+        allWarehouses.filter((w) => w.divisionId === d.id).length +
+        allMerchants.filter((m) => m.divisionId === d.id).length +
         pickupLocations.filter((p) => p.divisionId === d.id).length +
-        orders.filter((o) => o.deliveryDivisionId === d.id).length
+        allOrders.filter((o) => o.deliveryDivisionId === d.id).length
       return { ...d, usageCount }
     })
-  }, [divisions, warehouses, merchants, pickupLocations, orders])
+  }, [divisions, allWarehouses, allMerchants, pickupLocations, allOrders])
 
   function openCreate() {
     setName("")
@@ -15558,6 +15756,18 @@ export default function DivisionsPage() {
           Add division
         </Button>
       </PageHeader>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search division name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -16020,8 +16230,9 @@ auth/parse/guard/update plumbing inline.
 
 There is **no global data context**. Each resource has a focused hook in
 `features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
-key, the typed data, loading/error state, any derived selectors, and the
-mutation functions for that resource.
+key, the typed data, loading/error state, any derived selectors, the
+mutation functions for that resource, and — for searchable resources — the
+`query` state described below.
 
 ```ts
 export function useMerchants() {
@@ -16052,6 +16263,84 @@ Rules:
   (`useAuth()`), the one piece of shared state that remains a React context.
 - The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
   which aggregates the error state of every resource key.
+
+### Search state lives in the hook, not the page
+
+Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
+`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
+all seven hooks — copy `use-orders.ts` rather than improvising:
+
+```ts
+const KEY = "/api/orders"
+
+export function useOrders() {
+  const { currentUser } = useAuth()
+  // 1. Base key — untouched. Every mutation and useDataError still dedupes
+  //    against this exact string; never repoint it at the search key.
+  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 2. Debounced query state, owned by the hook.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  // 3. A second, parallel SWR call for the search results — only active once
+  //    there's a non-empty debounced query. Separate cache entry from KEY.
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 4. `orders` is search-aware; `allOrders` is always the full base list.
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
+
+  return {
+    orders,
+    allOrders,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    // ...mutations, all still writing through the base `mutate`/`KEY`
+  }
+}
+```
+
+Rules:
+
+- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
+  route — it narrows what a role-scoped `where` already returns, never
+  bypasses it. Every resource's `GET` composes the search clause onto the
+  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
+  same order the role scoping is already applied — see Recipe E's template.
+- **Always export both `orders` and `allOrders`** (substitute the resource
+  name). Any derived value that should stay stable while the user searches —
+  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
+  `currentWarehouse`, cross-resource usage counts — must be computed from the
+  `allX` list, never from the search-aware one. Get this wrong and a stat card
+  silently shrinks to the size of the search box's matches.
+- **Mutations always target `KEY`**, the literal base-key string, not the
+  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
+  does this correctly — don't reroute it.
+- A page with a search `<Input>` destructures `query`/`setQuery` from the
+  hook; it never keeps its own `useState` for this. Tab/status filters stay
+  client-side `useMemo`s layered **on top of** the hook's `orders` (or
+  equivalent), not on `allOrders`.
 
 ---
 
@@ -16163,15 +16452,16 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
    `lib/validation.ts`.
 4. **API routes**:
-   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-     handler with `requireSession()`; gate writes by `me.role`.
-   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-     role-scoped — **enforce it server-side; Neon has no RLS.**
+    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+      handler with `requireSession()`; gate writes by `me.role`.
+    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+      role-scoped — **enforce it server-side; Neon has no RLS.**
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
-   `mutate(..., { revalidate: false })`.
+   `mutate(..., { revalidate: false })`. If the resource needs a search box,
+   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
 6. **UI** — a page (Recipe C) and dialogs (Recipe D).
 7. **Seed** — add sample rows to `lib/db/seed.ts`.
 
@@ -16189,7 +16479,12 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    ```
 3. Get data from the resource hook(s) — never fetch in the page directly.
 4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`.
+   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
+   from the hook and render the search `<Input>` (with a `Search` icon, see
+   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
+   `useState` for it. `DataTable`'s own footer already places pagination on
+   the left and the CSV button on the right (disabled when no `csv` prop is
+   passed); don't rebuild that layout per page.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.
@@ -16217,18 +16512,34 @@ import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { thing } from "@/lib/db/schema"
 import { thingCreateSchema, parseBody } from "@/lib/validation"
+import { and, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+// Accept `req: Request` even if the resource has no search yet — adding `?q=`
+// later then doesn't require touching the function signature.
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
   // Scope role-limited readers server-side.
+  let where = undefined
   if (me.role === "WAREHOUSE_ADMIN") {
     if (!me.warehouseId) return NextResponse.json([])
-    // ...filtered query
+    // ...build the role-scoped where
   }
-  const rows = await db.select().from(thing)
+
+  // Optional free-text search, layered on top of the role-scoped where —
+  // search narrows what a role already sees, never widens it.
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    const searchClause = or(ilike(thing.name, likeQ) /* ...other fields */)
+    where = where ? and(where, searchClause) : searchClause
+  }
+
+  const rows = where
+    ? await db.select().from(thing).where(where)
+    : await db.select().from(thing)
   return NextResponse.json(rows)
 }
 
@@ -18937,7 +19248,7 @@ proof the behavior is correct.
 ````typescript
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { CreateOrderInput, Order } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -18978,11 +19289,37 @@ export function useOrders() {
     swrOptions,
   )
 
-  const orders = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is left untouched (mutations and useDataError both
+  // dedupe against it) — search results are a separate, parallel SWR entry
+  // that only activates once a debounced, non-empty query exists.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
 
   // FAILED_ATTEMPT parcels at the admin's warehouse awaiting a decision.
+  // Derived from the unfiltered list — these are fixed operational queues,
+  // not affected by what's currently being searched.
   const warehouseFailedOrders = currentWarehouse
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.status === "FAILED_ATTEMPT" &&
           o.warehouseId === currentWarehouse.id,
@@ -18991,7 +19328,7 @@ export function useOrders() {
 
   // DELIVERED parcels at the admin's warehouse whose COD is not yet settled.
   const warehouseUnsettledOrders = currentWarehouse
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.status === "DELIVERED" &&
           o.warehouseId === currentWarehouse.id &&
@@ -19001,7 +19338,7 @@ export function useOrders() {
 
   // Delivered, COD-settled orders not locked to an active payout request.
   const merchantPayableOrders = currentMerchant
-    ? orders.filter(
+    ? allOrders.filter(
         (o) =>
           o.merchantId === currentMerchant.id &&
           o.status === "DELIVERED" &&
@@ -19198,10 +19535,13 @@ export function useOrders() {
 
   return {
     orders,
+    allOrders,
+    query,
+    setQuery,
     warehouseFailedOrders,
     warehouseUnsettledOrders,
     merchantPayableOrders,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createOrder,
@@ -20926,6 +21266,7 @@ import { useState } from "react"
 import {
   Bike,
   CheckCircle2,
+  Search,
   Users,
   Warehouse as WarehouseIcon,
 } from "lucide-react"
@@ -20939,12 +21280,13 @@ import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
 import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StatCardList } from "@/components/stat-card-list"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 export default function RidersPage() {
-  const { riders } = useRiders()
+  const { riders, allRiders, query, setQuery } = useRiders()
   const { warehouses } = useWarehouses()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -20959,11 +21301,12 @@ export default function RidersPage() {
     setEditOpen(true)
   }
 
-  const activeCount = riders.filter((r) => r.isActive).length
-  const deliveryCount = riders.filter(
+  // Stats always reflect the full roster, not the current search.
+  const activeCount = allRiders.filter((r) => r.isActive).length
+  const deliveryCount = allRiders.filter(
     (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
   ).length
-  const pickupCount = riders.filter(
+  const pickupCount = allRiders.filter(
     (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
   ).length
 
@@ -21054,7 +21397,7 @@ export default function RidersPage() {
       <StatCardList
         columns={4}
         items={[
-          { label: "Total riders", value: riders.length, icon: Users },
+          { label: "Total riders", value: allRiders.length, icon: Users },
           {
             label: "Active",
             value: activeCount,
@@ -21075,6 +21418,18 @@ export default function RidersPage() {
           },
         ]}
       />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, phone, zone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -25473,7 +25828,7 @@ export default function MerchantLayout({
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, Navigation } from "lucide-react"
+import { CheckCircle2, Navigation, Search } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -25488,38 +25843,58 @@ import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attemp
 import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
+const COMPLETED_STATUSES = ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"]
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
 export default function RiderDeliveryQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [startTarget, setStartTarget] = useState<Order | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
 
-  // All orders dispatched to this rider for delivery.
+  // All orders dispatched to this rider for delivery. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
   const myDeliveries = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toDeliver = myDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
+  )
+  const completed = myDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyDeliveries = useMemo(
     () =>
       currentRider
         ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
         : [],
     [orders, currentRider],
   )
-
-  const toDeliver = myDeliveries.filter((o) =>
-    ["IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(o.status),
+  const visibleToDeliver = visibleMyDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
   )
-  const completed = myDeliveries.filter((o) =>
-    ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"].includes(o.status),
+  const visibleCompleted = visibleMyDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
   )
 
-  const visible = tab === "TO_DELIVER" ? toDeliver : completed
+  const visible = tab === "TO_DELIVER" ? visibleToDeliver : visibleCompleted
 
   function openAttempt(order: Order) {
     setActiveOrder(order)
@@ -25629,16 +26004,27 @@ export default function RiderDeliveryQueuePage() {
         description={pageContent.rider.delivery.description}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="TO_DELIVER">
-            To deliver ({toDeliver.length})
-          </TabsTrigger>
-          <TabsTrigger value="COMPLETED">
-            Completed ({completed.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_DELIVER">
+              To deliver ({toDeliver.length})
+            </TabsTrigger>
+            <TabsTrigger value="COMPLETED">
+              Completed ({completed.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
@@ -25964,15 +26350,15 @@ export async function DELETE(
 
 import { useMemo, useState } from "react"
 import {
-  Store,
+  Ban,
   CheckCircle2,
   Clock,
-  Ban,
-  Search,
   MoreHorizontal,
-  Tag,
-  ShieldCheck,
   RotateCcw,
+  Search,
+  ShieldCheck,
+  Store,
+  Tag,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -25999,35 +26385,37 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "ALL" | MerchantStatus
 
 export default function MerchantsPage() {
-  const { merchants, approveMerchant, suspendMerchant, reactivateMerchant } =
-    useMerchants()
+  const {
+    merchants,
+    allMerchants,
+    query,
+    setQuery,
+    approveMerchant,
+    suspendMerchant,
+    reactivateMerchant,
+  } = useMerchants()
   const [tab, setTab] = useState<FilterTab>("ALL")
-  const [query, setQuery] = useState("")
   const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
   const [pricingOpen, setPricingOpen] = useState(false)
 
+  // Stats always reflect the full merchant set, not the current search.
   const counts = useMemo(
     () => ({
-      total: merchants.length,
-      active: merchants.filter((m) => m.status === "ACTIVE").length,
-      pending: merchants.filter((m) => m.status === "PENDING").length,
-      suspended: merchants.filter((m) => m.status === "SUSPENDED").length,
+      total: allMerchants.length,
+      active: allMerchants.filter((m) => m.status === "ACTIVE").length,
+      pending: allMerchants.filter((m) => m.status === "PENDING").length,
+      suspended: allMerchants.filter((m) => m.status === "SUSPENDED").length,
     }),
-    [merchants],
+    [allMerchants],
   )
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return merchants.filter((m) => {
-      const matchesTab = tab === "ALL" || m.status === tab
-      const matchesQuery =
-        !q ||
-        m.businessName.toLowerCase().includes(q) ||
-        m.ownerName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q)
-      return matchesTab && matchesQuery
-    })
-  }, [merchants, tab, query])
+  // Search is server-side now (see useMerchants); the tab status filter
+  // stays client-side, layered on top of the already-search-narrowed
+  // `merchants`.
+  const filtered = useMemo(
+    () => merchants.filter((m) => tab === "ALL" || m.status === tab),
+    [merchants, tab],
+  )
 
   function openPricing(merchant: Merchant) {
     setPricingMerchant(merchant)
@@ -26634,7 +27022,13 @@ function SuperAdminOverview() {
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Pencil, Trash2, Warehouse as WarehouseIcon } from "lucide-react"
+import {
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Warehouse as WarehouseIcon,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
@@ -26681,12 +27075,18 @@ const emptyForm: WarehouseForm = {
 export default function WarehousesPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { warehouses, createWarehouse, updateWarehouse, deleteWarehouse } =
-    useWarehouses()
+  const {
+    warehouses,
+    query,
+    setQuery,
+    createWarehouse,
+    updateWarehouse,
+    deleteWarehouse,
+  } = useWarehouses()
   const { divisions } = useDivisions()
-  const { orders } = useOrders()
-  const { riders } = useRiders()
-  const { team } = useTeam()
+  const { allOrders } = useOrders()
+  const { allRiders } = useRiders()
+  const { allTeam } = useTeam()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -26711,19 +27111,21 @@ export default function WarehousesPage() {
 
   // Count how many records reference each warehouse so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
+  // Usage counts always reflect the full orders/riders/team sets, never
+  // narrowed by an unrelated search on those other resources.
   const rows = useMemo<WarehouseRow[]>(() => {
     return warehouses
       .map((w) => {
         const usageCount =
-          orders.filter((o) => o.warehouseId === w.id).length +
-          riders.filter((r) => r.warehouseId === w.id).length +
-          team.filter((u) => u.warehouseId === w.id).length
+          allOrders.filter((o) => o.warehouseId === w.id).length +
+          allRiders.filter((r) => r.warehouseId === w.id).length +
+          allTeam.filter((u) => u.warehouseId === w.id).length
         const divisionName =
           divisions.find((d) => d.id === w.divisionId)?.name ?? "—"
         return { ...w, usageCount, divisionName }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [warehouses, orders, riders, team, divisions])
+  }, [warehouses, allOrders, allRiders, allTeam, divisions])
 
   function openCreate() {
     setForm(emptyForm)
@@ -26918,6 +27320,18 @@ export default function WarehousesPage() {
         </Button>
       </PageHeader>
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, address, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <DataTable
@@ -27071,331 +27485,6 @@ function WarehouseFields({
 }
 ````
 
-## File: app/api/orders/[id]/picked-up/route.ts
-````typescript
-import { applyOrderTransition } from "@/features/orders/transitions"
-
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
-  return applyOrderTransition("picked-up", id, req)
-}
-````
-
-## File: app/rider/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { RiderSidebar } from "@/components/navigation/rider-sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { RIDER_SIDEBAR } from "@/lib/nav-config"
-
-export default function RiderLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role !== "RIDER") {
-      router.replace(homeForRole(currentUser.role))
-    }
-  }, [isReady, currentUser, router])
-
-  if (!isReady || !currentUser || currentUser.role !== "RIDER") {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <RiderSidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={RIDER_SIDEBAR} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
-## File: app/rider/pickup/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { PackageCheck } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-type FilterTab = "TO_COLLECT" | "COLLECTED"
-
-export default function RiderPickupQueuePage() {
-  const { currentUser } = useAuth()
-  const { currentRider } = useRiders()
-  const { orders } = useOrders()
-  const { merchants } = useMerchants()
-  const { pickupLocations } = usePickupLocations()
-  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
-
-  // All orders assigned to this rider for pickup.
-  const myPickups = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-
-  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
-  const collected = myPickups.filter((o) =>
-    [
-      "PICKED_UP",
-      "IN_WAREHOUSE",
-      "IN_TRANSIT",
-      "OUT_FOR_DELIVERY",
-      "DELIVERED",
-    ].includes(o.status),
-  )
-
-  const visible = tab === "TO_COLLECT" ? toCollect : collected
-
-  function openConfirm(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  // Pickup is a merchant-facing step — the rider only needs to know who
-  // they're collecting from and where. Recipient/delivery details aren't
-  // relevant yet, so they're left off this view entirely.
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => {
-        const m = merchant(o.merchantId)
-        return (
-          <div className="flex flex-col">
-            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
-            <span className="text-muted-foreground text-xs">{m?.phone}</span>
-          </div>
-        )
-      },
-    },
-    {
-      id: "pickup",
-      header: "Pickup from",
-      sortable: true,
-      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickup(o.pickupLocationId)
-        return (
-          <PickupLocationModal location={p ?? null}>
-            <div className="flex flex-col">
-              <span className="font-medium underline decoration-dotted underline-offset-4">
-                {p?.label ?? "—"}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {p?.address ?? "—"}
-              </span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "APPROVED" ? (
-          <Button size="sm" onClick={() => openConfirm(o)}>
-            <PackageCheck className="size-4" />
-            Mark picked up
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.rider.pickup.title(
-          currentUser?.name.split(" ")[0] ?? "Rider",
-        )}
-        description={pageContent.rider.pickup.description}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="TO_COLLECT">
-            To collect ({toCollect.length})
-          </TabsTrigger>
-          <TabsTrigger value="COLLECTED">
-            Collected ({collected.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "TO_COLLECT"
-                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
-                : "Nothing collected yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <PickupConfirmDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        pickupLocation={
-          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
-        }
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { WarehouseSidebar } from "@/components/navigation/warehouse-sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { WAREHOUSE_SIDEBAR } from "@/lib/nav-config"
-
-export default function WarehouseLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role !== "WAREHOUSE_ADMIN") {
-      router.replace(homeForRole(currentUser.role))
-    }
-  }, [isReady, currentUser, router])
-
-  if (!isReady || !currentUser || currentUser.role !== "WAREHOUSE_ADMIN") {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <WarehouseSidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={WAREHOUSE_SIDEBAR} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
 ## File: components/data-table.tsx
 ````typescript
 "use client"
@@ -27411,7 +27500,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { toCsv, downloadCsv } from "@/lib/csv"
+import { downloadCsv, toCsv } from "@/lib/csv"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -27667,8 +27756,8 @@ export function DataTable<T>({
 
       {paginated ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground flex items-center gap-3">
-            <span className="tabular-nums">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground tabular-nums">
               {from}–{to} of {sorted.length}
             </span>
             {pageSizeOptions && pageSizeOptions.length > 0 ? (
@@ -27690,21 +27779,6 @@ export function DataTable<T>({
                 </select>
               </label>
             ) : null}
-          </div>
-          <div className="flex items-center justify-center">
-            {csv ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownloadCsv}
-                className="gap-1.5"
-              >
-                <Download className="size-4" />
-                Download CSV
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
             <span className="text-muted-foreground tabular-nums">
               Page {page} of {totalPages}
             </span>
@@ -27729,8 +27803,1649 @@ export function DataTable<T>({
               <ChevronRight className="size-4" />
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownloadCsv}
+            disabled={!csv}
+            className="gap-1.5"
+          >
+            <Download className="size-4" />
+            Download CSV
+          </Button>
         </div>
       ) : null}
+    </div>
+  )
+}
+````
+
+## File: app/api/orders/[id]/picked-up/route.ts
+````typescript
+import { applyOrderTransition } from "@/features/orders/transitions"
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  return applyOrderTransition("picked-up", id, req)
+}
+````
+
+## File: app/dashboard/payouts/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { toast } from "sonner"
+import {
+  Banknote,
+  Check,
+  Clock,
+  Loader2,
+  Search,
+  Wallet,
+  X,
+} from "lucide-react"
+import { usePayouts } from "@/features/payouts/hooks/use-payouts"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { formatTk } from "@/lib/pricing"
+import type { PayoutRequest } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
+
+export default function PayoutsPage() {
+  const {
+    payoutRequests,
+    allPayoutRequests,
+    query,
+    setQuery,
+    approvePayout,
+    rejectPayout,
+    markPayoutPaid,
+  } = usePayouts()
+  const { merchants } = useMerchants()
+  const [tab, setTab] = useState<FilterTab>("PENDING")
+  const [busy, setBusy] = useState<string | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<PayoutRequest | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+
+  // Search narrows what's displayed in the table; stats and tab counts
+  // always reflect the full request set.
+  const pending = payoutRequests.filter((p) => p.status === "PENDING")
+  const approved = payoutRequests.filter((p) => p.status === "APPROVED")
+  const history = useMemo(
+    () =>
+      payoutRequests
+        .filter((p) => p.status === "PAID" || p.status === "REJECTED")
+        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
+    [payoutRequests],
+  )
+
+  const totalPending = allPayoutRequests.filter(
+    (p) => p.status === "PENDING",
+  ).length
+  const totalApproved = allPayoutRequests.filter(
+    (p) => p.status === "APPROVED",
+  ).length
+  const totalHistory = allPayoutRequests.filter(
+    (p) => p.status === "PAID" || p.status === "REJECTED",
+  ).length
+
+  const pendingAmount = allPayoutRequests
+    .filter((p) => p.status === "PENDING")
+    .reduce((sum, p) => sum + p.amount, 0)
+  const approvedAmount = allPayoutRequests
+    .filter((p) => p.status === "APPROVED")
+    .reduce((sum, p) => sum + p.amount, 0)
+  const paidAmount = allPayoutRequests
+    .filter((p) => p.status === "PAID")
+    .reduce((sum, p) => sum + p.amount, 0)
+
+  const visible =
+    tab === "PENDING" ? pending : tab === "APPROVED" ? approved : history
+
+  async function handleApprove(req: PayoutRequest) {
+    setBusy(req.id)
+    try {
+      const result = await approvePayout(req.id)
+      if (result.ok) {
+        toast.success(`${req.code} approved. Mark it paid once funds are sent.`)
+      } else {
+        toast.error(result.error ?? "Unable to approve this request.")
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleMarkPaid(req: PayoutRequest) {
+    setBusy(req.id)
+    try {
+      const result = await markPayoutPaid(req.id)
+      if (result.ok) {
+        toast.success(`${req.code} marked as paid.`)
+      } else {
+        toast.error(result.error ?? "Unable to mark this request as paid.")
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function confirmReject() {
+    if (!rejectTarget) return
+    const result = await rejectPayout(rejectTarget.id, rejectReason)
+    if (result.ok) {
+      toast.success(
+        `${rejectTarget.code} rejected. Its orders are available again.`,
+      )
+      setRejectTarget(null)
+      setRejectReason("")
+    } else {
+      toast.error(result.error ?? "Unable to reject this request.")
+    }
+  }
+
+  const columns: DataTableColumn<PayoutRequest>[] = [
+    {
+      id: "request",
+      header: "Request",
+      sortable: true,
+      sortValue: (p) => p.code,
+      cell: (p) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {p.code}
+          </span>
+          <span className="font-medium">{merchantName(p.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "method",
+      header: "Method",
+      sortable: true,
+      sortValue: (p) => p.payoutMethod,
+      cell: (p) => (
+        <div className="flex flex-col">
+          <span>{p.payoutMethod}</span>
+          <span className="text-muted-foreground text-xs">
+            {p.payoutDetails}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "orders",
+      header: "Orders",
+      align: "center",
+      sortable: true,
+      sortValue: (p) => p.orderIds.length,
+      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
+    },
+    {
+      id: "requested",
+      header: "Requested",
+      sortable: true,
+      sortValue: (p) => p.requestedAt,
+      cellClassName: "text-sm text-muted-foreground",
+      cell: (p) =>
+        new Date(p.requestedAt).toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortable: true,
+      sortValue: (p) => p.amount,
+      cell: (p) => (
+        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (p) => p.status,
+      cell: (p) => (
+        <div className="flex flex-col gap-1">
+          <PayoutStatusBadge status={p.status} />
+          {p.status === "REJECTED" && p.rejectReason ? (
+            <span className="text-destructive max-w-48 text-xs">
+              {p.rejectReason}
+            </span>
+          ) : null}
+          {p.status === "PAID" && p.paidAt ? (
+            <span className="text-chart-2 text-xs">
+              Paid{" "}
+              {new Date(p.paidAt).toLocaleDateString("en-US", {
+                day: "numeric",
+                month: "short",
+              })}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (p) =>
+        p.status === "PENDING" ? (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setRejectTarget(p)
+                setRejectReason("")
+              }}
+              disabled={busy === p.id}
+            >
+              <X className="size-4" />
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => handleApprove(p)}
+              disabled={busy === p.id}
+            >
+              {busy === p.id ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              Approve
+            </Button>
+          </div>
+        ) : p.status === "APPROVED" ? (
+          <Button
+            size="sm"
+            onClick={() => handleMarkPaid(p)}
+            disabled={busy === p.id}
+          >
+            {busy === p.id ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Banknote className="size-4" />
+            )}
+            Mark as paid
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.dashboard.payouts.title}
+        description={pageContent.dashboard.payouts.description}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Pending review",
+            value: formatTk(pendingAmount),
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Approved, awaiting payment",
+            value: formatTk(approvedAmount),
+            icon: Wallet,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Total paid out",
+            value: formatTk(paidAmount),
+            icon: Banknote,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="PENDING">Pending ({totalPending})</TabsTrigger>
+            <TabsTrigger value="APPROVED">
+              Approved ({totalApproved})
+            </TabsTrigger>
+            <TabsTrigger value="HISTORY">History ({totalHistory})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search request code"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(p) => p.id}
+            initialSortId="requested"
+            initialSortDir="desc"
+            emptyMessage={
+              tab === "PENDING"
+                ? "No payout requests to review. New merchant requests will appear here."
+                : tab === "APPROVED"
+                  ? "No approved requests awaiting payment."
+                  : "No paid or rejected requests yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={Boolean(rejectTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null)
+            setRejectReason("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject payout {rejectTarget?.code}</DialogTitle>
+            <DialogDescription>
+              The {rejectTarget ? formatTk(rejectTarget.amount) : ""} request
+              will be rejected and its orders unlocked so the merchant can
+              request payout again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason">Reason</Label>
+            <Textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. Account details do not match the registered merchant."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectTarget(null)
+                setRejectReason("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmReject}
+              disabled={!rejectReason.trim()}
+            >
+              Reject request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+````
+
+## File: app/rider/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { RiderSidebar } from "@/components/navigation/rider-sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { RIDER_SIDEBAR } from "@/lib/nav-config"
+
+export default function RiderLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role !== "RIDER") {
+      router.replace(homeForRole(currentUser.role))
+    }
+  }, [isReady, currentUser, router])
+
+  if (!isReady || !currentUser || currentUser.role !== "RIDER") {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <RiderSidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={RIDER_SIDEBAR} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
+## File: app/rider/pickup/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { PackageCheck, Search } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const COLLECTED_STATUSES = [
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+]
+
+type FilterTab = "TO_COLLECT" | "COLLECTED"
+
+export default function RiderPickupQueuePage() {
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+
+  // All orders assigned to this rider for pickup. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
+  const myPickups = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
+  const collected = myPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyPickups = useMemo(
+    () =>
+      currentRider
+        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [orders, currentRider],
+  )
+  const visibleToCollect = visibleMyPickups.filter(
+    (o) => o.status === "APPROVED",
+  )
+  const visibleCollected = visibleMyPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
+
+  function openConfirm(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  // Pickup is a merchant-facing step — the rider only needs to know who
+  // they're collecting from and where. Recipient/delivery details aren't
+  // relevant yet, so they're left off this view entirely.
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
+      cell: (o) => {
+        const m = merchant(o.merchantId)
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
+            <span className="text-muted-foreground text-xs">{m?.phone}</span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "pickup",
+      header: "Pickup from",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <PickupLocationModal location={p ?? null}>
+            <div className="flex flex-col">
+              <span className="font-medium underline decoration-dotted underline-offset-4">
+                {p?.label ?? "—"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {p?.address ?? "—"}
+              </span>
+            </div>
+          </PickupLocationModal>
+        )
+      },
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "APPROVED" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackageCheck className="size-4" />
+            Mark picked up
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.rider.pickup.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.pickup.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_COLLECT">
+              To collect ({toCollect.length})
+            </TabsTrigger>
+            <TabsTrigger value="COLLECTED">
+              Collected ({collected.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "TO_COLLECT"
+                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
+                : "Nothing collected yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <PickupConfirmDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        pickupLocation={
+          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
+        }
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/dispatch/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { Bike, PackageOpen, Search, Send, Truck } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "READY" | "DISPATCHED"
+
+export default function WarehouseDispatchPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders, warehouseDeliveryRiders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("READY")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
+  // counts come from the unfiltered `allOrders`; the table-facing versions
+  // below use the search-narrowed `orders`.
+  const ready = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.status === "IN_WAREHOUSE" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Parcels this warehouse has already dispatched for delivery.
+  const dispatched = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.deliveryRiderId != null &&
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const visibleReady = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "IN_WAREHOUSE" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleDispatched = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.deliveryRiderId != null &&
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "READY" ? visibleReady : visibleDispatched
+
+  function openDispatch(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) =>
+        o.deliveryRiderId ? (
+          <span className="flex items-center gap-1.5 text-sm">
+            <Bike className="text-muted-foreground size-4" />
+            {rider(o.deliveryRiderId)?.name ?? "—"}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-sm">Unassigned</span>
+        ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "IN_WAREHOUSE" ? (
+          <Button size="sm" onClick={() => openDispatch(o)}>
+            <Send className="size-4" />
+            Assign rider
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.dispatch.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.dispatch.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Ready to dispatch",
+            value: ready.length,
+            icon: PackageOpen,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Dispatched",
+            value: dispatched.length,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Available riders",
+            value: warehouseDeliveryRiders.length,
+            icon: Bike,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="READY">
+              Ready to dispatch ({ready.length})
+            </TabsTrigger>
+            <TabsTrigger value="DISPATCHED">
+              Dispatched ({dispatched.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "READY"
+                ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
+                : "Nothing dispatched yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <WarehouseDispatchDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        warehouseName={currentWarehouse?.name ?? "your warehouse"}
+        deliveryRiders={warehouseDeliveryRiders}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/exceptions/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { AlertTriangle, RotateCcw, Search, Undo2, Wrench } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "NEEDS_ACTION" | "RESOLVED"
+
+export default function WarehouseExceptionsPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, allOrders, warehouseFailedOrders, query, setQuery } =
+    useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision. Already
+  // derived from the unfiltered list (see useOrders), so stats/tab counts
+  // stay stable regardless of the current search.
+  const needsAction = warehouseFailedOrders
+
+  // Parcels this warehouse has already resolved as returned.
+  const resolved = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleNeedsAction = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "FAILED_ATTEMPT" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleResolved = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "NEEDS_ACTION" ? visibleNeedsAction : visibleResolved
+
+  function openResolve(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "attempts",
+      header: "Attempts",
+      align: "center",
+      sortable: true,
+      sortValue: (o) => o.deliveryAttempts ?? 1,
+      cell: (o) => (
+        <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
+      ),
+    },
+    {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "note",
+      header: "Resolution",
+      cellClassName: "whitespace-normal align-top",
+      cell: (o) =>
+        o.status === "RETURNED" ? (
+          <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
+            Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
+            {o.returnReason ? ` — ${o.returnReason}` : ""}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">
+            Open tracking for attempt details
+          </span>
+        ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "FAILED_ATTEMPT" ? (
+          <Button size="sm" onClick={() => openResolve(o)}>
+            <RotateCcw className="size-4" />
+            Resolve
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.exceptions.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.exceptions.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Needs action",
+            value: needsAction.length,
+            icon: AlertTriangle,
+            tone: "bg-destructive/10 text-destructive",
+          },
+          {
+            label: "Returned",
+            value: resolved.length,
+            icon: Undo2,
+            tone: "bg-muted text-muted-foreground",
+          },
+          {
+            label: "Total exceptions",
+            value: needsAction.length + resolved.length,
+            icon: Wrench,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="NEEDS_ACTION">
+              Needs action ({needsAction.length})
+            </TabsTrigger>
+            <TabsTrigger value="RESOLVED">
+              Returned ({resolved.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "NEEDS_ACTION"
+                ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."
+                : "Nothing returned yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <FailedDeliveryDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        riderName={
+          activeOrder ? (rider(activeOrder.deliveryRiderId)?.name ?? "—") : ""
+        }
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { WarehouseSidebar } from "@/components/navigation/warehouse-sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { WAREHOUSE_SIDEBAR } from "@/lib/nav-config"
+
+export default function WarehouseLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role !== "WAREHOUSE_ADMIN") {
+      router.replace(homeForRole(currentUser.role))
+    }
+  }, [isReady, currentUser, router])
+
+  if (!isReady || !currentUser || currentUser.role !== "WAREHOUSE_ADMIN") {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <WarehouseSidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={WAREHOUSE_SIDEBAR} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/reconciliation/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { toast } from "sonner"
+import {
+  Banknote,
+  Bike,
+  CheckCircle2,
+  HandCoins,
+  Loader2,
+  Search,
+  Wallet,
+} from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "UNSETTLED" | "SETTLED"
+
+export default function WarehouseReconciliationPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const {
+    orders,
+    allOrders,
+    warehouseUnsettledOrders,
+    settleOrderCod,
+    query,
+    setQuery,
+  } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("UNSETTLED")
+  const [settling, setSettling] = useState<string | null>(null)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Already derived from the unfiltered list (see useOrders), so stats/tab
+  // counts stay stable regardless of the current search.
+  const unsettled = warehouseUnsettledOrders
+
+  // Delivered parcels at this warehouse whose COD has been settled.
+  const settled = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.status === "DELIVERED" &&
+              Boolean(o.codSettledAt),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const unsettledCash = unsettled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+  const settledCash = settled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleUnsettled = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "DELIVERED" &&
+              o.warehouseId === currentWarehouse.id &&
+              !o.codSettledAt,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleSettled = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.status === "DELIVERED" &&
+              Boolean(o.codSettledAt),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
+
+  async function handleSettle(order: Order) {
+    setSettling(order.id)
+    try {
+      const result = await settleOrderCod(order.id)
+      if (result.ok) {
+        toast.success(
+          `${order.code} settled. Product cost is now available for merchant payout.`,
+        )
+      } else {
+        toast.error(result.error ?? "Unable to settle this parcel.")
+      }
+    } finally {
+      setSettling(null)
+    }
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="text-muted-foreground size-4" />
+          {rider(o.deliveryRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "collected",
+      header: "Cash collected",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.amountCollected ?? o.totalCollectible,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.amountCollected ?? o.totalCollectible)}
+        </span>
+      ),
+    },
+    {
+      id: "platform",
+      header: "Platform revenue",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.deliveryCharge + o.securityMoney,
+      cell: (o) => (
+        <span className="text-muted-foreground tabular-nums">
+          {formatTk(o.deliveryCharge + o.securityMoney)}
+        </span>
+      ),
+    },
+    {
+      id: "payable",
+      header: "Merchant payable",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.productCost,
+      cell: (o) => (
+        <span className="text-primary tabular-nums">
+          {formatTk(o.productCost)}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
+      cell: (o) =>
+        o.codSettledAt ? (
+          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
+            <CheckCircle2 className="size-4" />
+            Settled by {o.codSettledBy ?? "Admin"}
+          </span>
+        ) : (
+          <OrderStatusBadge status={o.status} />
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.codSettledAt ? null : (
+          <Button
+            size="sm"
+            onClick={() => handleSettle(o)}
+            disabled={settling === o.id}
+          >
+            {settling === o.id ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Settling
+              </>
+            ) : (
+              <>
+                <HandCoins className="size-4" />
+                Settle cash
+              </>
+            )}
+          </Button>
+        ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.reconciliation.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.reconciliation.description}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Awaiting settlement",
+            value: unsettled.length,
+            icon: HandCoins,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Cash to collect",
+            value: formatTk(unsettledCash),
+            icon: Banknote,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Settled cash",
+            value: formatTk(settledCash),
+            icon: Wallet,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="UNSETTLED">
+              Awaiting settlement ({unsettled.length})
+            </TabsTrigger>
+            <TabsTrigger value="SETTLED">
+              Settled ({settled.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "UNSETTLED"
+                ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
+                : "No settlements yet."
+            }
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -27974,6 +29689,41 @@ export function ImageGalleryUpload({
     </div>
   )
 }
+````
+
+## File: lib/auth.ts
+````typescript
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+import { pool } from "@/lib/db"
+
+export const auth = betterAuth({
+  database: pool,
+  plugins: [admin()],
+  baseURL:
+    process.env.BETTER_AUTH_DEV_URL ??
+    process.env.BETTER_AUTH_PRD_URL ??
+    undefined,
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+  },
+  trustedOrigins: [
+    ...(process.env.NEXT_PUBLIC_ENV === "development"
+      ? ["http://localhost:3000"]
+      : []),
+    ...(process.env.BETTER_AUTH_DEV_URL
+      ? [process.env.BETTER_AUTH_DEV_URL]
+      : []),
+    ...(process.env.BETTER_AUTH_PRD_URL
+      ? [process.env.BETTER_AUTH_PRD_URL]
+      : []),
+  ],
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
+})
 ````
 
 ## File: lib/types.ts
@@ -28291,358 +30041,6 @@ export async function POST(req: Request) {
 }
 ````
 
-## File: app/dashboard/payouts/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
-import { Wallet, Clock, Banknote, Loader2, Check, X } from "lucide-react"
-import { usePayouts } from "@/features/payouts/hooks/use-payouts"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { formatTk } from "@/lib/pricing"
-import type { PayoutRequest } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
-
-export default function PayoutsPage() {
-  const { payoutRequests, approvePayout, rejectPayout, markPayoutPaid } =
-    usePayouts()
-  const { merchants } = useMerchants()
-  const [tab, setTab] = useState<FilterTab>("PENDING")
-  const [busy, setBusy] = useState<string | null>(null)
-  const [rejectTarget, setRejectTarget] = useState<PayoutRequest | null>(null)
-  const [rejectReason, setRejectReason] = useState("")
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-
-  const pending = payoutRequests.filter((p) => p.status === "PENDING")
-  const approved = payoutRequests.filter((p) => p.status === "APPROVED")
-  const history = useMemo(
-    () =>
-      payoutRequests
-        .filter((p) => p.status === "PAID" || p.status === "REJECTED")
-        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
-    [payoutRequests],
-  )
-
-  const pendingAmount = pending.reduce((sum, p) => sum + p.amount, 0)
-  const approvedAmount = approved.reduce((sum, p) => sum + p.amount, 0)
-  const paidAmount = payoutRequests
-    .filter((p) => p.status === "PAID")
-    .reduce((sum, p) => sum + p.amount, 0)
-
-  const visible =
-    tab === "PENDING" ? pending : tab === "APPROVED" ? approved : history
-
-  async function handleApprove(req: PayoutRequest) {
-    setBusy(req.id)
-    try {
-      const result = await approvePayout(req.id)
-      if (result.ok) {
-        toast.success(`${req.code} approved. Mark it paid once funds are sent.`)
-      } else {
-        toast.error(result.error ?? "Unable to approve this request.")
-      }
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function handleMarkPaid(req: PayoutRequest) {
-    setBusy(req.id)
-    try {
-      const result = await markPayoutPaid(req.id)
-      if (result.ok) {
-        toast.success(`${req.code} marked as paid.`)
-      } else {
-        toast.error(result.error ?? "Unable to mark this request as paid.")
-      }
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function confirmReject() {
-    if (!rejectTarget) return
-    const result = await rejectPayout(rejectTarget.id, rejectReason)
-    if (result.ok) {
-      toast.success(
-        `${rejectTarget.code} rejected. Its orders are available again.`,
-      )
-      setRejectTarget(null)
-      setRejectReason("")
-    } else {
-      toast.error(result.error ?? "Unable to reject this request.")
-    }
-  }
-
-  const columns: DataTableColumn<PayoutRequest>[] = [
-    {
-      id: "request",
-      header: "Request",
-      sortable: true,
-      sortValue: (p) => p.code,
-      cell: (p) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {p.code}
-          </span>
-          <span className="font-medium">{merchantName(p.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "method",
-      header: "Method",
-      sortable: true,
-      sortValue: (p) => p.payoutMethod,
-      cell: (p) => (
-        <div className="flex flex-col">
-          <span>{p.payoutMethod}</span>
-          <span className="text-muted-foreground text-xs">
-            {p.payoutDetails}
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "orders",
-      header: "Orders",
-      align: "center",
-      sortable: true,
-      sortValue: (p) => p.orderIds.length,
-      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
-    },
-    {
-      id: "requested",
-      header: "Requested",
-      sortable: true,
-      sortValue: (p) => p.requestedAt,
-      cellClassName: "text-sm text-muted-foreground",
-      cell: (p) =>
-        new Date(p.requestedAt).toLocaleDateString("en-US", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }),
-    },
-    {
-      id: "amount",
-      header: "Amount",
-      align: "right",
-      sortable: true,
-      sortValue: (p) => p.amount,
-      cell: (p) => (
-        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (p) => p.status,
-      cell: (p) => (
-        <div className="flex flex-col gap-1">
-          <PayoutStatusBadge status={p.status} />
-          {p.status === "REJECTED" && p.rejectReason ? (
-            <span className="text-destructive max-w-48 text-xs">
-              {p.rejectReason}
-            </span>
-          ) : null}
-          {p.status === "PAID" && p.paidAt ? (
-            <span className="text-chart-2 text-xs">
-              Paid{" "}
-              {new Date(p.paidAt).toLocaleDateString("en-US", {
-                day: "numeric",
-                month: "short",
-              })}
-            </span>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (p) =>
-        p.status === "PENDING" ? (
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRejectTarget(p)
-                setRejectReason("")
-              }}
-              disabled={busy === p.id}
-            >
-              <X className="size-4" />
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => handleApprove(p)}
-              disabled={busy === p.id}
-            >
-              {busy === p.id ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              Approve
-            </Button>
-          </div>
-        ) : p.status === "APPROVED" ? (
-          <Button
-            size="sm"
-            onClick={() => handleMarkPaid(p)}
-            disabled={busy === p.id}
-          >
-            {busy === p.id ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Banknote className="size-4" />
-            )}
-            Mark as paid
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.dashboard.payouts.title}
-        description={pageContent.dashboard.payouts.description}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Pending review",
-            value: formatTk(pendingAmount),
-            icon: Clock,
-            tone: "bg-chart-3/15 text-chart-3",
-          },
-          {
-            label: "Approved, awaiting payment",
-            value: formatTk(approvedAmount),
-            icon: Wallet,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Total paid out",
-            value: formatTk(paidAmount),
-            icon: Banknote,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="PENDING">Pending ({pending.length})</TabsTrigger>
-          <TabsTrigger value="APPROVED">
-            Approved ({approved.length})
-          </TabsTrigger>
-          <TabsTrigger value="HISTORY">History ({history.length})</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(p) => p.id}
-            initialSortId="requested"
-            initialSortDir="desc"
-            emptyMessage={
-              tab === "PENDING"
-                ? "No payout requests to review. New merchant requests will appear here."
-                : tab === "APPROVED"
-                  ? "No approved requests awaiting payment."
-                  : "No paid or rejected requests yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <Dialog
-        open={Boolean(rejectTarget)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRejectTarget(null)
-            setRejectReason("")
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject payout {rejectTarget?.code}</DialogTitle>
-            <DialogDescription>
-              The {rejectTarget ? formatTk(rejectTarget.amount) : ""} request
-              will be rejected and its orders unlocked so the merchant can
-              request payout again.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="reject-reason">Reason</Label>
-            <Textarea
-              id="reject-reason"
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="e.g. Account details do not match the registered merchant."
-              rows={3}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRejectTarget(null)
-                setRejectReason("")
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmReject}
-              disabled={!rejectReason.trim()}
-            >
-              Reject request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-````
-
 ## File: app/login/page.tsx
 ````typescript
 "use client"
@@ -28877,937 +30275,6 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
-  )
-}
-````
-
-## File: app/warehouse/dispatch/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { Truck, PackageOpen, Bike, Send } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "READY" | "DISPATCHED"
-
-export default function WarehouseDispatchPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders, warehouseDeliveryRiders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("READY")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // Parcels held in this warehouse, awaiting a delivery rider.
-  const ready = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.status === "IN_WAREHOUSE" &&
-              o.warehouseId === currentWarehouse.id,
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  // Parcels this warehouse has already dispatched for delivery.
-  const dispatched = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.deliveryRiderId != null &&
-              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-                o.status,
-              ),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "READY" ? ready : dispatched
-
-  function openDispatch(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) =>
-        o.deliveryRiderId ? (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="text-muted-foreground size-4" />
-            {rider(o.deliveryRiderId)?.name ?? "—"}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-sm">Unassigned</span>
-        ),
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType}
-        </span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "IN_WAREHOUSE" ? (
-          <Button size="sm" onClick={() => openDispatch(o)}>
-            <Send className="size-4" />
-            Assign rider
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.dispatch.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.dispatch.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Ready to dispatch",
-            value: ready.length,
-            icon: PackageOpen,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Dispatched",
-            value: dispatched.length,
-            icon: Truck,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-          {
-            label: "Available riders",
-            value: warehouseDeliveryRiders.length,
-            icon: Bike,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="READY">
-            Ready to dispatch ({ready.length})
-          </TabsTrigger>
-          <TabsTrigger value="DISPATCHED">
-            Dispatched ({dispatched.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "READY"
-                ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
-                : "Nothing dispatched yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <WarehouseDispatchDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        warehouseName={currentWarehouse?.name ?? "your warehouse"}
-        deliveryRiders={warehouseDeliveryRiders}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/exceptions/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { AlertTriangle, RotateCcw, Undo2, Wrench } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "NEEDS_ACTION" | "RESOLVED"
-
-export default function WarehouseExceptionsPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders, warehouseFailedOrders } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision.
-  const needsAction = warehouseFailedOrders
-
-  // Parcels this warehouse has already resolved as returned.
-  const resolved = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "NEEDS_ACTION" ? needsAction : resolved
-
-  function openResolve(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "attempts",
-      header: "Attempts",
-      align: "center",
-      sortable: true,
-      sortValue: (o) => o.deliveryAttempts ?? 1,
-      cell: (o) => (
-        <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
-      ),
-    },
-    {
-      id: "tracking",
-      header: "Tracking",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "note",
-      header: "Resolution",
-      cellClassName: "whitespace-normal align-top",
-      cell: (o) =>
-        o.status === "RETURNED" ? (
-          <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
-            Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
-            {o.returnReason ? ` — ${o.returnReason}` : ""}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-xs">
-            Open tracking for attempt details
-          </span>
-        ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "FAILED_ATTEMPT" ? (
-          <Button size="sm" onClick={() => openResolve(o)}>
-            <RotateCcw className="size-4" />
-            Resolve
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.exceptions.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.exceptions.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Needs action",
-            value: needsAction.length,
-            icon: AlertTriangle,
-            tone: "bg-destructive/10 text-destructive",
-          },
-          {
-            label: "Returned",
-            value: resolved.length,
-            icon: Undo2,
-            tone: "bg-muted text-muted-foreground",
-          },
-          {
-            label: "Total exceptions",
-            value: needsAction.length + resolved.length,
-            icon: Wrench,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="NEEDS_ACTION">
-            Needs action ({needsAction.length})
-          </TabsTrigger>
-          <TabsTrigger value="RESOLVED">
-            Returned ({resolved.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "NEEDS_ACTION"
-                ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."
-                : "Nothing returned yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <FailedDeliveryDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        riderName={
-          activeOrder ? (rider(activeOrder.deliveryRiderId)?.name ?? "—") : ""
-        }
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/reconciliation/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
-import {
-  Wallet,
-  HandCoins,
-  CheckCircle2,
-  Banknote,
-  Bike,
-  Loader2,
-} from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "UNSETTLED" | "SETTLED"
-
-export default function WarehouseReconciliationPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders, warehouseUnsettledOrders, settleOrderCod } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("UNSETTLED")
-  const [settling, setSettling] = useState<string | null>(null)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  const unsettled = warehouseUnsettledOrders
-
-  // Delivered parcels at this warehouse whose COD has been settled.
-  const settled = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.status === "DELIVERED" &&
-              Boolean(o.codSettledAt),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const unsettledCash = unsettled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-  const settledCash = settled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-
-  const visible = tab === "UNSETTLED" ? unsettled : settled
-
-  async function handleSettle(order: Order) {
-    setSettling(order.id)
-    try {
-      const result = await settleOrderCod(order.id)
-      if (result.ok) {
-        toast.success(
-          `${order.code} settled. Product cost is now available for merchant payout.`,
-        )
-      } else {
-        toast.error(result.error ?? "Unable to settle this parcel.")
-      }
-    } finally {
-      setSettling(null)
-    }
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="text-muted-foreground size-4" />
-          {rider(o.deliveryRiderId)?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "collected",
-      header: "Cash collected",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.amountCollected ?? o.totalCollectible,
-      cell: (o) => (
-        <span className="font-medium tabular-nums">
-          {formatTk(o.amountCollected ?? o.totalCollectible)}
-        </span>
-      ),
-    },
-    {
-      id: "platform",
-      header: "Platform revenue",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.deliveryCharge + o.securityMoney,
-      cell: (o) => (
-        <span className="text-muted-foreground tabular-nums">
-          {formatTk(o.deliveryCharge + o.securityMoney)}
-        </span>
-      ),
-    },
-    {
-      id: "payable",
-      header: "Merchant payable",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.productCost,
-      cell: (o) => (
-        <span className="text-primary tabular-nums">
-          {formatTk(o.productCost)}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
-      cell: (o) =>
-        o.codSettledAt ? (
-          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
-            <CheckCircle2 className="size-4" />
-            Settled by {o.codSettledBy ?? "Admin"}
-          </span>
-        ) : (
-          <OrderStatusBadge status={o.status} />
-        ),
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.codSettledAt ? null : (
-          <Button
-            size="sm"
-            onClick={() => handleSettle(o)}
-            disabled={settling === o.id}
-          >
-            {settling === o.id ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Settling
-              </>
-            ) : (
-              <>
-                <HandCoins className="size-4" />
-                Settle cash
-              </>
-            )}
-          </Button>
-        ),
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.reconciliation.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.reconciliation.description}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Awaiting settlement",
-            value: unsettled.length,
-            icon: HandCoins,
-            tone: "bg-chart-3/15 text-chart-3",
-          },
-          {
-            label: "Cash to collect",
-            value: formatTk(unsettledCash),
-            icon: Banknote,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Settled cash",
-            value: formatTk(settledCash),
-            icon: Wallet,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="UNSETTLED">
-            Awaiting settlement ({unsettled.length})
-          </TabsTrigger>
-          <TabsTrigger value="SETTLED">Settled ({settled.length})</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "UNSETTLED"
-                ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
-                : "No settlements yet."
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-````
-
-## File: lib/auth.ts
-````typescript
-import { betterAuth } from "better-auth"
-import { admin } from "better-auth/plugins"
-import { pool } from "@/lib/db"
-
-export const auth = betterAuth({
-  database: pool,
-  plugins: [admin()],
-  baseURL:
-    process.env.BETTER_AUTH_DEV_URL ??
-    process.env.BETTER_AUTH_PRD_URL ??
-    undefined,
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
-  },
-  trustedOrigins: [
-    ...(process.env.NEXT_PUBLIC_ENV === "development"
-      ? ["http://localhost:3000"]
-      : []),
-    ...(process.env.BETTER_AUTH_DEV_URL
-      ? [process.env.BETTER_AUTH_DEV_URL]
-      : []),
-    ...(process.env.BETTER_AUTH_PRD_URL
-      ? [process.env.BETTER_AUTH_PRD_URL]
-      : []),
-  ],
-  session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
-  },
-})
-````
-
-## File: app/dashboard/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { Sidebar } from "@/components/navigation/sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { dashboardSidebarForRole } from "@/lib/nav-config"
-
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role === "MERCHANT") {
-      router.replace("/merchant")
-    } else if (currentUser.role === "RIDER") {
-      router.replace("/rider")
-    } else if (currentUser.role === "WAREHOUSE_ADMIN") {
-      router.replace("/warehouse")
-    }
-  }, [isReady, currentUser, router])
-
-  if (
-    !isReady ||
-    !currentUser ||
-    currentUser.role === "MERCHANT" ||
-    currentUser.role === "RIDER" ||
-    currentUser.role === "WAREHOUSE_ADMIN"
-  ) {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <Sidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
-## File: app/layout.tsx
-````typescript
-import { Analytics } from "@vercel/analytics/next"
-import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import { AuthProvider } from "@/features/account/hooks/use-auth"
-import { siteConfig } from "@/config/site"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/sonner"
-import NextTopLoader from "nextjs-toploader"
-import "./globals.css"
-import { ReactNode } from "react"
-
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-})
-
-export const metadata: Metadata = {
-  title: siteConfig.name,
-  description: siteConfig.description,
-  generator: "sarn.top",
-  icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
-  },
-}
-
-export const viewport: Viewport = {
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "white" },
-    { media: "(prefers-color-scheme: dark)", color: "black" },
-  ],
-}
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: ReactNode
-}>) {
-  return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
-      suppressHydrationWarning
-    >
-      <body className="bg-background font-sans antialiased">
-        <NextTopLoader />
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <AuthProvider>{children}</AuthProvider>
-          <Toaster />
-        </ThemeProvider>
-        {process.env.NEXT_PUBLIC_ENV === "production" && <Analytics />}
-      </body>
-    </html>
   )
 }
 ````
@@ -30156,6 +30623,418 @@ export default function MerchantFinancePage() {
         onOpenChange={setDialogOpen}
       />
     </>
+  )
+}
+````
+
+## File: app/dashboard/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { Sidebar } from "@/components/navigation/sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { dashboardSidebarForRole } from "@/lib/nav-config"
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role === "MERCHANT") {
+      router.replace("/merchant")
+    } else if (currentUser.role === "RIDER") {
+      router.replace("/rider")
+    } else if (currentUser.role === "WAREHOUSE_ADMIN") {
+      router.replace("/warehouse")
+    }
+  }, [isReady, currentUser, router])
+
+  if (
+    !isReady ||
+    !currentUser ||
+    currentUser.role === "MERCHANT" ||
+    currentUser.role === "RIDER" ||
+    currentUser.role === "WAREHOUSE_ADMIN"
+  ) {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <Sidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
+## File: app/layout.tsx
+````typescript
+import { Analytics } from "@vercel/analytics/next"
+import type { Metadata, Viewport } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import { AuthProvider } from "@/features/account/hooks/use-auth"
+import { siteConfig } from "@/config/site"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
+import NextTopLoader from "nextjs-toploader"
+import "./globals.css"
+import { ReactNode } from "react"
+
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+})
+
+export const metadata: Metadata = {
+  title: siteConfig.name,
+  description: siteConfig.description,
+  generator: "sarn.top",
+  icons: {
+    icon: [
+      {
+        url: "/icon-light-32x32.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/icon-dark-32x32.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: "/apple-icon.png",
+  },
+}
+
+export const viewport: Viewport = {
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "black" },
+  ],
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: ReactNode
+}>) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="bg-background font-sans antialiased">
+        <NextTopLoader />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthProvider>{children}</AuthProvider>
+          <Toaster />
+        </ThemeProvider>
+        {process.env.NEXT_PUBLIC_ENV === "production" && <Analytics />}
+      </body>
+    </html>
+  )
+}
+````
+
+## File: app/warehouse/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseReceiveDialog } from "@/features/orders/dialogs/warehouse-receive-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "INCOMING" | "RECEIVED"
+
+export default function WarehouseIntakePage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("INCOMING")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Parcels that have been picked up and are heading to a warehouse. In this
+  // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
+  const incoming = useMemo(
+    () => orders.filter((o) => o.status === "PICKED_UP"),
+    [orders],
+  )
+
+  // Parcels this warehouse has already received.
+  const received = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              [
+                "IN_WAREHOUSE",
+                "IN_TRANSIT",
+                "OUT_FOR_DELIVERY",
+                "DELIVERED",
+              ].includes(o.status),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "INCOMING" ? incoming : received
+
+  function openConfirm(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Brought by",
+      sortable: true,
+      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="text-muted-foreground size-4" />
+          {rider(o.pickupRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "notes",
+      header: "Notes",
+      cell: (o) => (
+        <div className="flex items-center gap-1.5">
+          {o.merchantNote ? (
+            <span
+              title={o.merchantNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400"
+            >
+              M
+            </span>
+          ) : null}
+          {o.receiverNote ? (
+            <span
+              title={o.receiverNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-600 dark:bg-red-950 dark:text-red-400"
+            >
+              R
+            </span>
+          ) : null}
+          {!o.merchantNote && !o.receiverNote ? (
+            <span className="text-muted-foreground/50 text-xs">—</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "PICKED_UP" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackagePlus className="size-4" />
+            Receive
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.intake.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.intake.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Incoming",
+            value: incoming.length,
+            icon: Clock,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Received",
+            value: received.length,
+            icon: Boxes,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Held in warehouse",
+            value: received.filter((o) => o.status === "IN_WAREHOUSE").length,
+            icon: PackageOpen,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+        <TabsList>
+          <TabsTrigger value="INCOMING">
+            Incoming ({incoming.length})
+          </TabsTrigger>
+          <TabsTrigger value="RECEIVED">
+            Received ({received.length})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "INCOMING"
+                ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
+                : "Nothing received yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <WarehouseReceiveDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        riderName={
+          activeOrder ? (rider(activeOrder.pickupRiderId)?.name ?? "—") : ""
+        }
+        warehouseName={currentWarehouse?.name ?? "your warehouse"}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
   )
 }
 ````
@@ -30528,13 +31407,13 @@ export default function OrderDetailPage() {
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
-  Package,
-  Clock,
+  Bike,
   CheckCircle2,
-  Truck,
+  Clock,
+  Package,
   Search,
   ShieldCheck,
-  Bike,
+  Truck,
 } from "lucide-react"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -30559,12 +31438,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const { pickupLocations } = usePickupLocations()
   const [tab, setTab] = useState<FilterTab>("PENDING")
-  const [query, setQuery] = useState("")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -30575,31 +31453,25 @@ export default function OrdersPage() {
   const pickupLocation = (id: string) =>
     pickupLocations.find((p) => p.id === id) ?? null
 
+  // Stats always reflect the full order set, not the current search.
   const counts = useMemo(
     () => ({
-      pending: orders.filter((o) => o.status === "PENDING").length,
-      approved: orders.filter((o) => o.status === "APPROVED").length,
-      inProgress: orders.filter(
+      pending: allOrders.filter((o) => o.status === "PENDING").length,
+      approved: allOrders.filter((o) => o.status === "APPROVED").length,
+      inProgress: allOrders.filter(
         (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
       ).length,
-      total: orders.length,
+      total: allOrders.length,
     }),
-    [orders],
+    [allOrders],
   )
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return orders.filter((o) => {
-      const matchesTab = tab === "ALL" || o.status === tab
-      const matchesQuery =
-        !q ||
-        o.code.toLowerCase().includes(q) ||
-        o.recipientName.toLowerCase().includes(q) ||
-        merchantName(o.merchantId).toLowerCase().includes(q)
-      return matchesTab && matchesQuery
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orders, tab, query])
+  // Search is server-side now (see useOrders); the tab status filter stays
+  // client-side, layered on top of the already-search-narrowed `orders`.
+  const filtered = useMemo(
+    () => orders.filter((o) => tab === "ALL" || o.status === tab),
+    [orders, tab],
+  )
 
   function openApprove(order: Order) {
     setActiveOrder(order)
@@ -30778,7 +31650,7 @@ export default function OrdersPage() {
         <div className="relative w-full sm:max-w-xs">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
-            placeholder="Search code, recipient, merchant"
+            placeholder="Search code, recipient, phone, city"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
@@ -31495,272 +32367,6 @@ export default function RegisterPage() {
 }
 ````
 
-## File: app/warehouse/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { WarehouseReceiveDialog } from "@/features/orders/dialogs/warehouse-receive-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "INCOMING" | "RECEIVED"
-
-export default function WarehouseIntakePage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("INCOMING")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // Parcels that have been picked up and are heading to a warehouse. In this
-  // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
-  const incoming = useMemo(
-    () => orders.filter((o) => o.status === "PICKED_UP"),
-    [orders],
-  )
-
-  // Parcels this warehouse has already received.
-  const received = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              [
-                "IN_WAREHOUSE",
-                "IN_TRANSIT",
-                "OUT_FOR_DELIVERY",
-                "DELIVERED",
-              ].includes(o.status),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "INCOMING" ? incoming : received
-
-  function openConfirm(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Brought by",
-      sortable: true,
-      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="text-muted-foreground size-4" />
-          {rider(o.pickupRiderId)?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType}
-        </span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "notes",
-      header: "Notes",
-      cell: (o) => (
-        <div className="flex items-center gap-1.5">
-          {o.merchantNote ? (
-            <span
-              title={o.merchantNote}
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400"
-            >
-              M
-            </span>
-          ) : null}
-          {o.receiverNote ? (
-            <span
-              title={o.receiverNote}
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-600 dark:bg-red-950 dark:text-red-400"
-            >
-              R
-            </span>
-          ) : null}
-          {!o.merchantNote && !o.receiverNote ? (
-            <span className="text-muted-foreground/50 text-xs">—</span>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "PICKED_UP" ? (
-          <Button size="sm" onClick={() => openConfirm(o)}>
-            <PackagePlus className="size-4" />
-            Receive
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.intake.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.intake.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Incoming",
-            value: incoming.length,
-            icon: Clock,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Received",
-            value: received.length,
-            icon: Boxes,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Held in warehouse",
-            value: received.filter((o) => o.status === "IN_WAREHOUSE").length,
-            icon: PackageOpen,
-            tone: "bg-primary/10 text-primary",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="INCOMING">
-            Incoming ({incoming.length})
-          </TabsTrigger>
-          <TabsTrigger value="RECEIVED">
-            Received ({received.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "INCOMING"
-                ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
-                : "Nothing received yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <WarehouseReceiveDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        riderName={
-          activeOrder ? (rider(activeOrder.pickupRiderId)?.name ?? "—") : ""
-        }
-        warehouseName={currentWarehouse?.name ?? "your warehouse"}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
 ## File: app/merchant/page.tsx
 ````typescript
 "use client"
@@ -32059,499 +32665,6 @@ export default function MerchantOverviewPage() {
           )}
         </CardContent>
       </Card>
-    </>
-  )
-}
-````
-
-## File: lib/nav-config.ts
-````typescript
-import {
-  LayoutDashboard,
-  Coins,
-  Users,
-  Store,
-  Package,
-  Wallet,
-  PackagePlus,
-  Truck,
-  AlertTriangle,
-  PackageCheck,
-  Bike,
-  ListChecks,
-  Warehouse as WarehouseIcon,
-  UserCog,
-  Building2,
-  Map as MapIcon,
-  type LucideIcon,
-} from "lucide-react"
-import type { Role } from "@/lib/types"
-import { ParcelIcon } from "@/icons/ParcelIcon"
-
-export interface SidebarNavItem {
-  href: string
-  label: string
-  icon: LucideIcon
-  exact?: boolean
-}
-
-export interface SidebarConfig {
-  // The brand mark accepts either a Lucide icon or the inline SVG ParcelIcon —
-  // both satisfy React.ComponentType<React.SVGProps<SVGSVGElement>>.
-  brandIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>
-  roleLabel: string
-  items: SidebarNavItem[]
-}
-
-// Super Admins oversee the whole platform and are the only role that can
-// provision Admin / Warehouse Admin accounts (the "Admins" page).
-export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Super Admin",
-  items: [
-    {
-      href: "/dashboard",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/dashboard/orders", label: "Orders", icon: Package },
-    { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-    { href: "/dashboard/team", label: "Admins", icon: Users },
-    { href: "/dashboard/riders", label: "Riders", icon: Bike },
-    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
-    {
-      href: "/dashboard/warehouses",
-      label: "Warehouses",
-      icon: WarehouseIcon,
-    },
-    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-    {
-      href: "/dashboard/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-// Admins handle day-to-day operations: order approval, merchant pricing, and
-// managing the rider roster (the "Riders" page).
-export const ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Admin",
-  items: [
-    {
-      href: "/dashboard",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/dashboard/orders", label: "Orders", icon: Package },
-    { href: "/dashboard/riders", label: "Riders", icon: Bike },
-    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-    {
-      href: "/dashboard/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-// Picks the correct console sidebar for the two admin-tier roles. Defaults to
-// the Super Admin layout for any other role that reaches the dashboard shell.
-export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
-  return role === "ADMIN" ? ADMIN_SIDEBAR : SUPER_ADMIN_SIDEBAR
-}
-
-export const MERCHANT_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Merchant",
-  items: [
-    {
-      href: "/merchant",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/merchant/orders/new", label: "Create Order", icon: PackagePlus },
-    { href: "/merchant/finance", label: "Finance", icon: Wallet },
-    {
-      href: "/merchant/business",
-      label: "Business",
-      icon: Building2,
-      exact: true,
-    },
-    {
-      href: "/merchant/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-export const WAREHOUSE_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Warehouse",
-  items: [
-    {
-      href: "/warehouse",
-      label: "Intake queue",
-      icon: PackagePlus,
-      exact: true,
-    },
-    {
-      href: "/warehouse/dispatch",
-      label: "Dispatch desk",
-      icon: Truck,
-      exact: true,
-    },
-    {
-      href: "/warehouse/orders",
-      label: "Order progress",
-      icon: Package,
-      exact: true,
-    },
-    {
-      href: "/warehouse/riders",
-      label: "Riders",
-      icon: Bike,
-      exact: true,
-    },
-    {
-      href: "/warehouse/exceptions",
-      label: "Exceptions",
-      icon: AlertTriangle,
-      exact: true,
-    },
-    {
-      href: "/warehouse/reconciliation",
-      label: "COD reconciliation",
-      icon: Wallet,
-      exact: true,
-    },
-    {
-      href: "/warehouse/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-export const RIDER_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Rider",
-  items: [
-    { href: "/rider", label: "To-do", icon: ListChecks, exact: true },
-    {
-      href: "/rider/pickup",
-      label: "Pickup queue",
-      icon: PackageCheck,
-      exact: true,
-    },
-    {
-      href: "/rider/delivery",
-      label: "Delivery queue",
-      icon: Truck,
-      exact: true,
-    },
-    {
-      href: "/rider/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-````
-
-## File: app/dashboard/team/page.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useTeam } from "@/features/team/hooks/use-team"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import type { User } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { RoleBadge } from "@/components/role-badge"
-import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-// Sentinel value for the "Unassigned" option, since the Select cannot use an
-// empty string as an item value.
-const UNASSIGNED = "__unassigned__"
-
-function StatusToggle({
-  user,
-  onToggle,
-}: {
-  user: User
-  onToggle: () => void
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Switch
-        checked={user.isActive}
-        onCheckedChange={onToggle}
-        aria-label={`Toggle active state for ${user.name}`}
-      />
-      <span className="text-muted-foreground text-xs">
-        {user.isActive ? "Active" : "Disabled"}
-      </span>
-    </div>
-  )
-}
-
-function WarehouseSelect({
-  user,
-  warehouses,
-  onChange,
-}: {
-  user: User
-  warehouses: { id: string; name: string; city: string }[]
-  onChange: (warehouseId: string | null) => void
-}) {
-  return (
-    <Select
-      value={user.warehouseId ?? UNASSIGNED}
-      onValueChange={(v) => onChange(v === UNASSIGNED ? null : v)}
-    >
-      <SelectTrigger
-        className="w-fit min-w-44"
-        aria-label={`Assigned warehouse for ${user.name}`}
-      >
-        <SelectValue>
-          {(value) => {
-            if (!value || value === UNASSIGNED) return "Unassigned"
-            const w = warehouses.find((x) => x.id === value)
-            return w ? `${w.name} \u00B7 ${w.city}` : "Unknown"
-          }}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-        {warehouses.map((w) => (
-          <SelectItem key={w.id} value={w.id}>
-            {w.name} {"\u00B7"} {w.city}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-export default function TeamPage() {
-  const router = useRouter()
-  const { currentUser } = useAuth()
-  const {
-    team,
-    toggleAccountActive,
-    togglePricingPermission,
-    updateAccountWarehouse,
-  } = useTeam()
-  const { warehouses } = useWarehouses()
-
-  // Managing Admin accounts is a Super Admin-only capability. Admins who reach
-  // this route directly are redirected back to their console overview.
-  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
-  useEffect(() => {
-    if (currentUser && !isSuperAdmin) {
-      router.replace("/dashboard")
-    }
-  }, [currentUser, isSuperAdmin, router])
-
-  function warehouseName(id?: string | null) {
-    if (!id) return "Unassigned"
-    return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
-  }
-
-  const admins = team.filter((u) => u.role === "ADMIN")
-  const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
-
-  function handleToggleActive(user: User) {
-    toggleAccountActive(user.id)
-    toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
-  }
-
-  function handleTogglePricing(user: User) {
-    togglePricingPermission(user.id)
-    toast.success(
-      `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
-    )
-  }
-
-  async function handleChangeWarehouse(user: User, warehouseId: string | null) {
-    if ((user.warehouseId ?? null) === warehouseId) return
-    await updateAccountWarehouse(user.id, warehouseId)
-    toast.success(
-      warehouseId
-        ? `${user.name} now manages ${warehouseName(warehouseId)}.`
-        : `${user.name} is no longer assigned to a warehouse.`,
-    )
-  }
-
-  const nameColumn: DataTableColumn<User> = {
-    id: "name",
-    header: "Name",
-    sortable: true,
-    sortValue: (u) => u.name,
-    cell: (u) => (
-      <div className="flex flex-col">
-        <span className="font-medium">{u.name}</span>
-        <span className="text-muted-foreground text-xs sm:hidden">
-          {u.email}
-        </span>
-      </div>
-    ),
-  }
-
-  const contactColumn: DataTableColumn<User> = {
-    id: "contact",
-    header: "Contact",
-    sortable: true,
-    sortValue: (u) => u.email,
-    headClassName: "hidden sm:table-cell",
-    cellClassName: "hidden sm:table-cell",
-    cell: (u) => (
-      <div className="flex flex-col text-sm">
-        <span>{u.email}</span>
-        <span className="text-muted-foreground text-xs">{u.phone}</span>
-      </div>
-    ),
-  }
-
-  const statusColumn: DataTableColumn<User> = {
-    id: "status",
-    header: "Status",
-    align: "right",
-    sortable: true,
-    sortValue: (u) => (u.isActive ? 1 : 0),
-    cell: (u) => (
-      <div className="flex justify-end">
-        <StatusToggle user={u} onToggle={() => handleToggleActive(u)} />
-      </div>
-    ),
-  }
-
-  const adminColumns: DataTableColumn<User>[] = [
-    nameColumn,
-    contactColumn,
-    {
-      id: "pricing",
-      header: "Pricing access",
-      sortable: true,
-      sortValue: (u) => (u.canManagePricing ? 1 : 0),
-      cell: (u) => (
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={Boolean(u.canManagePricing)}
-            onCheckedChange={() => handleTogglePricing(u)}
-            aria-label={`Toggle pricing permission for ${u.name}`}
-          />
-          <span className="text-muted-foreground text-xs">
-            {u.canManagePricing ? "Granted" : "Denied"}
-          </span>
-        </div>
-      ),
-    },
-    statusColumn,
-  ]
-
-  const warehouseColumns: DataTableColumn<User>[] = [
-    nameColumn,
-    contactColumn,
-    {
-      id: "warehouse",
-      header: "Warehouse",
-      sortable: true,
-      sortValue: (u) => warehouseName(u.warehouseId),
-      cell: (u) => (
-        <WarehouseSelect
-          user={u}
-          warehouses={warehouses}
-          onChange={(warehouseId) => handleChangeWarehouse(u, warehouseId)}
-        />
-      ),
-    },
-    statusColumn,
-  ]
-
-  if (!isSuperAdmin) return null
-
-  return (
-    <>
-      <PageHeader
-        title={pageContent.dashboard.team.title}
-        description={pageContent.dashboard.team.description}
-      >
-        <CreateAccountDialog />
-      </PageHeader>
-
-      <Tabs defaultValue="admins">
-        <TabsList>
-          <TabsTrigger value="admins">Admins ({admins.length})</TabsTrigger>
-          <TabsTrigger value="warehouse">
-            Warehouse Admins ({warehouseAdmins.length})
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Admins */}
-        <TabsContent value="admins" className="mt-4">
-          <Card>
-            <CardContent className="p-0">
-              <DataTable
-                columns={adminColumns}
-                data={admins}
-                getRowKey={(u) => u.id}
-                initialSortId="name"
-                emptyMessage="No Admin accounts yet. Create one to get started."
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Warehouse Admins */}
-        <TabsContent value="warehouse" className="mt-4">
-          <Card>
-            <CardContent className="p-0">
-              <DataTable
-                columns={warehouseColumns}
-                data={warehouseAdmins}
-                getRowKey={(u) => u.id}
-                initialSortId="name"
-                emptyMessage="No Warehouse Admin accounts yet."
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <p className="text-muted-foreground mt-4 flex items-center gap-2 text-xs">
-        <RoleBadge role="ADMIN" />
-        Admins approve orders and assign pickup riders.
-        <RoleBadge role="WAREHOUSE_ADMIN" />
-        Warehouse Admins manage in-transit inventory and delivery riders.
-      </p>
     </>
   )
 }
@@ -33006,6 +33119,523 @@ export default function RiderTodoPage() {
         onOpenChange={setDeliveryDialogOpen}
       />
     </div>
+  )
+}
+````
+
+## File: lib/nav-config.ts
+````typescript
+import {
+  LayoutDashboard,
+  Coins,
+  Users,
+  Store,
+  Package,
+  Wallet,
+  PackagePlus,
+  Truck,
+  AlertTriangle,
+  PackageCheck,
+  Bike,
+  ListChecks,
+  Warehouse as WarehouseIcon,
+  UserCog,
+  Building2,
+  Map as MapIcon,
+  type LucideIcon,
+} from "lucide-react"
+import type { Role } from "@/lib/types"
+import { ParcelIcon } from "@/icons/ParcelIcon"
+
+export interface SidebarNavItem {
+  href: string
+  label: string
+  icon: LucideIcon
+  exact?: boolean
+}
+
+export interface SidebarConfig {
+  // The brand mark accepts either a Lucide icon or the inline SVG ParcelIcon —
+  // both satisfy React.ComponentType<React.SVGProps<SVGSVGElement>>.
+  brandIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+  roleLabel: string
+  items: SidebarNavItem[]
+}
+
+// Super Admins oversee the whole platform and are the only role that can
+// provision Admin / Warehouse Admin accounts (the "Admins" page).
+export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Super Admin",
+  items: [
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/dashboard/orders", label: "Orders", icon: Package },
+    { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
+    { href: "/dashboard/team", label: "Admins", icon: Users },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
+    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
+    {
+      href: "/dashboard/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+    },
+    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+// Admins handle day-to-day operations: order approval, merchant pricing, and
+// managing the rider roster (the "Riders" page).
+export const ADMIN_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Admin",
+  items: [
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/dashboard/orders", label: "Orders", icon: Package },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
+    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+// Picks the correct console sidebar for the two admin-tier roles. Defaults to
+// the Super Admin layout for any other role that reaches the dashboard shell.
+export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
+  return role === "ADMIN" ? ADMIN_SIDEBAR : SUPER_ADMIN_SIDEBAR
+}
+
+export const MERCHANT_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Merchant",
+  items: [
+    {
+      href: "/merchant",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/merchant/orders/new", label: "Create Order", icon: PackagePlus },
+    { href: "/merchant/finance", label: "Finance", icon: Wallet },
+    {
+      href: "/merchant/business",
+      label: "Business",
+      icon: Building2,
+      exact: true,
+    },
+    {
+      href: "/merchant/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+export const WAREHOUSE_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Warehouse",
+  items: [
+    {
+      href: "/warehouse",
+      label: "Intake queue",
+      icon: PackagePlus,
+      exact: true,
+    },
+    {
+      href: "/warehouse/dispatch",
+      label: "Dispatch desk",
+      icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/warehouse/orders",
+      label: "Order progress",
+      icon: Package,
+      exact: true,
+    },
+    {
+      href: "/warehouse/riders",
+      label: "Riders",
+      icon: Bike,
+      exact: true,
+    },
+    {
+      href: "/warehouse/exceptions",
+      label: "Exceptions",
+      icon: AlertTriangle,
+      exact: true,
+    },
+    {
+      href: "/warehouse/reconciliation",
+      label: "COD reconciliation",
+      icon: Wallet,
+      exact: true,
+    },
+    {
+      href: "/warehouse/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+export const RIDER_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Rider",
+  items: [
+    { href: "/rider", label: "To-do", icon: ListChecks, exact: true },
+    {
+      href: "/rider/pickup",
+      label: "Pickup queue",
+      icon: PackageCheck,
+      exact: true,
+    },
+    {
+      href: "/rider/delivery",
+      label: "Delivery queue",
+      icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/rider/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+````
+
+## File: app/dashboard/team/page.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { Search } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useTeam } from "@/features/team/hooks/use-team"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import type { User } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { RoleBadge } from "@/components/role-badge"
+import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+// Sentinel value for the "Unassigned" option, since the Select cannot use an
+// empty string as an item value.
+const UNASSIGNED = "__unassigned__"
+
+function StatusToggle({
+  user,
+  onToggle,
+}: {
+  user: User
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Switch
+        checked={user.isActive}
+        onCheckedChange={onToggle}
+        aria-label={`Toggle active state for ${user.name}`}
+      />
+      <span className="text-muted-foreground text-xs">
+        {user.isActive ? "Active" : "Disabled"}
+      </span>
+    </div>
+  )
+}
+
+function WarehouseSelect({
+  user,
+  warehouses,
+  onChange,
+}: {
+  user: User
+  warehouses: { id: string; name: string; city: string }[]
+  onChange: (warehouseId: string | null) => void
+}) {
+  return (
+    <Select
+      value={user.warehouseId ?? UNASSIGNED}
+      onValueChange={(v) => onChange(v === UNASSIGNED ? null : v)}
+    >
+      <SelectTrigger
+        className="w-fit min-w-44"
+        aria-label={`Assigned warehouse for ${user.name}`}
+      >
+        <SelectValue>
+          {(value) => {
+            if (!value || value === UNASSIGNED) return "Unassigned"
+            const w = warehouses.find((x) => x.id === value)
+            return w ? `${w.name} \u00B7 ${w.city}` : "Unknown"
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+        {warehouses.map((w) => (
+          <SelectItem key={w.id} value={w.id}>
+            {w.name} {"\u00B7"} {w.city}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+export default function TeamPage() {
+  const router = useRouter()
+  const { currentUser } = useAuth()
+  const {
+    team,
+    allTeam,
+    query,
+    setQuery,
+    toggleAccountActive,
+    togglePricingPermission,
+    updateAccountWarehouse,
+  } = useTeam()
+  const { warehouses } = useWarehouses()
+
+  // Managing Admin accounts is a Super Admin-only capability. Admins who reach
+  // this route directly are redirected back to their console overview.
+  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
+  useEffect(() => {
+    if (currentUser && !isSuperAdmin) {
+      router.replace("/dashboard")
+    }
+  }, [currentUser, isSuperAdmin, router])
+
+  function warehouseName(id?: string | null) {
+    if (!id) return "Unassigned"
+    return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
+  }
+
+  // Table contents are search-narrowed; tab counts always reflect the full
+  // roster so they don't shrink to zero just because a search has no matches
+  // in that role.
+  const admins = team.filter((u) => u.role === "ADMIN")
+  const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
+  const totalAdmins = allTeam.filter((u) => u.role === "ADMIN").length
+  const totalWarehouseAdmins = allTeam.filter(
+    (u) => u.role === "WAREHOUSE_ADMIN",
+  ).length
+
+  function handleToggleActive(user: User) {
+    toggleAccountActive(user.id)
+    toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
+  }
+
+  function handleTogglePricing(user: User) {
+    togglePricingPermission(user.id)
+    toast.success(
+      `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
+    )
+  }
+
+  async function handleChangeWarehouse(user: User, warehouseId: string | null) {
+    if ((user.warehouseId ?? null) === warehouseId) return
+    await updateAccountWarehouse(user.id, warehouseId)
+    toast.success(
+      warehouseId
+        ? `${user.name} now manages ${warehouseName(warehouseId)}.`
+        : `${user.name} is no longer assigned to a warehouse.`,
+    )
+  }
+
+  const nameColumn: DataTableColumn<User> = {
+    id: "name",
+    header: "Name",
+    sortable: true,
+    sortValue: (u) => u.name,
+    cell: (u) => (
+      <div className="flex flex-col">
+        <span className="font-medium">{u.name}</span>
+        <span className="text-muted-foreground text-xs sm:hidden">
+          {u.email}
+        </span>
+      </div>
+    ),
+  }
+
+  const contactColumn: DataTableColumn<User> = {
+    id: "contact",
+    header: "Contact",
+    sortable: true,
+    sortValue: (u) => u.email,
+    headClassName: "hidden sm:table-cell",
+    cellClassName: "hidden sm:table-cell",
+    cell: (u) => (
+      <div className="flex flex-col text-sm">
+        <span>{u.email}</span>
+        <span className="text-muted-foreground text-xs">{u.phone}</span>
+      </div>
+    ),
+  }
+
+  const statusColumn: DataTableColumn<User> = {
+    id: "status",
+    header: "Status",
+    align: "right",
+    sortable: true,
+    sortValue: (u) => (u.isActive ? 1 : 0),
+    cell: (u) => (
+      <div className="flex justify-end">
+        <StatusToggle user={u} onToggle={() => handleToggleActive(u)} />
+      </div>
+    ),
+  }
+
+  const adminColumns: DataTableColumn<User>[] = [
+    nameColumn,
+    contactColumn,
+    {
+      id: "pricing",
+      header: "Pricing access",
+      sortable: true,
+      sortValue: (u) => (u.canManagePricing ? 1 : 0),
+      cell: (u) => (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={Boolean(u.canManagePricing)}
+            onCheckedChange={() => handleTogglePricing(u)}
+            aria-label={`Toggle pricing permission for ${u.name}`}
+          />
+          <span className="text-muted-foreground text-xs">
+            {u.canManagePricing ? "Granted" : "Denied"}
+          </span>
+        </div>
+      ),
+    },
+    statusColumn,
+  ]
+
+  const warehouseColumns: DataTableColumn<User>[] = [
+    nameColumn,
+    contactColumn,
+    {
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (u) => warehouseName(u.warehouseId),
+      cell: (u) => (
+        <WarehouseSelect
+          user={u}
+          warehouses={warehouses}
+          onChange={(warehouseId) => handleChangeWarehouse(u, warehouseId)}
+        />
+      ),
+    },
+    statusColumn,
+  ]
+
+  if (!isSuperAdmin) return null
+
+  return (
+    <>
+      <PageHeader
+        title={pageContent.dashboard.team.title}
+        description={pageContent.dashboard.team.description}
+      >
+        <CreateAccountDialog />
+      </PageHeader>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, email, phone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Tabs defaultValue="admins">
+        <TabsList>
+          <TabsTrigger value="admins">Admins ({totalAdmins})</TabsTrigger>
+          <TabsTrigger value="warehouse">
+            Warehouse Admins ({totalWarehouseAdmins})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Admins */}
+        <TabsContent value="admins" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              <DataTable
+                columns={adminColumns}
+                data={admins}
+                getRowKey={(u) => u.id}
+                initialSortId="name"
+                emptyMessage="No Admin accounts yet. Create one to get started."
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Warehouse Admins */}
+        <TabsContent value="warehouse" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              <DataTable
+                columns={warehouseColumns}
+                data={warehouseAdmins}
+                getRowKey={(u) => u.id}
+                initialSortId="name"
+                emptyMessage="No Warehouse Admin accounts yet."
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <p className="text-muted-foreground mt-4 flex items-center gap-2 text-xs">
+        <RoleBadge role="ADMIN" />
+        Admins approve orders and assign pickup riders.
+        <RoleBadge role="WAREHOUSE_ADMIN" />
+        Warehouse Admins manage in-transit inventory and delivery riders.
+      </p>
+    </>
   )
 }
 ````
