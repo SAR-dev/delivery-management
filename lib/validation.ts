@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { MAX_BULK_ORDERS } from "@/lib/constants"
+import { MAX_BULK_ORDERS, MAX_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 export async function parseBody<T extends z.ZodType>(
   req: Request,
@@ -234,10 +234,22 @@ export const profileUpdateSchema = z
     name: requiredString("Name").optional(),
     // `null` clears the avatar; a string sets it; omitted leaves it unchanged.
     image: imageUrl("Avatar").nullish(),
+    tableRowsPerPage: z
+      .int("Rows per page must be a whole number")
+      .min(1, "Rows per page must be at least 1")
+      .max(
+        MAX_TABLE_ROWS_PER_PAGE,
+        `Rows per page cannot exceed ${MAX_TABLE_ROWS_PER_PAGE}`,
+      )
+      .optional(),
   })
-  .refine((d) => d.name !== undefined || d.image !== undefined, {
-    error: "Provide a name or an image to update",
-  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.image !== undefined ||
+      d.tableRowsPerPage !== undefined,
+    { error: "Provide at least one field to update" },
+  )
 
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),

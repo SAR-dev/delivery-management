@@ -71,6 +71,15 @@ features/
 (`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
 `hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
 
+**One documented exception:** `components/data-table.tsx` imports
+`useAuth()` from `features/account` to default its `pageSize` prop to the
+signed-in account's saved rows-per-page preference
+(`profile.tableRowsPerPage`, see Recipe A's example below). This was a
+deliberate tradeoff — the alternative was threading `pageSize` through all 18+
+page-level call sites — and it's the only place in `components/` allowed to
+reach into `features/`. Don't use this as precedent for other components;
+ask before adding a second one.
+
 ### Only split a component into a folder when there's real content
 
 A component stays a single flat `.tsx` file. Promote it to a folder
@@ -414,6 +423,22 @@ Example: the `rider.taskType` column added recently.
 > If the column is `NOT NULL` and existing rows would violate it, either give it
 > a `.default(...)` or backfill before pushing (the push will otherwise fail).
 
+**Variant — a field on `profile` the user edits about themselves** (not a
+resource entity): example, `profile.tableRowsPerPage`. The shape differs from
+the above in three ways:
+
+- There's no per-resource hook to extend — the field is read/written through
+  `features/account/hooks/use-auth.tsx` and `app/api/users/me/route.ts`
+  instead, alongside the existing name/avatar fields.
+- `app/api/users/me/route.ts`'s `PATCH` writes to **two tables**
+  (`user` for name/image, `profile` for everything else). Once a second field
+  lives on `profile`, that handler is a genuine multi-table write — wrap it in
+  `db.transaction()` per [§2's transaction subsection](#transaction-boundary--row-lock),
+  even though today's UI only ever sends one field group per request.
+- Skip the seed step if the column has a sane `.default(...)` — Drizzle
+  applies it on insert when the seed script doesn't set the field explicitly,
+  so there's nothing to backfill in `lib/db/seed.ts`.
+
 ### Recipe B — Add a brand-new resource (full CRUD)
 
 Example structure to mirror: **divisions** (simple) or **merchants** (rich).
@@ -457,7 +482,13 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    `app/dashboard/orders/page.tsx`) above the table — don't keep a local
    `useState` for it. `DataTable`'s own footer already places pagination on
    the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page.
+   passed); don't rebuild that layout per page. Don't pass a `pageSize` prop
+   unless this table genuinely needs a different size than the rest of the
+   app — it already defaults to the signed-in account's saved preference
+   (Account settings → Tables, 1-250, default 20). An explicit `pageSize` is
+   for deliberately small, fixed widgets (see the dashboard summary lists in
+   `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
+   setting.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.

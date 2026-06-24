@@ -1,11 +1,11 @@
 import {
-  pgTable,
-  text,
   boolean,
-  timestamp,
   doublePrecision,
   integer,
   jsonb,
+  pgTable,
+  text,
+  timestamp,
 } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 
@@ -114,6 +114,10 @@ export const profile = pgTable("profile", {
   isActive: boolean("isActive").notNull().default(true),
   // Only meaningful for ADMIN users.
   canManagePricing: boolean("canManagePricing").notNull().default(false),
+  // DataTable's default rows-per-page when the caller doesn't pass an
+  // explicit `pageSize` prop. Clamped to 1-250 at the validation layer
+  // (lib/validation.ts) and again defensively in components/data-table.tsx.
+  tableRowsPerPage: integer("tableRowsPerPage").notNull().default(20),
   // Domain entity references. Stored as plain text (no FK constraint) to avoid
   // circular dependencies between the profile table and its referents.
   // Only the field matching the user's role is expected to be populated.
