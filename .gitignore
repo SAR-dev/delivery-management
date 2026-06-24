@@ -18,5 +18,3 @@ node_modules
 .uploads/
 tsconfig.tsbuildinfo
 
-# Repomix output
-REPOMIX.md
