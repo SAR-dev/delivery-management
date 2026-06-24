@@ -8,7 +8,7 @@ import {
   orderFailedSchema,
   orderPickedUpSchema,
   orderReturnSchema,
-  parseBody
+  parseBody,
 } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
