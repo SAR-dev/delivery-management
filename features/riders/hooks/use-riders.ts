@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Rider, RiderTaskType } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -43,24 +43,49 @@ export function useRiders() {
     swrOptions,
   )
 
-  const riders = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The rider profile for the logged-in rider user (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Rider[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const riders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allRiders = data ?? []
+
+  // The rider profile for the logged-in rider user (if any) — always derived
+  // from the unfiltered list so it's never lost mid-search.
   const currentRider =
     currentUser?.role === "RIDER" && currentUser.riderId
-      ? (riders.find((r) => r.id === currentUser.riderId) ?? null)
+      ? (allRiders.find((r) => r.id === currentUser.riderId) ?? null)
       : null
 
   // Every rider based at the logged-in admin's warehouse (any status / task
-  // type) — used by the warehouse rider-management screen.
+  // type) — used by the warehouse rider-management screen. Derived from the
+  // unfiltered list; search narrows the page's own `riders`, not this.
   const warehouseRiders = currentWarehouse
-    ? riders.filter((r) => r.warehouseId === currentWarehouse.id)
+    ? allRiders.filter((r) => r.warehouseId === currentWarehouse.id)
     : []
 
   // Active, delivery-capable riders at the admin's warehouse — the pool the
   // dispatch desk can assign parcels to.
   const warehouseDeliveryRiders = currentWarehouse
-    ? riders.filter(
+    ? allRiders.filter(
         (r) =>
           r.warehouseId === currentWarehouse.id && r.isActive && canDeliver(r),
       )
@@ -115,10 +140,13 @@ export function useRiders() {
 
   return {
     riders,
+    allRiders,
+    query,
+    setQuery,
     currentRider,
     warehouseRiders,
     warehouseDeliveryRiders,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createRider,

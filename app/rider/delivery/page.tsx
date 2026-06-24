@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, Navigation } from "lucide-react"
+import { CheckCircle2, Navigation, Search } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -16,38 +16,58 @@ import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attemp
 import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
+const COMPLETED_STATUSES = ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"]
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
 export default function RiderDeliveryQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [startTarget, setStartTarget] = useState<Order | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
 
-  // All orders dispatched to this rider for delivery.
+  // All orders dispatched to this rider for delivery. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
   const myDeliveries = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toDeliver = myDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
+  )
+  const completed = myDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyDeliveries = useMemo(
     () =>
       currentRider
         ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
         : [],
     [orders, currentRider],
   )
-
-  const toDeliver = myDeliveries.filter((o) =>
-    ["IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(o.status),
+  const visibleToDeliver = visibleMyDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
   )
-  const completed = myDeliveries.filter((o) =>
-    ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"].includes(o.status),
+  const visibleCompleted = visibleMyDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
   )
 
-  const visible = tab === "TO_DELIVER" ? toDeliver : completed
+  const visible = tab === "TO_DELIVER" ? visibleToDeliver : visibleCompleted
 
   function openAttempt(order: Order) {
     setActiveOrder(order)
@@ -157,16 +177,27 @@ export default function RiderDeliveryQueuePage() {
         description={pageContent.rider.delivery.description}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="TO_DELIVER">
-            To deliver ({toDeliver.length})
-          </TabsTrigger>
-          <TabsTrigger value="COMPLETED">
-            Completed ({completed.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_DELIVER">
+              To deliver ({toDeliver.length})
+            </TabsTrigger>
+            <TabsTrigger value="COMPLETED">
+              Completed ({completed.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

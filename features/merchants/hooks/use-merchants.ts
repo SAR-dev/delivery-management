@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Merchant, MerchantPricingInput } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -19,12 +19,36 @@ export function useMerchants() {
     swrOptions,
   )
 
-  const merchants = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
-  // The merchant business owned by the logged-in merchant user (if any).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Merchant[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const merchants = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allMerchants = data ?? []
+
+  // The merchant business owned by the logged-in merchant user (if any) —
+  // always derived from the unfiltered list so it's never lost mid-search.
   const currentMerchant =
     currentUser?.role === "MERCHANT" && currentUser.merchantId
-      ? (merchants.find((m) => m.id === currentUser.merchantId) ?? null)
+      ? (allMerchants.find((m) => m.id === currentUser.merchantId) ?? null)
       : null
 
   const replaceOne = useCallback(
@@ -112,8 +136,11 @@ export function useMerchants() {
 
   return {
     merchants,
+    allMerchants,
+    query,
+    setQuery,
     currentMerchant,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     approveMerchant,

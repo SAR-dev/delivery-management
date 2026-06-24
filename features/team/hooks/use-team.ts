@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import type { Role, User, Warehouse } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -30,7 +30,30 @@ export function useTeam() {
     swrOptions,
   )
 
-  const team = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<User[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const team = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allTeam = data ?? []
 
   const createAccount = useCallback(
     async (input: NewAccountInput & { password: string }) => {
@@ -127,7 +150,10 @@ export function useTeam() {
 
   return {
     team,
-    isLoading,
+    allTeam,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createAccount,

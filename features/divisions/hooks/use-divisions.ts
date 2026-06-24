@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR from "swr"
 import type { Division } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -22,7 +22,30 @@ export function useDivisions() {
     swrOptions,
   )
 
-  const divisions = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Division[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const divisions = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allDivisions = data ?? []
 
   const createDivision = useCallback(
     async (name: string): Promise<Result> => {
@@ -93,7 +116,10 @@ export function useDivisions() {
 
   return {
     divisions,
-    isLoading,
+    allDivisions,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     createDivision,

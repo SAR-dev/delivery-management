@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Pencil, Trash2, MapPin } from "lucide-react"
+import { MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -28,12 +28,18 @@ interface DivisionRow extends Division {
 export default function DivisionsPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { divisions, createDivision, updateDivision, deleteDivision } =
-    useDivisions()
-  const { warehouses } = useWarehouses()
-  const { merchants } = useMerchants()
+  const {
+    divisions,
+    query,
+    setQuery,
+    createDivision,
+    updateDivision,
+    deleteDivision,
+  } = useDivisions()
+  const { allWarehouses } = useWarehouses()
+  const { allMerchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
-  const { orders } = useOrders()
+  const { allOrders } = useOrders()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -51,16 +57,18 @@ export default function DivisionsPage() {
 
   // Count how many records reference each division so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
+  // Usage counts always reflect the full sets of the other resources, never
+  // narrowed by an unrelated search on those resources' own pages.
   const rows = useMemo<DivisionRow[]>(() => {
     return divisions.map((d) => {
       const usageCount =
-        warehouses.filter((w) => w.divisionId === d.id).length +
-        merchants.filter((m) => m.divisionId === d.id).length +
+        allWarehouses.filter((w) => w.divisionId === d.id).length +
+        allMerchants.filter((m) => m.divisionId === d.id).length +
         pickupLocations.filter((p) => p.divisionId === d.id).length +
-        orders.filter((o) => o.deliveryDivisionId === d.id).length
+        allOrders.filter((o) => o.deliveryDivisionId === d.id).length
       return { ...d, usageCount }
     })
-  }, [divisions, warehouses, merchants, pickupLocations, orders])
+  }, [divisions, allWarehouses, allMerchants, pickupLocations, allOrders])
 
   function openCreate() {
     setName("")
@@ -212,6 +220,18 @@ export default function DivisionsPage() {
           Add division
         </Button>
       </PageHeader>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search division name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

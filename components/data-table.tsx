@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { toCsv, downloadCsv } from "@/lib/csv"
+import { downloadCsv, toCsv } from "@/lib/csv"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -267,8 +267,8 @@ export function DataTable<T>({
 
       {paginated ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground flex items-center gap-3">
-            <span className="tabular-nums">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground tabular-nums">
               {from}–{to} of {sorted.length}
             </span>
             {pageSizeOptions && pageSizeOptions.length > 0 ? (
@@ -290,21 +290,6 @@ export function DataTable<T>({
                 </select>
               </label>
             ) : null}
-          </div>
-          <div className="flex items-center justify-center">
-            {csv ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownloadCsv}
-                className="gap-1.5"
-              >
-                <Download className="size-4" />
-                Download CSV
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
             <span className="text-muted-foreground tabular-nums">
               Page {page} of {totalPages}
             </span>
@@ -329,6 +314,16 @@ export function DataTable<T>({
               <ChevronRight className="size-4" />
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownloadCsv}
+            disabled={!csv}
+            className="gap-1.5"
+          >
+            <Download className="size-4" />
+            Download CSV
+          </Button>
         </div>
       ) : null}
     </div>

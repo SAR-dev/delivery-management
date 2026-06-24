@@ -2,15 +2,15 @@
 
 import { useMemo, useState } from "react"
 import {
-  Store,
+  Ban,
   CheckCircle2,
   Clock,
-  Ban,
-  Search,
   MoreHorizontal,
-  Tag,
-  ShieldCheck,
   RotateCcw,
+  Search,
+  ShieldCheck,
+  Store,
+  Tag,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -37,35 +37,37 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "ALL" | MerchantStatus
 
 export default function MerchantsPage() {
-  const { merchants, approveMerchant, suspendMerchant, reactivateMerchant } =
-    useMerchants()
+  const {
+    merchants,
+    allMerchants,
+    query,
+    setQuery,
+    approveMerchant,
+    suspendMerchant,
+    reactivateMerchant,
+  } = useMerchants()
   const [tab, setTab] = useState<FilterTab>("ALL")
-  const [query, setQuery] = useState("")
   const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
   const [pricingOpen, setPricingOpen] = useState(false)
 
+  // Stats always reflect the full merchant set, not the current search.
   const counts = useMemo(
     () => ({
-      total: merchants.length,
-      active: merchants.filter((m) => m.status === "ACTIVE").length,
-      pending: merchants.filter((m) => m.status === "PENDING").length,
-      suspended: merchants.filter((m) => m.status === "SUSPENDED").length,
+      total: allMerchants.length,
+      active: allMerchants.filter((m) => m.status === "ACTIVE").length,
+      pending: allMerchants.filter((m) => m.status === "PENDING").length,
+      suspended: allMerchants.filter((m) => m.status === "SUSPENDED").length,
     }),
-    [merchants],
+    [allMerchants],
   )
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return merchants.filter((m) => {
-      const matchesTab = tab === "ALL" || m.status === tab
-      const matchesQuery =
-        !q ||
-        m.businessName.toLowerCase().includes(q) ||
-        m.ownerName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q)
-      return matchesTab && matchesQuery
-    })
-  }, [merchants, tab, query])
+  // Search is server-side now (see useMerchants); the tab status filter
+  // stays client-side, layered on top of the already-search-narrowed
+  // `merchants`.
+  const filtered = useMemo(
+    () => merchants.filter((m) => tab === "ALL" || m.status === tab),
+    [merchants, tab],
+  )
 
   function openPricing(merchant: Merchant) {
     setPricingMerchant(merchant)

@@ -4,7 +4,7 @@ import { division, merchant, order, securityConfig } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -43,13 +43,27 @@ export async function GET(req: Request) {
       return NextResponse.json([])
   }
 
-  const { limit, offset } = parsePagination(req)
-  let q = db.select().from(order).$dynamic()
-  if (where) q = q.where(where)
-  if (limit !== undefined) q = q.limit(limit)
-  if (offset !== undefined) q = q.offset(offset)
+  // Free-text search layered on top of the role-scoped where above — search
+  // never widens the visibility a user already has.
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    const searchClause = or(
+      ilike(order.code, likeQ),
+      ilike(order.recipientName, likeQ),
+      ilike(order.recipientPhone, likeQ),
+      ilike(order.deliveryCity, likeQ),
+    )
+    where = where ? and(where, searchClause) : searchClause
+  }
 
-  const rows = await q
+  const { limit, offset } = parsePagination(req)
+  let dbQuery = db.select().from(order).$dynamic()
+  if (where) dbQuery = dbQuery.where(where)
+  if (limit !== undefined) dbQuery = dbQuery.limit(limit)
+  if (offset !== undefined) dbQuery = dbQuery.offset(offset)
+
+  const rows = await dbQuery
   return NextResponse.json(rows)
 }
 

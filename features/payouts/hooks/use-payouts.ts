@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import type { Order, PayoutRequest } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -25,10 +25,33 @@ export function usePayouts() {
     swrOptions,
   )
 
-  const payoutRequests = data ?? []
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<
+    PayoutRequest[]
+  >(searchKey, jsonFetcher, swrOptions)
+
+  const payoutRequests = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allPayoutRequests = data ?? []
+
+  // Derived from the unfiltered list — a merchant's own requests shouldn't
+  // disappear just because an admin's search elsewhere narrowed the page.
   const merchantPayoutRequests = currentMerchant
-    ? payoutRequests.filter((p) => p.merchantId === currentMerchant.id)
+    ? allPayoutRequests.filter((p) => p.merchantId === currentMerchant.id)
     : []
 
   const replaceOne = useCallback(
@@ -118,8 +141,11 @@ export function usePayouts() {
 
   return {
     payoutRequests,
+    allPayoutRequests,
+    query,
+    setQuery,
     merchantPayoutRequests,
-    isLoading,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
     error,
     mutate,
     requestPayout,

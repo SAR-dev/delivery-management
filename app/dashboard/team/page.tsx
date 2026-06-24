@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Search } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useTeam } from "@/features/team/hooks/use-team"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -12,6 +13,7 @@ import { pageContent } from "@/config/content"
 import { RoleBadge } from "@/components/role-badge"
 import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -91,6 +93,9 @@ export default function TeamPage() {
   const { currentUser } = useAuth()
   const {
     team,
+    allTeam,
+    query,
+    setQuery,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
@@ -111,8 +116,15 @@ export default function TeamPage() {
     return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
   }
 
+  // Table contents are search-narrowed; tab counts always reflect the full
+  // roster so they don't shrink to zero just because a search has no matches
+  // in that role.
   const admins = team.filter((u) => u.role === "ADMIN")
   const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
+  const totalAdmins = allTeam.filter((u) => u.role === "ADMIN").length
+  const totalWarehouseAdmins = allTeam.filter(
+    (u) => u.role === "WAREHOUSE_ADMIN",
+  ).length
 
   function handleToggleActive(user: User) {
     toggleAccountActive(user.id)
@@ -233,11 +245,23 @@ export default function TeamPage() {
         <CreateAccountDialog />
       </PageHeader>
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, email, phone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
       <Tabs defaultValue="admins">
         <TabsList>
-          <TabsTrigger value="admins">Admins ({admins.length})</TabsTrigger>
+          <TabsTrigger value="admins">Admins ({totalAdmins})</TabsTrigger>
           <TabsTrigger value="warehouse">
-            Warehouse Admins ({warehouseAdmins.length})
+            Warehouse Admins ({totalWarehouseAdmins})
           </TabsTrigger>
         </TabsList>
 
