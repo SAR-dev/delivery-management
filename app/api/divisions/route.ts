@@ -2,16 +2,20 @@ import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { division } from "@/lib/db/schema"
 import { divisionCreateSchema, parseBody } from "@/lib/validation"
-import { asc, eq } from "drizzle-orm"
+import { asc, eq, ilike } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 // Any signed-in user can read the division list (needed to populate address
 // selectors across the app).
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
-  const rows = await db.select().from(division).orderBy(asc(division.name))
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  let q = db.select().from(division).$dynamic()
+  if (search) q = q.where(ilike(division.name, `%${search}%`))
+
+  const rows = await q.orderBy(asc(division.name))
   return NextResponse.json(rows)
 }
 

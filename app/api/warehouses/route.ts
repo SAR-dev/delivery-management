@@ -2,14 +2,27 @@ import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
-import { and, eq } from "drizzle-orm"
+import { and, eq, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
-  const rows = await db.select().from(warehouse)
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  let q = db.select().from(warehouse).$dynamic()
+  if (search) {
+    const likeQ = `%${search}%`
+    q = q.where(
+      or(
+        ilike(warehouse.name, likeQ),
+        ilike(warehouse.address, likeQ),
+        ilike(warehouse.city, likeQ),
+      ),
+    )
+  }
+
+  const rows = await q
   return NextResponse.json(rows)
 }
 

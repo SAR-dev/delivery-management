@@ -4,7 +4,7 @@ import { db } from "@/lib/db"
 import { division, merchant, profile } from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { merchantRegisterSchema, parseBody } from "@/lib/validation"
-import { and, eq } from "drizzle-orm"
+import { and, eq, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -22,6 +22,20 @@ export async function GET(req: Request) {
 
   const { limit, offset } = parsePagination(req)
   let q = db.select().from(merchant).$dynamic()
+
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    q = q.where(
+      or(
+        ilike(merchant.businessName, likeQ),
+        ilike(merchant.ownerName, likeQ),
+        ilike(merchant.email, likeQ),
+        ilike(merchant.phone, likeQ),
+      ),
+    )
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

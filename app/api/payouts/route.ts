@@ -2,24 +2,31 @@ import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { order, payoutRequest } from "@/lib/db/schema"
 import { parseBody, payoutCreateSchema } from "@/lib/validation"
-import { and, eq, isNull, sql } from "drizzle-orm"
+import { and, eq, ilike, isNull, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  const searchClause = search
+    ? ilike(payoutRequest.code, `%${search}%`)
+    : undefined
+
   if (me.role === "MERCHANT" && me.merchantId) {
-    const rows = await db
-      .select()
-      .from(payoutRequest)
-      .where(eq(payoutRequest.merchantId, me.merchantId))
+    const where = searchClause
+      ? and(eq(payoutRequest.merchantId, me.merchantId), searchClause)
+      : eq(payoutRequest.merchantId, me.merchantId)
+    const rows = await db.select().from(payoutRequest).where(where)
     return NextResponse.json(rows)
   }
 
   if (me.role !== "SUPER_ADMIN") return NextResponse.json([])
 
-  const rows = await db.select().from(payoutRequest)
+  const rows = searchClause
+    ? await db.select().from(payoutRequest).where(searchClause)
+    : await db.select().from(payoutRequest)
   return NextResponse.json(rows)
 }
 
