@@ -19,7 +19,8 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx lib/db/seed.ts",
     "db:seed:min": "tsx lib/db/seed.ts --min",
-    "repomix": "repomix"
+    "repomix": "repomix",
+    "check": "pnpm typecheck && pnpm lint:check && pnpm format:check && pnpm repomix"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
