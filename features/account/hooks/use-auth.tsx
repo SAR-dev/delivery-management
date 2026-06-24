@@ -2,15 +2,15 @@
 
 import {
   createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
   type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from "react"
 import { useRouter } from "next/navigation"
 import { useSWRConfig } from "swr"
-import type { User, Role } from "@/lib/types"
+import type { Role, User } from "@/lib/types"
 import { authClient } from "@/lib/auth-client"
 
 // Where each role lands after login.
@@ -40,6 +40,10 @@ interface AuthContextValue {
   changePassword: (
     currentPassword: string,
     newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+  // Update the signed-in user's default DataTable rows-per-page (1-250).
+  updateTableRowsPerPage: (
+    value: number,
   ) => Promise<{ ok: boolean; error?: string }>
 }
 
@@ -170,6 +174,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateTableRowsPerPage = useCallback<
+    AuthContextValue["updateTableRowsPerPage"]
+  >(async (value) => {
+    const res = await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tableRowsPerPage: value }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data?.error ?? "Could not update your rows-per-page setting.",
+      }
+    }
+    setCurrentUser(data)
+    return { ok: true }
+  }, [])
+
   return (
     <AuthContext.Provider
       value={{
@@ -180,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateProfileName,
         updateProfileImage,
         changePassword,
+        updateTableRowsPerPage,
       }}
     >
       {children}

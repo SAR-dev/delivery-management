@@ -1,10 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, Lock, UserRound } from "lucide-react"
+import { Loader2, Lock, Table2, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { initials } from "@/lib/utils"
+import {
+  DEFAULT_TABLE_ROWS_PER_PAGE,
+  MAX_TABLE_ROWS_PER_PAGE,
+} from "@/lib/constants"
 import { PageHeader } from "@/components/page-header"
 import { ImageUpload } from "@/components/image-upload"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -21,8 +25,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function AccountSettings() {
-  const { currentUser, updateProfileName, updateProfileImage, changePassword } =
-    useAuth()
+  const {
+    currentUser,
+    updateProfileName,
+    updateProfileImage,
+    changePassword,
+    updateTableRowsPerPage,
+  } = useAuth()
 
   const [name, setName] = useState(currentUser?.name ?? "")
   const [savingName, setSavingName] = useState(false)
@@ -46,6 +55,37 @@ export function AccountSettings() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
+
+  const [rowsPerPage, setRowsPerPage] = useState(
+    String(currentUser?.tableRowsPerPage ?? DEFAULT_TABLE_ROWS_PER_PAGE),
+  )
+  const [savingRowsPerPage, setSavingRowsPerPage] = useState(false)
+
+  const rowsPerPageNum = Number.parseInt(rowsPerPage, 10)
+  const rowsPerPageInvalid =
+    !Number.isInteger(rowsPerPageNum) ||
+    rowsPerPageNum < 1 ||
+    rowsPerPageNum > MAX_TABLE_ROWS_PER_PAGE
+  const rowsPerPageUnchanged =
+    !rowsPerPageInvalid &&
+    rowsPerPageNum ===
+      (currentUser?.tableRowsPerPage ?? DEFAULT_TABLE_ROWS_PER_PAGE)
+
+  async function handleRowsPerPageSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (rowsPerPageInvalid || rowsPerPageUnchanged) return
+    setSavingRowsPerPage(true)
+    try {
+      const result = await updateTableRowsPerPage(rowsPerPageNum)
+      if (result.ok) {
+        toast.success("Rows per page updated.")
+      } else {
+        toast.error(result.error ?? "Could not update rows per page.")
+      }
+    } finally {
+      setSavingRowsPerPage(false)
+    }
+  }
 
   const trimmedName = name.trim()
   const nameUnchanged = trimmedName === (currentUser?.name ?? "")
@@ -185,6 +225,58 @@ export function AccountSettings() {
               hidePreview
             />
           </CardContent>
+        </Card>
+
+        {/* Table rows per page */}
+        <Card>
+          <form onSubmit={handleRowsPerPageSubmit} className="contents">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Table2 className="size-4" />
+                Tables
+              </CardTitle>
+              <CardDescription>
+                How many rows show per page on tables across the platform.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Label htmlFor="account-rows-per-page">Rows per page</Label>
+              <Input
+                id="account-rows-per-page"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_TABLE_ROWS_PER_PAGE}
+                value={rowsPerPage}
+                onChange={(e) => setRowsPerPage(e.target.value)}
+                className="max-w-32"
+                aria-invalid={rowsPerPageInvalid}
+              />
+              <p className="text-muted-foreground text-xs">
+                Between 1 and {MAX_TABLE_ROWS_PER_PAGE}. Default is{" "}
+                {DEFAULT_TABLE_ROWS_PER_PAGE}.
+              </p>
+            </CardContent>
+            <CardFooter className="justify-end">
+              <Button
+                type="submit"
+                disabled={
+                  savingRowsPerPage ||
+                  rowsPerPageInvalid ||
+                  rowsPerPageUnchanged
+                }
+              >
+                {savingRowsPerPage ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving
+                  </>
+                ) : (
+                  "Save changes"
+                )}
+              </Button>
+            </CardFooter>
+          </form>
         </Card>
 
         {/* Password */}
