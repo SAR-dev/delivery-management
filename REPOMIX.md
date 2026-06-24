@@ -713,6 +713,11 @@ vi.mock("@/lib/db", () => {
       from: () => chain,
       where: () => chain,
       limit: () => chain,
+      // `.for("update")` (row locking inside a transaction) is a passthrough
+      // here — the mock has no real lock semantics, it just needs to not
+      // break the chain so `applyOrderTransition`'s `SELECT ... FOR UPDATE`
+      // call shape resolves from the same `selectQueue` as a plain select.
+      for: () => chain,
       then: (
         onFulfilled: (v: unknown) => unknown,
         onRejected?: (e: unknown) => unknown,
@@ -724,19 +729,32 @@ vi.mock("@/lib/db", () => {
     }
     return chain
   }
-  const db = {
+  const makeUpdateChain = () => {
+    const chain: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        dbState.updatePayloads.push(vals)
+        return chain
+      },
+      where: () => chain,
+      returning: () => Promise.resolve(dbState.updateResult),
+    }
+    return chain
+  }
+  interface MockDb {
+    select: () => ReturnType<typeof makeSelectChain>
+    update: () => ReturnType<typeof makeUpdateChain>
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => Promise<T>
+  }
+  const db: MockDb = {
     select: () => makeSelectChain(),
-    update: () => {
-      const chain: Record<string, unknown> = {
-        set: (vals: Record<string, unknown>) => {
-          dbState.updatePayloads.push(vals)
-          return chain
-        },
-        where: () => chain,
-        returning: () => Promise.resolve(dbState.updateResult),
-      }
-      return chain
-    },
+    update: () => makeUpdateChain(),
+    // `applyOrderTransition` runs its fetch+guard+update inside
+    // `db.transaction(async (tx) => ...)`. The mock `tx` is just another
+    // handle onto the same `select`/`update` chains and the same shared
+    // `dbState`, so every existing assertion on `selectQueue`/
+    // `updatePayloads` still applies — the transaction wrapper doesn't
+    // change which calls happen, only that they're grouped.
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => fn(db),
   }
   return { db, pool: {} }
 })
@@ -7259,139 +7277,6 @@ export function useAuth() {
 }
 ````
 
-## File: features/divisions/hooks/use-divisions.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
-import type { Division } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/divisions"
-
-const byName = (a: Division, b: Division) => a.name.localeCompare(b.name)
-
-type Result = { ok: boolean; error?: string }
-
-// Divisions (geographic regions) resource. The cache is kept sorted by name on
-// every create/update to match the old context.
-export function useDivisions() {
-  const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<Division[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Division[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const divisions = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allDivisions = data ?? []
-
-  const createDivision = useCallback(
-    async (name: string): Promise<Result> => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not create the division.",
-        }
-      }
-      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
-        revalidate: false,
-      })
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  const updateDivision = useCallback(
-    async (
-      id: string,
-      input: { name?: string; isActive?: boolean },
-    ): Promise<Result> => {
-      const res = await fetch(`${KEY}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not update the division.",
-        }
-      }
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((d) => (d.id === id ? data : d)).sort(byName),
-        { revalidate: false },
-      )
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  const deleteDivision = useCallback(
-    async (id: string): Promise<Result> => {
-      const res = await fetch(`${KEY}/${id}`, { method: "DELETE" })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not delete the division.",
-        }
-      }
-      await mutate((prev) => (prev ?? []).filter((d) => d.id !== id), {
-        revalidate: false,
-      })
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  return {
-    divisions,
-    allDivisions,
-    query,
-    setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    createDivision,
-    updateDivision,
-    deleteDivision,
-  }
-}
-````
-
 ## File: features/merchants/components/merchant-status-badge.tsx
 ````typescript
 import type { MerchantStatus } from "@/lib/types"
@@ -7604,162 +7489,6 @@ export function PricingDialog({
       </div>
     </FormDialog>
   )
-}
-````
-
-## File: features/merchants/hooks/use-merchants.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
-import type { Merchant, MerchantPricingInput } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/merchants"
-
-// Merchants resource: the merchant directory plus the admin/merchant mutations
-// that act on it. Reads are SWR-cached; each mutation writes the authoritative
-// server row straight back into the cache (no global reload).
-export function useMerchants() {
-  const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Merchant[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const merchants = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allMerchants = data ?? []
-
-  // The merchant business owned by the logged-in merchant user (if any) —
-  // always derived from the unfiltered list so it's never lost mid-search.
-  const currentMerchant =
-    currentUser?.role === "MERCHANT" && currentUser.merchantId
-      ? (allMerchants.find((m) => m.id === currentUser.merchantId) ?? null)
-      : null
-
-  const replaceOne = useCallback(
-    (id: string, updated: Merchant) =>
-      mutate((prev) => (prev ?? []).map((m) => (m.id === id ? updated : m)), {
-        revalidate: false,
-      }),
-    [mutate],
-  )
-
-  const approveMerchant = useCallback(
-    async (id: string) => {
-      const res = await fetch(`/api/merchants/${id}/approve`, {
-        method: "PATCH",
-      })
-      if (!res.ok) return
-      await replaceOne(id, await res.json())
-    },
-    [replaceOne],
-  )
-
-  const suspendMerchant = useCallback(
-    async (id: string) => {
-      const res = await fetch(`/api/merchants/${id}/suspend`, {
-        method: "PATCH",
-      })
-      if (!res.ok) return
-      await replaceOne(id, await res.json())
-    },
-    [replaceOne],
-  )
-
-  const reactivateMerchant = useCallback(
-    async (id: string) => {
-      const res = await fetch(`/api/merchants/${id}/reactivate`, {
-        method: "PATCH",
-      })
-      if (!res.ok) return
-      await replaceOne(id, await res.json())
-    },
-    [replaceOne],
-  )
-
-  const setMerchantPricing = useCallback(
-    async (id: string, pricing: MerchantPricingInput) => {
-      const res = await fetch(`/api/merchants/${id}/pricing`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pricing),
-      })
-      if (!res.ok) return
-      await replaceOne(id, await res.json())
-    },
-    [replaceOne],
-  )
-
-  const updateMerchantProfile = useCallback(
-    async (
-      id: string,
-      input: {
-        businessName: string
-        email: string
-        phone: string
-        address: string
-        divisionId: string
-      },
-    ): Promise<{ ok: boolean; error?: string }> => {
-      const res = await fetch(`/api/merchants/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not update your business details.",
-        }
-      }
-      await replaceOne(id, data)
-      return { ok: true }
-    },
-    [replaceOne],
-  )
-
-  return {
-    merchants,
-    allMerchants,
-    query,
-    setQuery,
-    currentMerchant,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    approveMerchant,
-    suspendMerchant,
-    reactivateMerchant,
-    setMerchantPricing,
-    updateMerchantProfile,
-  }
 }
 ````
 
@@ -9822,166 +9551,6 @@ export function PayoutRequestDialog({
 }
 ````
 
-## File: features/payouts/hooks/use-payouts.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR, { useSWRConfig } from "swr"
-import type { Order, PayoutRequest } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/payouts"
-const ORDERS_KEY = "/api/orders"
-
-type Result = { ok: boolean; error?: string }
-
-// Payout requests resource. Spans two caches: a merchant requesting a payout
-// (or an admin rejecting one) also locks/unlocks the affected orders, so those
-// mutations revalidate the orders cache too via the shared SWR config.
-export function usePayouts() {
-  const { currentUser } = useAuth()
-  const { currentMerchant } = useMerchants()
-  const { mutate: globalMutate } = useSWRConfig()
-  const { data, error, isLoading, mutate } = useSWR<PayoutRequest[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<
-    PayoutRequest[]
-  >(searchKey, jsonFetcher, swrOptions)
-
-  const payoutRequests = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allPayoutRequests = data ?? []
-
-  // Derived from the unfiltered list — a merchant's own requests shouldn't
-  // disappear just because an admin's search elsewhere narrowed the page.
-  const merchantPayoutRequests = currentMerchant
-    ? allPayoutRequests.filter((p) => p.merchantId === currentMerchant.id)
-    : []
-
-  const replaceOne = useCallback(
-    (id: string, updated: PayoutRequest) =>
-      mutate((prev) => (prev ?? []).map((p) => (p.id === id ? updated : p)), {
-        revalidate: false,
-      }),
-    [mutate],
-  )
-
-  const requestPayout = useCallback(
-    async (input: {
-      payoutMethod: string
-      payoutDetails: string
-    }): Promise<{ ok: boolean; request?: PayoutRequest; error?: string }> => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const resData = await res.json()
-      if (!res.ok) return { ok: false, error: resData.error }
-      await mutate((prev) => [resData, ...(prev ?? [])], { revalidate: false })
-      // Lock the orders attached to this request in the orders cache.
-      const lockedIds = new Set<string>(resData.orderIds)
-      await globalMutate<Order[]>(
-        ORDERS_KEY,
-        (prev) =>
-          (prev ?? []).map((o) =>
-            lockedIds.has(o.id) ? { ...o, payoutRequestId: resData.id } : o,
-          ),
-        { revalidate: false },
-      )
-      return { ok: true, request: resData }
-    },
-    [mutate, globalMutate],
-  )
-
-  const approvePayout = useCallback(
-    async (requestId: string): Promise<Result> => {
-      const res = await fetch(`${KEY}/${requestId}/approve`, {
-        method: "PATCH",
-      })
-      const resData = await res.json()
-      if (!res.ok) return { ok: false, error: resData.error }
-      await replaceOne(requestId, resData)
-      return { ok: true }
-    },
-    [replaceOne],
-  )
-
-  const rejectPayout = useCallback(
-    async (requestId: string, reason: string): Promise<Result> => {
-      const res = await fetch(`${KEY}/${requestId}/reject`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-      })
-      const resData = await res.json()
-      if (!res.ok) return { ok: false, error: resData.error }
-      await replaceOne(requestId, resData)
-      // Unlock the request's orders so they can be requested again.
-      const unlockedIds = new Set<string>(resData.orderIds)
-      await globalMutate<Order[]>(
-        ORDERS_KEY,
-        (prev) =>
-          (prev ?? []).map((o) =>
-            unlockedIds.has(o.id) ? { ...o, payoutRequestId: null } : o,
-          ),
-        { revalidate: false },
-      )
-      return { ok: true }
-    },
-    [replaceOne, globalMutate],
-  )
-
-  const markPayoutPaid = useCallback(
-    async (requestId: string): Promise<Result> => {
-      const res = await fetch(`${KEY}/${requestId}/paid`, { method: "PATCH" })
-      const resData = await res.json()
-      if (!res.ok) return { ok: false, error: resData.error }
-      await replaceOne(requestId, resData)
-      return { ok: true }
-    },
-    [replaceOne],
-  )
-
-  return {
-    payoutRequests,
-    allPayoutRequests,
-    query,
-    setQuery,
-    merchantPayoutRequests,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    requestPayout,
-    approvePayout,
-    rejectPayout,
-    markPayoutPaid,
-  }
-}
-````
-
 ## File: features/pickup-locations/components/pickup-location-modal.tsx
 ````typescript
 "use client"
@@ -10770,166 +10339,6 @@ export const taskTypeLabel = (value: RiderTaskType) =>
   TASK_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value
 ````
 
-## File: features/riders/hooks/use-riders.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
-import type { Rider, RiderTaskType } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/riders"
-
-interface RiderCreateInput {
-  name: string
-  email: string
-  phone: string
-  zone: string
-  warehouseId: string
-  taskType?: RiderTaskType
-}
-
-interface RiderUpdateInput {
-  name?: string
-  phone?: string
-  zone?: string
-  warehouseId?: string
-  taskType?: RiderTaskType
-  isActive?: boolean
-}
-
-// Riders that can run deliveries (DELIVERY or BOTH).
-const canDeliver = (r: Rider) =>
-  r.taskType === "DELIVERY" || r.taskType === "BOTH"
-
-// Riders resource. Exposes the full roster, the current rider's own profile,
-// and the delivery riders based at the current Warehouse Admin's hub (derived
-// from the warehouses cache, shared via SWR — no extra fetch).
-export function useRiders() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { data, error, isLoading, mutate } = useSWR<Rider[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Rider[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const riders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allRiders = data ?? []
-
-  // The rider profile for the logged-in rider user (if any) — always derived
-  // from the unfiltered list so it's never lost mid-search.
-  const currentRider =
-    currentUser?.role === "RIDER" && currentUser.riderId
-      ? (allRiders.find((r) => r.id === currentUser.riderId) ?? null)
-      : null
-
-  // Every rider based at the logged-in admin's warehouse (any status / task
-  // type) — used by the warehouse rider-management screen. Derived from the
-  // unfiltered list; search narrows the page's own `riders`, not this.
-  const warehouseRiders = currentWarehouse
-    ? allRiders.filter((r) => r.warehouseId === currentWarehouse.id)
-    : []
-
-  // Active, delivery-capable riders at the admin's warehouse — the pool the
-  // dispatch desk can assign parcels to.
-  const warehouseDeliveryRiders = currentWarehouse
-    ? allRiders.filter(
-        (r) =>
-          r.warehouseId === currentWarehouse.id && r.isActive && canDeliver(r),
-      )
-    : []
-
-  const createRider = useCallback(
-    async (input: RiderCreateInput) => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      if (!res.ok) return
-      const newRider = await res.json()
-      await mutate((prev) => [newRider, ...(prev ?? [])], { revalidate: false })
-    },
-    [mutate],
-  )
-
-  const updateRider = useCallback(
-    async (id: string, input: RiderUpdateInput) => {
-      const res = await fetch(`${KEY}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      if (!res.ok) return
-      const updated = await res.json()
-      await mutate(
-        (prev) => (prev ?? []).map((r) => (r.id === id ? updated : r)),
-        { revalidate: false },
-      )
-    },
-    [mutate],
-  )
-
-  const toggleRiderActive = useCallback(
-    async (id: string) => {
-      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
-      if (!res.ok) return
-      const updated = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((r) =>
-            r.id === id ? { ...r, isActive: updated.isActive } : r,
-          ),
-        { revalidate: false },
-      )
-    },
-    [mutate],
-  )
-
-  return {
-    riders,
-    allRiders,
-    query,
-    setQuery,
-    currentRider,
-    warehouseRiders,
-    warehouseDeliveryRiders,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    createRider,
-    updateRider,
-    toggleRiderActive,
-  }
-}
-````
-
 ## File: features/security/hooks/use-security-config.ts
 ````typescript
 "use client"
@@ -11206,325 +10615,6 @@ export function CreateAccountDialog() {
       )}
     </FormDialog>
   )
-}
-````
-
-## File: features/team/hooks/use-team.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR, { useSWRConfig } from "swr"
-import type { Role, User, Warehouse } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/team"
-const WAREHOUSES_KEY = "/api/warehouses"
-
-interface NewAccountInput {
-  name: string
-  email: string
-  phone: string
-  role: Extract<Role, "ADMIN" | "WAREHOUSE_ADMIN">
-  warehouseId?: string | null
-  canManagePricing?: boolean
-}
-
-// Team (staff accounts) resource. Creating/reassigning a Warehouse Admin also
-// updates the warehouses cache's managedBy field, so both views stay
-// consistent without a global reload — mirrors the old context exactly.
-export function useTeam() {
-  const { currentUser } = useAuth()
-  const { mutate: globalMutate } = useSWRConfig()
-  const { data, error, isLoading, mutate } = useSWR<User[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<User[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const team = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allTeam = data ?? []
-
-  const createAccount = useCallback(
-    async (input: NewAccountInput & { password: string }) => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      if (!res.ok) return
-      const newUser = await res.json()
-      await mutate((prev) => [newUser, ...(prev ?? [])], { revalidate: false })
-      // Keep the cached warehouse list in sync with the new manager assignment.
-      if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
-        await globalMutate<Warehouse[]>(
-          WAREHOUSES_KEY,
-          (prev) =>
-            (prev ?? []).map((w) =>
-              w.id === newUser.warehouseId
-                ? { ...w, managedBy: newUser.id }
-                : w,
-            ),
-          { revalidate: false },
-        )
-      }
-    },
-    [mutate, globalMutate],
-  )
-
-  const toggleAccountActive = useCallback(
-    async (id: string) => {
-      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
-      if (!res.ok) return
-      const updatedProfile = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id ? { ...u, isActive: updatedProfile.isActive } : u,
-          ),
-        { revalidate: false },
-      )
-    },
-    [mutate],
-  )
-
-  const togglePricingPermission = useCallback(
-    async (id: string) => {
-      const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
-      if (!res.ok) return
-      const updatedProfile = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id
-              ? { ...u, canManagePricing: updatedProfile.canManagePricing }
-              : u,
-          ),
-        { revalidate: false },
-      )
-    },
-    [mutate],
-  )
-
-  const updateAccountWarehouse = useCallback(
-    async (id: string, warehouseId: string | null) => {
-      const res = await fetch(`${KEY}/${id}/warehouse`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ warehouseId }),
-      })
-      if (!res.ok) return
-      const updatedProfile = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
-          ),
-        { revalidate: false },
-      )
-      // Reflect the managedBy change on the cached warehouse list.
-      await globalMutate<Warehouse[]>(
-        WAREHOUSES_KEY,
-        (prev) =>
-          (prev ?? []).map((w) => {
-            if (w.managedBy === id) return { ...w, managedBy: null }
-            if (warehouseId && w.id === warehouseId)
-              return { ...w, managedBy: id }
-            return w
-          }),
-        { revalidate: false },
-      )
-    },
-    [mutate, globalMutate],
-  )
-
-  return {
-    team,
-    allTeam,
-    query,
-    setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    createAccount,
-    toggleAccountActive,
-    togglePricingPermission,
-    updateAccountWarehouse,
-  }
-}
-````
-
-## File: features/warehouses/hooks/use-warehouses.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
-import type { Warehouse } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/warehouses"
-
-const byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
-
-// Warehouses resource. Create/update/delete keep the cache sorted by name to
-// match the old context, and expose the current Warehouse Admin's hub.
-export function useWarehouses() {
-  const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<Warehouse[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allWarehouses = data ?? []
-
-  // The warehouse managed by the logged-in Warehouse Admin (if any) — always
-  // derived from the unfiltered list, since many other hooks depend on this
-  // staying stable regardless of any search happening on the warehouses page.
-  const currentWarehouse =
-    currentUser?.role === "WAREHOUSE_ADMIN" && currentUser.warehouseId
-      ? (allWarehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
-      : null
-
-  const createWarehouse = useCallback(
-    async (input: {
-      name: string
-      address: string
-      city: string
-      divisionId: string
-    }): Promise<{ ok: boolean; error?: string }> => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not create the warehouse.",
-        }
-      }
-      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
-        revalidate: false,
-      })
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  const updateWarehouse = useCallback(
-    async (
-      id: string,
-      input: {
-        name?: string
-        address?: string
-        city?: string
-        divisionId?: string
-        isActive?: boolean
-      },
-    ): Promise<{ ok: boolean; error?: string }> => {
-      const res = await fetch(`${KEY}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not update the warehouse.",
-        }
-      }
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((w) => (w.id === id ? data : w)).sort(byName),
-        { revalidate: false },
-      )
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  const deleteWarehouse = useCallback(
-    async (id: string): Promise<{ ok: boolean; error?: string }> => {
-      const res = await fetch(`${KEY}/${id}`, { method: "DELETE" })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: data?.error ?? "Could not delete the warehouse.",
-        }
-      }
-      await mutate((prev) => (prev ?? []).filter((w) => w.id !== id), {
-        revalidate: false,
-      })
-      return { ok: true }
-    },
-    [mutate],
-  )
-
-  return {
-    warehouses,
-    allWarehouses,
-    query,
-    setQuery,
-    currentWarehouse,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    createWarehouse,
-    updateWarehouse,
-    deleteWarehouse,
-  }
 }
 ````
 
@@ -12083,32 +11173,39 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const [current] = await db
-    .select({ status: payoutRequest.status })
-    .from(payoutRequest)
-    .where(eq(payoutRequest.id, id))
-    .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (current.status !== "PENDING") {
-    return NextResponse.json(
-      { error: "Only PENDING requests can be approved." },
-      { status: 400 },
-    )
-  }
+  // Transaction: lock the request row for the guard + write so two
+  // concurrent approve/reject calls on the same request can't both pass the
+  // "still PENDING" check against stale state.
+  return await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
 
-  const [updated] = await db
-    .update(payoutRequest)
-    .set({
-      status: "APPROVED",
-      reviewedBy: me.name,
-      reviewedAt: new Date().toISOString(),
-    })
-    .where(eq(payoutRequest.id, id))
-    .returning()
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Only PENDING requests can be approved." },
+        { status: 400 },
+      )
+    }
 
-  return NextResponse.json(updated)
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({
+        status: "APPROVED",
+        reviewedBy: me.name,
+        reviewedAt: new Date().toISOString(),
+      })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    return NextResponse.json(updated)
+  })
 }
 ````
 
@@ -12131,28 +11228,34 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const [current] = await db
-    .select({ status: payoutRequest.status })
-    .from(payoutRequest)
-    .where(eq(payoutRequest.id, id))
-    .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (current.status !== "APPROVED") {
-    return NextResponse.json(
-      { error: "Only APPROVED requests can be marked paid." },
-      { status: 400 },
-    )
-  }
+  // Transaction: lock the request row for the guard + write so a concurrent
+  // call can't slip in between the "still APPROVED" check and the write.
+  return await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
 
-  const [updated] = await db
-    .update(payoutRequest)
-    .set({ status: "PAID", paidAt: new Date().toISOString() })
-    .where(eq(payoutRequest.id, id))
-    .returning()
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Only APPROVED requests can be marked paid." },
+        { status: 400 },
+      )
+    }
 
-  return NextResponse.json(updated)
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({ status: "PAID", paidAt: new Date().toISOString() })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    return NextResponse.json(updated)
+  })
 }
 ````
 
@@ -12313,460 +11416,6 @@ export async function PATCH(
     .returning()
 
   return NextResponse.json(updated)
-}
-````
-
-## File: app/warehouse/orders/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import type { Order, OrderStatus } from "@/lib/types"
-import { formatTk } from "@/lib/pricing"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
-import { FormDialog } from "@/components/form-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "ALL" | "IN_PROGRESS" | "DELIVERED" | "EXCEPTIONS"
-
-const EXCEPTION_STATUSES: OrderStatus[] = ["FAILED_ATTEMPT", "RETURNED"]
-const IN_PROGRESS_STATUSES: OrderStatus[] = [
-  "PICKED_UP",
-  "IN_WAREHOUSE",
-  "IN_TRANSIT",
-  "OUT_FOR_DELIVERY",
-]
-
-export default function WarehouseOrdersPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("ALL")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // The orders API already scopes the list to this warehouse's parcels (plus
-  // picked-up parcels incoming to any hub), so no extra hub filter is needed.
-  // Stats and tab counts use the unfiltered (but still warehouse-scoped)
-  // `allOrders`; the table itself uses the search-narrowed `orders`.
-  const inProgress = useMemo(
-    () => allOrders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
-    [allOrders],
-  )
-  const delivered = useMemo(
-    () => allOrders.filter((o) => o.status === "DELIVERED"),
-    [allOrders],
-  )
-  const exceptions = useMemo(
-    () => allOrders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
-    [allOrders],
-  )
-  const inWarehouse = useMemo(
-    () => allOrders.filter((o) => o.status === "IN_WAREHOUSE"),
-    [allOrders],
-  )
-
-  const visible = useMemo(() => {
-    switch (tab) {
-      case "IN_PROGRESS":
-        return orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status))
-      case "DELIVERED":
-        return orders.filter((o) => o.status === "DELIVERED")
-      case "EXCEPTIONS":
-        return orders.filter((o) => EXCEPTION_STATUSES.includes(o.status))
-      default:
-        return orders
-    }
-  }, [tab, orders])
-
-  function openOrder(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) =>
-        o.deliveryRiderId ? (
-          <span className="text-sm">{rider(o.deliveryRiderId)?.name}</span>
-        ) : (
-          <span className="text-muted-foreground text-sm">Unassigned</span>
-        ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-  ]
-
-  const activeMerchant = activeOrder
-    ? merchant(activeOrder.merchantId)
-    : undefined
-  const activeWarehouse = activeOrder
-    ? warehouses.find((w) => w.id === activeOrder.warehouseId)
-    : undefined
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.orders.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.orders.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        columns={4}
-        items={[
-          {
-            label: "Held in warehouse",
-            value: inWarehouse.length,
-            icon: Boxes,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "In progress",
-            value: inProgress.length,
-            icon: Clock,
-            tone: "bg-primary/10 text-primary",
-          },
-          {
-            label: "Delivered",
-            value: delivered.length,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Exceptions",
-            value: exceptions.length,
-            icon: Truck,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-        ]}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="ALL">All ({allOrders.length})</TabsTrigger>
-            <TabsTrigger value="IN_PROGRESS">
-              In progress ({inProgress.length})
-            </TabsTrigger>
-            <TabsTrigger value="DELIVERED">
-              Delivered ({delivered.length})
-            </TabsTrigger>
-            <TabsTrigger value="EXCEPTIONS">
-              Exceptions ({exceptions.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage="No orders to show for this view."
-            onRowClick={openOrder}
-          />
-        </CardContent>
-      </Card>
-
-      <FormDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        size="lg"
-        title={activeOrder ? activeOrder.code : "Order"}
-        description={
-          activeOrder
-            ? `${merchantName(activeOrder.merchantId)} · ${activeOrder.deliveryCity}`
-            : undefined
-        }
-        footer={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setDialogOpen(false)}
-            className="w-full sm:w-auto"
-          >
-            <X className="size-4" />
-            Close
-          </Button>
-        }
-      >
-        {activeOrder ? (
-          <TrackingTimeline
-            order={activeOrder}
-            pickupRider={rider(activeOrder.pickupRiderId)}
-            warehouse={activeWarehouse}
-            deliveryRider={rider(activeOrder.deliveryRiderId)}
-            merchant={activeMerchant}
-          />
-        ) : null}
-      </FormDialog>
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/riders/page.tsx
-````typescript
-"use client"
-
-import { useState } from "react"
-import { Bike, CheckCircle2, Search, Truck, Users } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import type { Rider } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
-import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { StatCardList } from "@/components/stat-card-list"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-export default function WarehouseRidersPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  // The riders API already scopes the roster to the signed-in Warehouse
-  // Admin's hub (search composes with that scope server-side too), so
-  // `riders`/`allRiders` here only ever contain this warehouse's riders.
-  const { riders, allRiders, query, setQuery } = useRiders()
-  const [editingRider, setEditingRider] = useState<Rider | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
-
-  function handleRowClick(rider: Rider) {
-    setEditingRider(rider)
-    setEditOpen(true)
-  }
-
-  // Stats always reflect the full roster, not the current search.
-  const activeCount = allRiders.filter((r) => r.isActive).length
-  const deliveryCount = allRiders.filter(
-    (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
-  ).length
-  const pickupCount = allRiders.filter(
-    (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
-  ).length
-
-  const columns: DataTableColumn<Rider>[] = [
-    {
-      id: "name",
-      header: "Name",
-      sortable: true,
-      sortValue: (r) => r.name,
-      cell: (r) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{r.name}</span>
-          <span className="text-muted-foreground text-xs sm:hidden">
-            {r.phone}
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "phone",
-      header: "Phone",
-      sortable: true,
-      sortValue: (r) => r.phone,
-      headClassName: "hidden sm:table-cell",
-      cellClassName: "hidden sm:table-cell",
-      cell: (r) => <span className="text-sm tabular-nums">{r.phone}</span>,
-    },
-    {
-      id: "zone",
-      header: "Zone",
-      sortable: true,
-      sortValue: (r) => r.zone,
-      cell: (r) => <span className="text-sm">{r.zone}</span>,
-    },
-    {
-      id: "taskType",
-      header: "Task type",
-      sortable: true,
-      sortValue: (r) => r.taskType,
-      cell: (r) => (
-        <Badge variant="outline" className="font-normal">
-          {taskTypeLabel(r.taskType)}
-        </Badge>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      align: "right",
-      sortable: true,
-      sortValue: (r) => (r.isActive ? 1 : 0),
-      cell: (r) => (
-        <Switch
-          checked={r.isActive}
-          disabled
-          className="data-[state=checked]:bg-chart-2 disabled:opacity-100"
-          aria-label={r.isActive ? "Active" : "Disabled"}
-        />
-      ),
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.riders.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.riders.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        columns={4}
-        items={[
-          { label: "Total riders", value: allRiders.length, icon: Users },
-          {
-            label: "Active",
-            value: activeCount,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Delivery riders",
-            value: deliveryCount,
-            icon: Truck,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Pickup riders",
-            value: pickupCount,
-            icon: Bike,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-        ]}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search name, phone, zone"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={riders}
-            getRowKey={(r) => r.id}
-            initialSortId="name"
-            emptyMessage="No riders are based at this warehouse yet."
-            onRowClick={handleRowClick}
-          />
-        </CardContent>
-      </Card>
-
-      <EditRiderDialog
-        rider={editingRider}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        canReassignWarehouse={false}
-      />
-    </div>
-  )
 }
 ````
 
@@ -15124,6 +13773,934 @@ export default function WarehouseRidersPage() {
 }
 ````
 
+## File: features/divisions/hooks/use-divisions.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { Division } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/divisions"
+
+const byName = (a: Division, b: Division) => a.name.localeCompare(b.name)
+
+type Result = { ok: boolean; error?: string }
+
+// Divisions (geographic regions) resource. The cache is kept sorted by name on
+// every create/update to match the old context.
+export function useDivisions() {
+  const { currentUser } = useAuth()
+  const { data, error, isLoading, mutate } = useSWR<Division[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Division[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const divisions = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allDivisions = data ?? []
+
+  const createDivision = useCallback(
+    async (name: string): Promise<Result> => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not create the division.",
+        }
+      }
+      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
+        revalidate: false,
+      })
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  const updateDivision = useCallback(
+    async (
+      id: string,
+      input: { name?: string; isActive?: boolean },
+    ): Promise<Result> => {
+      const res = await fetch(`${KEY}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not update the division.",
+        }
+      }
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((d) => (d.id === id ? data : d)).sort(byName),
+        { revalidate: false },
+      )
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  const deleteDivision = useCallback(
+    async (id: string): Promise<Result> => {
+      const res = await fetch(`${KEY}/${id}`, { method: "DELETE" })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not delete the division.",
+        }
+      }
+      await mutate((prev) => (prev ?? []).filter((d) => d.id !== id), {
+        revalidate: false,
+      })
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  return {
+    divisions,
+    allDivisions,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    createDivision,
+    updateDivision,
+    deleteDivision,
+  }
+}
+````
+
+## File: features/merchants/hooks/use-merchants.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { Merchant, MerchantPricingInput } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/merchants"
+
+// Merchants resource: the merchant directory plus the admin/merchant mutations
+// that act on it. Reads are SWR-cached; each mutation writes the authoritative
+// server row straight back into the cache (no global reload).
+export function useMerchants() {
+  const { currentUser } = useAuth()
+  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Merchant[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const merchants = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allMerchants = data ?? []
+
+  // The merchant business owned by the logged-in merchant user (if any) —
+  // always derived from the unfiltered list so it's never lost mid-search.
+  const currentMerchant =
+    currentUser?.role === "MERCHANT" && currentUser.merchantId
+      ? (allMerchants.find((m) => m.id === currentUser.merchantId) ?? null)
+      : null
+
+  const replaceOne = useCallback(
+    (id: string, updated: Merchant) =>
+      mutate((prev) => (prev ?? []).map((m) => (m.id === id ? updated : m)), {
+        revalidate: false,
+      }),
+    [mutate],
+  )
+
+  const approveMerchant = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/merchants/${id}/approve`, {
+        method: "PATCH",
+      })
+      if (!res.ok) return
+      await replaceOne(id, await res.json())
+    },
+    [replaceOne],
+  )
+
+  const suspendMerchant = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/merchants/${id}/suspend`, {
+        method: "PATCH",
+      })
+      if (!res.ok) return
+      await replaceOne(id, await res.json())
+    },
+    [replaceOne],
+  )
+
+  const reactivateMerchant = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/merchants/${id}/reactivate`, {
+        method: "PATCH",
+      })
+      if (!res.ok) return
+      await replaceOne(id, await res.json())
+    },
+    [replaceOne],
+  )
+
+  const setMerchantPricing = useCallback(
+    async (id: string, pricing: MerchantPricingInput) => {
+      const res = await fetch(`/api/merchants/${id}/pricing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pricing),
+      })
+      if (!res.ok) return
+      await replaceOne(id, await res.json())
+    },
+    [replaceOne],
+  )
+
+  const updateMerchantProfile = useCallback(
+    async (
+      id: string,
+      input: {
+        businessName: string
+        email: string
+        phone: string
+        address: string
+        divisionId: string
+      },
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const res = await fetch(`/api/merchants/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not update your business details.",
+        }
+      }
+      await replaceOne(id, data)
+      return { ok: true }
+    },
+    [replaceOne],
+  )
+
+  return {
+    merchants,
+    allMerchants,
+    query,
+    setQuery,
+    currentMerchant,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    approveMerchant,
+    suspendMerchant,
+    reactivateMerchant,
+    setMerchantPricing,
+    updateMerchantProfile,
+  }
+}
+````
+
+## File: features/payouts/hooks/use-payouts.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR, { useSWRConfig } from "swr"
+import type { Order, PayoutRequest } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/payouts"
+const ORDERS_KEY = "/api/orders"
+
+type Result = { ok: boolean; error?: string }
+
+// Payout requests resource. Spans two caches: a merchant requesting a payout
+// (or an admin rejecting one) also locks/unlocks the affected orders, so those
+// mutations revalidate the orders cache too via the shared SWR config.
+export function usePayouts() {
+  const { currentUser } = useAuth()
+  const { currentMerchant } = useMerchants()
+  const { mutate: globalMutate } = useSWRConfig()
+  const { data, error, isLoading, mutate } = useSWR<PayoutRequest[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<
+    PayoutRequest[]
+  >(searchKey, jsonFetcher, swrOptions)
+
+  const payoutRequests = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allPayoutRequests = data ?? []
+
+  // Derived from the unfiltered list — a merchant's own requests shouldn't
+  // disappear just because an admin's search elsewhere narrowed the page.
+  const merchantPayoutRequests = currentMerchant
+    ? allPayoutRequests.filter((p) => p.merchantId === currentMerchant.id)
+    : []
+
+  const replaceOne = useCallback(
+    (id: string, updated: PayoutRequest) =>
+      mutate((prev) => (prev ?? []).map((p) => (p.id === id ? updated : p)), {
+        revalidate: false,
+      }),
+    [mutate],
+  )
+
+  const requestPayout = useCallback(
+    async (input: {
+      payoutMethod: string
+      payoutDetails: string
+    }): Promise<{ ok: boolean; request?: PayoutRequest; error?: string }> => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const resData = await res.json()
+      if (!res.ok) return { ok: false, error: resData.error }
+      await mutate((prev) => [resData, ...(prev ?? [])], { revalidate: false })
+      // Lock the orders attached to this request in the orders cache.
+      const lockedIds = new Set<string>(resData.orderIds)
+      await globalMutate<Order[]>(
+        ORDERS_KEY,
+        (prev) =>
+          (prev ?? []).map((o) =>
+            lockedIds.has(o.id) ? { ...o, payoutRequestId: resData.id } : o,
+          ),
+        { revalidate: false },
+      )
+      return { ok: true, request: resData }
+    },
+    [mutate, globalMutate],
+  )
+
+  const approvePayout = useCallback(
+    async (requestId: string): Promise<Result> => {
+      const res = await fetch(`${KEY}/${requestId}/approve`, {
+        method: "PATCH",
+      })
+      const resData = await res.json()
+      if (!res.ok) return { ok: false, error: resData.error }
+      await replaceOne(requestId, resData)
+      return { ok: true }
+    },
+    [replaceOne],
+  )
+
+  const rejectPayout = useCallback(
+    async (requestId: string, reason: string): Promise<Result> => {
+      const res = await fetch(`${KEY}/${requestId}/reject`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      })
+      const resData = await res.json()
+      if (!res.ok) return { ok: false, error: resData.error }
+      await replaceOne(requestId, resData)
+      // Unlock the request's orders so they can be requested again.
+      const unlockedIds = new Set<string>(resData.orderIds)
+      await globalMutate<Order[]>(
+        ORDERS_KEY,
+        (prev) =>
+          (prev ?? []).map((o) =>
+            unlockedIds.has(o.id) ? { ...o, payoutRequestId: null } : o,
+          ),
+        { revalidate: false },
+      )
+      return { ok: true }
+    },
+    [replaceOne, globalMutate],
+  )
+
+  const markPayoutPaid = useCallback(
+    async (requestId: string): Promise<Result> => {
+      const res = await fetch(`${KEY}/${requestId}/paid`, { method: "PATCH" })
+      const resData = await res.json()
+      if (!res.ok) return { ok: false, error: resData.error }
+      await replaceOne(requestId, resData)
+      return { ok: true }
+    },
+    [replaceOne],
+  )
+
+  return {
+    payoutRequests,
+    allPayoutRequests,
+    query,
+    setQuery,
+    merchantPayoutRequests,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    requestPayout,
+    approvePayout,
+    rejectPayout,
+    markPayoutPaid,
+  }
+}
+````
+
+## File: features/riders/hooks/use-riders.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { Rider, RiderTaskType } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/riders"
+
+interface RiderCreateInput {
+  name: string
+  email: string
+  phone: string
+  zone: string
+  warehouseId: string
+  taskType?: RiderTaskType
+}
+
+interface RiderUpdateInput {
+  name?: string
+  phone?: string
+  zone?: string
+  warehouseId?: string
+  taskType?: RiderTaskType
+  isActive?: boolean
+}
+
+// Riders that can run deliveries (DELIVERY or BOTH).
+const canDeliver = (r: Rider) =>
+  r.taskType === "DELIVERY" || r.taskType === "BOTH"
+
+// Riders resource. Exposes the full roster, the current rider's own profile,
+// and the delivery riders based at the current Warehouse Admin's hub (derived
+// from the warehouses cache, shared via SWR — no extra fetch).
+export function useRiders() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { data, error, isLoading, mutate } = useSWR<Rider[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Rider[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const riders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allRiders = data ?? []
+
+  // The rider profile for the logged-in rider user (if any) — always derived
+  // from the unfiltered list so it's never lost mid-search.
+  const currentRider =
+    currentUser?.role === "RIDER" && currentUser.riderId
+      ? (allRiders.find((r) => r.id === currentUser.riderId) ?? null)
+      : null
+
+  // Every rider based at the logged-in admin's warehouse (any status / task
+  // type) — used by the warehouse rider-management screen. Derived from the
+  // unfiltered list; search narrows the page's own `riders`, not this.
+  const warehouseRiders = currentWarehouse
+    ? allRiders.filter((r) => r.warehouseId === currentWarehouse.id)
+    : []
+
+  // Active, delivery-capable riders at the admin's warehouse — the pool the
+  // dispatch desk can assign parcels to.
+  const warehouseDeliveryRiders = currentWarehouse
+    ? allRiders.filter(
+        (r) =>
+          r.warehouseId === currentWarehouse.id && r.isActive && canDeliver(r),
+      )
+    : []
+
+  const createRider = useCallback(
+    async (input: RiderCreateInput) => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const newRider = await res.json()
+      await mutate((prev) => [newRider, ...(prev ?? [])], { revalidate: false })
+    },
+    [mutate],
+  )
+
+  const updateRider = useCallback(
+    async (id: string, input: RiderUpdateInput) => {
+      const res = await fetch(`${KEY}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      await mutate(
+        (prev) => (prev ?? []).map((r) => (r.id === id ? updated : r)),
+        { revalidate: false },
+      )
+    },
+    [mutate],
+  )
+
+  const toggleRiderActive = useCallback(
+    async (id: string) => {
+      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
+      if (!res.ok) return
+      const updated = await res.json()
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((r) =>
+            r.id === id ? { ...r, isActive: updated.isActive } : r,
+          ),
+        { revalidate: false },
+      )
+    },
+    [mutate],
+  )
+
+  return {
+    riders,
+    allRiders,
+    query,
+    setQuery,
+    currentRider,
+    warehouseRiders,
+    warehouseDeliveryRiders,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    createRider,
+    updateRider,
+    toggleRiderActive,
+  }
+}
+````
+
+## File: features/team/hooks/use-team.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR, { useSWRConfig } from "swr"
+import type { Role, User, Warehouse } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/team"
+const WAREHOUSES_KEY = "/api/warehouses"
+
+interface NewAccountInput {
+  name: string
+  email: string
+  phone: string
+  role: Extract<Role, "ADMIN" | "WAREHOUSE_ADMIN">
+  warehouseId?: string | null
+  canManagePricing?: boolean
+}
+
+// Team (staff accounts) resource. Creating/reassigning a Warehouse Admin also
+// updates the warehouses cache's managedBy field, so both views stay
+// consistent without a global reload — mirrors the old context exactly.
+export function useTeam() {
+  const { currentUser } = useAuth()
+  const { mutate: globalMutate } = useSWRConfig()
+  const { data, error, isLoading, mutate } = useSWR<User[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<User[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const team = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allTeam = data ?? []
+
+  const createAccount = useCallback(
+    async (input: NewAccountInput & { password: string }) => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) return
+      const newUser = await res.json()
+      await mutate((prev) => [newUser, ...(prev ?? [])], { revalidate: false })
+      // Keep the cached warehouse list in sync with the new manager assignment.
+      if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
+        await globalMutate<Warehouse[]>(
+          WAREHOUSES_KEY,
+          (prev) =>
+            (prev ?? []).map((w) =>
+              w.id === newUser.warehouseId
+                ? { ...w, managedBy: newUser.id }
+                : w,
+            ),
+          { revalidate: false },
+        )
+      }
+    },
+    [mutate, globalMutate],
+  )
+
+  const toggleAccountActive = useCallback(
+    async (id: string) => {
+      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
+      if (!res.ok) return
+      const updatedProfile = await res.json()
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((u) =>
+            u.id === id ? { ...u, isActive: updatedProfile.isActive } : u,
+          ),
+        { revalidate: false },
+      )
+    },
+    [mutate],
+  )
+
+  const togglePricingPermission = useCallback(
+    async (id: string) => {
+      const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
+      if (!res.ok) return
+      const updatedProfile = await res.json()
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((u) =>
+            u.id === id
+              ? { ...u, canManagePricing: updatedProfile.canManagePricing }
+              : u,
+          ),
+        { revalidate: false },
+      )
+    },
+    [mutate],
+  )
+
+  const updateAccountWarehouse = useCallback(
+    async (id: string, warehouseId: string | null) => {
+      const res = await fetch(`${KEY}/${id}/warehouse`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouseId }),
+      })
+      if (!res.ok) return
+      const updatedProfile = await res.json()
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((u) =>
+            u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
+          ),
+        { revalidate: false },
+      )
+      // Reflect the managedBy change on the cached warehouse list.
+      await globalMutate<Warehouse[]>(
+        WAREHOUSES_KEY,
+        (prev) =>
+          (prev ?? []).map((w) => {
+            if (w.managedBy === id) return { ...w, managedBy: null }
+            if (warehouseId && w.id === warehouseId)
+              return { ...w, managedBy: id }
+            return w
+          }),
+        { revalidate: false },
+      )
+    },
+    [mutate, globalMutate],
+  )
+
+  return {
+    team,
+    allTeam,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    createAccount,
+    toggleAccountActive,
+    togglePricingPermission,
+    updateAccountWarehouse,
+  }
+}
+````
+
+## File: features/warehouses/hooks/use-warehouses.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { Warehouse } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/warehouses"
+
+const byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
+
+// Warehouses resource. Create/update/delete keep the cache sorted by name to
+// match the old context, and expose the current Warehouse Admin's hub.
+export function useWarehouses() {
+  const { currentUser } = useAuth()
+  const { data, error, isLoading, mutate } = useSWR<Warehouse[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is untouched — mutations keep writing to it — while
+  // search results live in a separate, parallel SWR entry.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allWarehouses = data ?? []
+
+  // The warehouse managed by the logged-in Warehouse Admin (if any) — always
+  // derived from the unfiltered list, since many other hooks depend on this
+  // staying stable regardless of any search happening on the warehouses page.
+  const currentWarehouse =
+    currentUser?.role === "WAREHOUSE_ADMIN" && currentUser.warehouseId
+      ? (allWarehouses.find((w) => w.id === currentUser.warehouseId) ?? null)
+      : null
+
+  const createWarehouse = useCallback(
+    async (input: {
+      name: string
+      address: string
+      city: string
+      divisionId: string
+    }): Promise<{ ok: boolean; error?: string }> => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not create the warehouse.",
+        }
+      }
+      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
+        revalidate: false,
+      })
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  const updateWarehouse = useCallback(
+    async (
+      id: string,
+      input: {
+        name?: string
+        address?: string
+        city?: string
+        divisionId?: string
+        isActive?: boolean
+      },
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const res = await fetch(`${KEY}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not update the warehouse.",
+        }
+      }
+      await mutate(
+        (prev) =>
+          (prev ?? []).map((w) => (w.id === id ? data : w)).sort(byName),
+        { revalidate: false },
+      )
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  const deleteWarehouse = useCallback(
+    async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      const res = await fetch(`${KEY}/${id}`, { method: "DELETE" })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data?.error ?? "Could not delete the warehouse.",
+        }
+      }
+      await mutate((prev) => (prev ?? []).filter((w) => w.id !== id), {
+        revalidate: false,
+      })
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  return {
+    warehouses,
+    allWarehouses,
+    query,
+    setQuery,
+    currentWarehouse,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    createWarehouse,
+    updateWarehouse,
+    deleteWarehouse,
+  }
+}
+````
+
 ## File: lib/mailer.ts
 ````typescript
 // Gmail SMTP mailer with retry logic and exponential backoff.
@@ -15532,338 +15109,6 @@ export default function DashboardAccountPage() {
 }
 ````
 
-## File: app/dashboard/divisions/page.tsx
-````typescript
-"use client"
-
-import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useDivisions } from "@/features/divisions/hooks/use-divisions"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import type { Division } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { FormDialog } from "@/components/form-dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-interface DivisionRow extends Division {
-  usageCount: number
-}
-
-export default function DivisionsPage() {
-  const router = useRouter()
-  const { currentUser } = useAuth()
-  const {
-    divisions,
-    query,
-    setQuery,
-    createDivision,
-    updateDivision,
-    deleteDivision,
-  } = useDivisions()
-  const { allWarehouses } = useWarehouses()
-  const { allMerchants } = useMerchants()
-  const { pickupLocations } = usePickupLocations()
-  const { allOrders } = useOrders()
-
-  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
-  useEffect(() => {
-    if (currentUser && !isSuperAdmin) {
-      router.replace("/dashboard")
-    }
-  }, [currentUser, isSuperAdmin, router])
-
-  // Dialog state.
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editing, setEditing] = useState<Division | null>(null)
-  const [deleting, setDeleting] = useState<DivisionRow | null>(null)
-  const [name, setName] = useState("")
-  const [submitting, setSubmitting] = useState(false)
-
-  // Count how many records reference each division so admins understand the
-  // impact of disabling/deleting one, and we can block deletes of in-use rows.
-  // Usage counts always reflect the full sets of the other resources, never
-  // narrowed by an unrelated search on those resources' own pages.
-  const rows = useMemo<DivisionRow[]>(() => {
-    return divisions.map((d) => {
-      const usageCount =
-        allWarehouses.filter((w) => w.divisionId === d.id).length +
-        allMerchants.filter((m) => m.divisionId === d.id).length +
-        pickupLocations.filter((p) => p.divisionId === d.id).length +
-        allOrders.filter((o) => o.deliveryDivisionId === d.id).length
-      return { ...d, usageCount }
-    })
-  }, [divisions, allWarehouses, allMerchants, pickupLocations, allOrders])
-
-  function openCreate() {
-    setName("")
-    setCreateOpen(true)
-  }
-
-  function openEdit(division: Division) {
-    setName(division.name)
-    setEditing(division)
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    const res = await createDivision(name.trim())
-    setSubmitting(false)
-    if (!res.ok) {
-      toast.error(res.error ?? "Could not create the division.")
-      return
-    }
-    toast.success(`Division "${name.trim()}" created.`)
-    setCreateOpen(false)
-  }
-
-  async function handleEdit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editing) return
-    setSubmitting(true)
-    const res = await updateDivision(editing.id, { name: name.trim() })
-    setSubmitting(false)
-    if (!res.ok) {
-      toast.error(res.error ?? "Could not rename the division.")
-      return
-    }
-    toast.success("Division renamed.")
-    setEditing(null)
-  }
-
-  async function handleToggleActive(division: Division) {
-    const res = await updateDivision(division.id, {
-      isActive: !division.isActive,
-    })
-    if (!res.ok) {
-      toast.error(res.error ?? "Could not update the division.")
-      return
-    }
-    toast.success(
-      `${division.name} ${division.isActive ? "disabled" : "enabled"}.`,
-    )
-  }
-
-  async function handleDelete() {
-    if (!deleting) return
-    setSubmitting(true)
-    const res = await deleteDivision(deleting.id)
-    setSubmitting(false)
-    if (!res.ok) {
-      toast.error(res.error ?? "Could not delete the division.")
-      return
-    }
-    toast.success(`Division "${deleting.name}" deleted.`)
-    setDeleting(null)
-  }
-
-  const columns: DataTableColumn<DivisionRow>[] = [
-    {
-      id: "name",
-      header: "Division",
-      sortable: true,
-      sortValue: (d) => d.name,
-      cell: (d) => (
-        <div className="flex items-center gap-2 font-medium">
-          <MapPin className="text-muted-foreground size-4" aria-hidden />
-          {d.name}
-        </div>
-      ),
-    },
-    {
-      id: "usage",
-      header: "In use by",
-      sortable: true,
-      sortValue: (d) => d.usageCount,
-      headClassName: "hidden sm:table-cell",
-      cellClassName: "hidden sm:table-cell",
-      cell: (d) => (
-        <span className="text-muted-foreground text-sm">
-          {d.usageCount} {d.usageCount === 1 ? "record" : "records"}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (d) => (d.isActive ? 1 : 0),
-      cell: (d) => (
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={d.isActive}
-            onCheckedChange={() => handleToggleActive(d)}
-            aria-label={`Toggle active state for ${d.name}`}
-          />
-          <Badge variant={d.isActive ? "default" : "secondary"}>
-            {d.isActive ? "Active" : "Disabled"}
-          </Badge>
-        </div>
-      ),
-    },
-    {
-      id: "actions",
-      header: "Actions",
-      align: "right",
-      cell: (d) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => openEdit(d)}
-            aria-label={`Rename ${d.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleting(d)}
-            aria-label={`Delete ${d.name}`}
-            disabled={d.usageCount > 0}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      ),
-    },
-  ]
-
-  if (!isSuperAdmin) return null
-
-  return (
-    <>
-      <PageHeader
-        title={pageContent.dashboard.divisions.title}
-        description={pageContent.dashboard.divisions.description}
-      >
-        <Button type="button" onClick={openCreate}>
-          <Plus className="size-4" />
-          Add division
-        </Button>
-      </PageHeader>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search division name"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowKey={(d) => d.id}
-            initialSortId="name"
-            emptyMessage="No divisions yet. Add one to get started."
-          />
-        </CardContent>
-      </Card>
-
-      <p className="text-muted-foreground mt-4 text-xs">
-        A division can only be deleted when no records reference it. Disable a
-        division instead to stop it appearing in new address forms while keeping
-        existing records intact.
-      </p>
-
-      {/* Create */}
-      <FormDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        title="Add division"
-        description="Create a new geographic division."
-        onSubmit={handleCreate}
-        submitLabel="Create division"
-        submittingLabel="Creating…"
-        submitting={submitting}
-        submitDisabled={!name.trim()}
-      >
-        <div className="flex flex-col gap-2">
-          <label htmlFor="division-name" className="text-sm font-medium">
-            Division name
-          </label>
-          <Input
-            id="division-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Dhaka"
-            autoFocus
-          />
-        </div>
-      </FormDialog>
-
-      {/* Edit */}
-      <FormDialog
-        open={editing !== null}
-        onOpenChange={(o) => !o && setEditing(null)}
-        title="Rename division"
-        description="Update the name of this division."
-        onSubmit={handleEdit}
-        submitLabel="Save changes"
-        submittingLabel="Saving…"
-        submitting={submitting}
-        submitDisabled={!name.trim()}
-      >
-        <div className="flex flex-col gap-2">
-          <label htmlFor="division-edit-name" className="text-sm font-medium">
-            Division name
-          </label>
-          <Input
-            id="division-edit-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
-        </div>
-      </FormDialog>
-
-      {/* Delete confirm */}
-      <FormDialog
-        open={deleting !== null}
-        onOpenChange={(o) => !o && setDeleting(null)}
-        title="Delete division"
-        description={
-          deleting
-            ? `Permanently delete "${deleting.name}"? This cannot be undone.`
-            : ""
-        }
-        onConfirm={handleDelete}
-        submitLabel="Delete"
-        submittingLabel="Deleting…"
-        submitting={submitting}
-        submitVariant="destructive"
-      >
-        <p className="text-muted-foreground text-sm">
-          This division is not referenced by any records, so it is safe to
-          remove.
-        </p>
-      </FormDialog>
-    </>
-  )
-}
-````
-
 ## File: app/merchant/account/page.tsx
 ````typescript
 import { AccountSettings } from "@/features/account/components/account-settings"
@@ -15987,6 +15232,460 @@ export default function WarehouseAccountPage() {
 }
 ````
 
+## File: app/warehouse/orders/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import type { Order, OrderStatus } from "@/lib/types"
+import { formatTk } from "@/lib/pricing"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
+import { FormDialog } from "@/components/form-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "ALL" | "IN_PROGRESS" | "DELIVERED" | "EXCEPTIONS"
+
+const EXCEPTION_STATUSES: OrderStatus[] = ["FAILED_ATTEMPT", "RETURNED"]
+const IN_PROGRESS_STATUSES: OrderStatus[] = [
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+]
+
+export default function WarehouseOrdersPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse, warehouses } = useWarehouses()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("ALL")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // The orders API already scopes the list to this warehouse's parcels (plus
+  // picked-up parcels incoming to any hub), so no extra hub filter is needed.
+  // Stats and tab counts use the unfiltered (but still warehouse-scoped)
+  // `allOrders`; the table itself uses the search-narrowed `orders`.
+  const inProgress = useMemo(
+    () => allOrders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
+    [allOrders],
+  )
+  const delivered = useMemo(
+    () => allOrders.filter((o) => o.status === "DELIVERED"),
+    [allOrders],
+  )
+  const exceptions = useMemo(
+    () => allOrders.filter((o) => EXCEPTION_STATUSES.includes(o.status)),
+    [allOrders],
+  )
+  const inWarehouse = useMemo(
+    () => allOrders.filter((o) => o.status === "IN_WAREHOUSE"),
+    [allOrders],
+  )
+
+  const visible = useMemo(() => {
+    switch (tab) {
+      case "IN_PROGRESS":
+        return orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status))
+      case "DELIVERED":
+        return orders.filter((o) => o.status === "DELIVERED")
+      case "EXCEPTIONS":
+        return orders.filter((o) => EXCEPTION_STATUSES.includes(o.status))
+      default:
+        return orders
+    }
+  }, [tab, orders])
+
+  function openOrder(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) =>
+        o.deliveryRiderId ? (
+          <span className="text-sm">{rider(o.deliveryRiderId)?.name}</span>
+        ) : (
+          <span className="text-muted-foreground text-sm">Unassigned</span>
+        ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+  ]
+
+  const activeMerchant = activeOrder
+    ? merchant(activeOrder.merchantId)
+    : undefined
+  const activeWarehouse = activeOrder
+    ? warehouses.find((w) => w.id === activeOrder.warehouseId)
+    : undefined
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.orders.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.orders.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Held in warehouse",
+            value: inWarehouse.length,
+            icon: Boxes,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "In progress",
+            value: inProgress.length,
+            icon: Clock,
+            tone: "bg-primary/10 text-primary",
+          },
+          {
+            label: "Delivered",
+            value: delivered.length,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Exceptions",
+            value: exceptions.length,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="ALL">All ({allOrders.length})</TabsTrigger>
+            <TabsTrigger value="IN_PROGRESS">
+              In progress ({inProgress.length})
+            </TabsTrigger>
+            <TabsTrigger value="DELIVERED">
+              Delivered ({delivered.length})
+            </TabsTrigger>
+            <TabsTrigger value="EXCEPTIONS">
+              Exceptions ({exceptions.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage="No orders to show for this view."
+            onRowClick={openOrder}
+          />
+        </CardContent>
+      </Card>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        size="lg"
+        title={activeOrder ? activeOrder.code : "Order"}
+        description={
+          activeOrder
+            ? `${merchantName(activeOrder.merchantId)} · ${activeOrder.deliveryCity}`
+            : undefined
+        }
+        footer={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDialogOpen(false)}
+            className="w-full sm:w-auto"
+          >
+            <X className="size-4" />
+            Close
+          </Button>
+        }
+      >
+        {activeOrder ? (
+          <TrackingTimeline
+            order={activeOrder}
+            pickupRider={rider(activeOrder.pickupRiderId)}
+            warehouse={activeWarehouse}
+            deliveryRider={rider(activeOrder.deliveryRiderId)}
+            merchant={activeMerchant}
+          />
+        ) : null}
+      </FormDialog>
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/riders/page.tsx
+````typescript
+"use client"
+
+import { useState } from "react"
+import { Bike, CheckCircle2, Search, Truck, Users } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import type { Rider } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
+import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { StatCardList } from "@/components/stat-card-list"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+export default function WarehouseRidersPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  // The riders API already scopes the roster to the signed-in Warehouse
+  // Admin's hub (search composes with that scope server-side too), so
+  // `riders`/`allRiders` here only ever contain this warehouse's riders.
+  const { riders, allRiders, query, setQuery } = useRiders()
+  const [editingRider, setEditingRider] = useState<Rider | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+
+  function handleRowClick(rider: Rider) {
+    setEditingRider(rider)
+    setEditOpen(true)
+  }
+
+  // Stats always reflect the full roster, not the current search.
+  const activeCount = allRiders.filter((r) => r.isActive).length
+  const deliveryCount = allRiders.filter(
+    (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
+  ).length
+  const pickupCount = allRiders.filter(
+    (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
+  ).length
+
+  const columns: DataTableColumn<Rider>[] = [
+    {
+      id: "name",
+      header: "Name",
+      sortable: true,
+      sortValue: (r) => r.name,
+      cell: (r) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{r.name}</span>
+          <span className="text-muted-foreground text-xs sm:hidden">
+            {r.phone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "phone",
+      header: "Phone",
+      sortable: true,
+      sortValue: (r) => r.phone,
+      headClassName: "hidden sm:table-cell",
+      cellClassName: "hidden sm:table-cell",
+      cell: (r) => <span className="text-sm tabular-nums">{r.phone}</span>,
+    },
+    {
+      id: "zone",
+      header: "Zone",
+      sortable: true,
+      sortValue: (r) => r.zone,
+      cell: (r) => <span className="text-sm">{r.zone}</span>,
+    },
+    {
+      id: "taskType",
+      header: "Task type",
+      sortable: true,
+      sortValue: (r) => r.taskType,
+      cell: (r) => (
+        <Badge variant="outline" className="font-normal">
+          {taskTypeLabel(r.taskType)}
+        </Badge>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      align: "right",
+      sortable: true,
+      sortValue: (r) => (r.isActive ? 1 : 0),
+      cell: (r) => (
+        <Switch
+          checked={r.isActive}
+          disabled
+          className="data-[state=checked]:bg-chart-2 disabled:opacity-100"
+          aria-label={r.isActive ? "Active" : "Disabled"}
+        />
+      ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.riders.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.riders.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        columns={4}
+        items={[
+          { label: "Total riders", value: allRiders.length, icon: Users },
+          {
+            label: "Active",
+            value: activeCount,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Delivery riders",
+            value: deliveryCount,
+            icon: Truck,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Pickup riders",
+            value: pickupCount,
+            icon: Bike,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, phone, zone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={riders}
+            getRowKey={(r) => r.id}
+            initialSortId="name"
+            emptyMessage="No riders are based at this warehouse yet."
+            onRowClick={handleRowClick}
+          />
+        </CardContent>
+      </Card>
+
+      <EditRiderDialog
+        rider={editingRider}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        canReassignWarehouse={false}
+      />
+    </div>
+  )
+}
+````
+
 ## File: components/ui/sonner.tsx
 ````typescript
 "use client"
@@ -16080,552 +15779,6 @@ export const siteConfig: SiteConfig = {
 
 // Convenience alias so callers can render <SiteIcon /> directly.
 export const SiteIcon = ParcelIcon
-````
-
-## File: CONTRIBUTING.md
-````markdown
-# Contributing
-
-This document covers both the architectural conventions and the step-by-step
-recipes for adding or changing code in ParcelFlow. The principles come first;
-the recipes follow. Use the recipe that matches your task, use the exact paths
-shown, and finish with the [verification checklist](#verification-checklist).
-
-> Golden rule: **find the closest existing example and mirror it.** This
-> codebase is highly consistent — almost every new thing has a twin already in
-> the tree. Search for it before writing anything new.
-
----
-
-## Where things live
-
-```
-app/
-  api/<resource>/route.ts            collection endpoints (GET list, POST create)
-  api/<resource>/[id]/route.ts       item endpoints (PATCH, DELETE)
-  api/orders/[id]/<action>/route.ts  order lifecycle wrappers (see Recipe F)
-  <role>/<page>/page.tsx             a screen for a role (dashboard|merchant|warehouse|rider)
-features/<name>/
-  components/                        presentational pieces for this domain
-  dialogs/                           dialogs that drive this domain's mutations
-  hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
-  transitions.ts                     orders only — the state machine
-components/                          generic, feature-agnostic UI only
-lib/
-  db/schema.ts                       Drizzle tables — source of truth for entities
-  types.ts                           re-exports entity types from schema
-  validation.ts                      zod schemas + parseBody
-  api-auth.ts                        requireSession()
-  nav-config.ts                      sidebar entries per role
-  constants.ts, pricing.ts           cross-cutting domain logic
-  mailer.ts, mail-templates.ts       transactional email
-  storage/                           file upload backends (local / R2)
-config/
-  site.json, site.ts                 brand name, tagline, icon
-  content.ts                         page titles/descriptions (copy)
-```
-
----
-
-## 1. Feature-based folder structure
-
-Domain code lives under `features/<name>/`, **not** in kind-based folders like
-`components/dialog/` or `components/badge/`. Each feature owns its UI, hooks, and
-domain logic:
-
-```
-features/
-  orders/
-    components/    presentational pieces (badges, cells, timelines)
-    dialogs/       dialogs that drive this domain's mutations
-    hooks/         use-orders.ts (the resource hook — see §3)
-    transitions.ts the order state machine (see §2)
-  riders/
-  merchants/
-  warehouses/
-  payouts/
-  divisions/
-  pickup-locations/
-  team/
-  account/         hooks/use-auth.tsx (the auth context)
-  security/
-```
-
-`components/` keeps **only generic, feature-agnostic** building blocks
-(`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
-`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
-(`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
-`hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
-
-### Only split a component into a folder when there's real content
-
-A component stays a single flat `.tsx` file. Promote it to a folder
-(`index.tsx` + `types.ts`) **only when it has genuine local types or constants**
-worth isolating. Do not create empty or near-empty `types.ts` files.
-
-```
-# Good: has a real local Props interface
-features/riders/dialogs/edit-rider-dialog/
-  index.tsx     component
-  types.ts      EditRiderDialogProps
-
-# Good: no local types/constants -> stays flat
-features/merchants/dialogs/pricing-dialog.tsx
-```
-
-Constants/options shared by sibling components live in their own flat module
-rather than being duplicated. For example, the rider task-type labels and
-`<Select>` options used by both the create and edit rider dialogs live in
-`features/riders/dialogs/task-type.ts`.
-
-Entity types (`Order`, `Rider`, `Merchant`, …) are derived from
-`lib/db/schema.ts` and re-exported from `lib/types.ts` — the single source of
-truth. Only component-local Props/input shapes that don't already exist there
-belong in a feature's `types.ts`. Do not fragment `lib/types.ts` or
-`lib/constants.ts`.
-
----
-
-## 2. Order state machine (`features/orders/transitions.ts`)
-
-Every order lifecycle transition is a **declarative definition**, not a
-hand-written route handler. A transition declares who may run it, what body it
-accepts, what guards must hold, and what fields it writes:
-
-```ts
-const transitions = {
-  approve: {
-    authorize: (session) => session.role === "ADMIN",
-    schema: approveSchema, // optional zod schema for the body
-    guard: async ({ order }) => {
-      // ordered checks; first failure wins
-      if (order.status !== "PENDING")
-        return { error: "Order is not pending", status: 409 }
-    },
-    buildUpdate: ({ body, now }) => ({ status: "APPROVED", approvedAt: now }),
-  },
-  // ...10 transitions total
-}
-```
-
-The shared runner `applyOrderTransition(name, req, ctx)` performs the identical
-sequence for all of them: resolve session → authorize → parse body → load order
-→ run guard → write update → return the updated order. **Route files are thin
-wrappers** — they only name the transition:
-
-```ts
-// app/api/orders/[id]/approve/route.ts
-import { applyOrderTransition } from "@/features/orders/transitions"
-export const PATCH = (req, ctx) => applyOrderTransition("approve", req, ctx)
-```
-
-To add a lifecycle action: add one entry to `transitions`, add a one-line route
-wrapper, and add a spec case in
-`app/api/orders/[id]/__tests__/transitions.spec.ts`. Never duplicate the
-auth/parse/guard/update plumbing inline.
-
----
-
-## 3. Per-resource SWR hooks
-
-There is **no global data context**. Each resource has a focused hook in
-`features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
-key, the typed data, loading/error state, any derived selectors, the
-mutation functions for that resource, and — for searchable resources — the
-`query` state described below.
-
-```ts
-export function useMerchants() {
-  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
-    "/api/merchants",
-    fetcher,
-  )
-  const merchants = data ?? []
-
-  async function approveMerchant(id: string) {
-    // optimistic update + revalidate via mutate()
-  }
-
-  return { merchants, isLoading, error, approveMerchant }
-}
-```
-
-Rules:
-
-- **Read data only through these hooks** — never re-introduce `fetch()` +
-  `useState`/`useEffect` loading plumbing in components. (The one exception is
-  the pre-auth `app/register` flow, which runs before a session exists and so
-  cannot use these session-scoped hooks.)
-- **Cross-resource mutations** coordinate caches explicitly. When a mutation
-  changes more than one resource (e.g. a payout request touches both payouts and
-  orders), call `mutate()` on every affected key, not just the primary one.
-- Authentication/session lives in `features/account/hooks/use-auth.tsx`
-  (`useAuth()`), the one piece of shared state that remains a React context.
-- The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
-  which aggregates the error state of every resource key.
-
-### Search state lives in the hook, not the page
-
-Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
-`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
-all seven hooks — copy `use-orders.ts` rather than improvising:
-
-```ts
-const KEY = "/api/orders"
-
-export function useOrders() {
-  const { currentUser } = useAuth()
-  // 1. Base key — untouched. Every mutation and useDataError still dedupes
-  //    against this exact string; never repoint it at the search key.
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 2. Debounced query state, owned by the hook.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  // 3. A second, parallel SWR call for the search results — only active once
-  //    there's a non-empty debounced query. Separate cache entry from KEY.
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 4. `orders` is search-aware; `allOrders` is always the full base list.
-  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allOrders = data ?? []
-
-  return {
-    orders,
-    allOrders,
-    query,
-    setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    // ...mutations, all still writing through the base `mutate`/`KEY`
-  }
-}
-```
-
-Rules:
-
-- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
-  route — it narrows what a role-scoped `where` already returns, never
-  bypasses it. Every resource's `GET` composes the search clause onto the
-  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
-  same order the role scoping is already applied — see Recipe E's template.
-- **Always export both `orders` and `allOrders`** (substitute the resource
-  name). Any derived value that should stay stable while the user searches —
-  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
-  `currentWarehouse`, cross-resource usage counts — must be computed from the
-  `allX` list, never from the search-aware one. Get this wrong and a stat card
-  silently shrinks to the size of the search box's matches.
-- **Mutations always target `KEY`**, the literal base-key string, not the
-  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
-  does this correctly — don't reroute it.
-- A page with a search `<Input>` destructures `query`/`setQuery` from the
-  hook; it never keeps its own `useState` for this. Tab/status filters stay
-  client-side `useMemo`s layered **on top of** the hook's `orders` (or
-  equivalent), not on `allOrders`.
-
----
-
-## 4. Storage (`lib/storage/`)
-
-File uploads go through a single entry point — **never import the local or R2
-drivers directly**:
-
-```ts
-import { saveFile } from "@/lib/storage"
-
-const { publicUrl } = await saveFile(relativePath, buffer, mimeType)
-```
-
-The active backend is selected by the `STORAGE_PROVIDER` env var (`"local"` or
-`"r2"`). `"local"` writes to disk and serves files via `/api/uploads`; `"r2"`
-uploads to Cloudflare R2. Defaults to `"local"` when the var is unset.
-
-On the client side, use `uploadImage()` from `lib/upload-image.ts`. It compresses
-the file before sending and targets the correct folder (avatar vs. photo). The
-`<ImageUpload>` component in `components/image-upload.tsx` wraps this for form use.
-
-Never write backend-specific upload logic outside `lib/storage/`.
-
----
-
-## 5. Environment validation (`lib/env.ts`)
-
-All required env vars are declared and validated in `lib/env.ts`. The
-`instrumentation.ts` hook calls `validateEnv()` at server startup so the app
-**refuses to boot** with a clear error rather than failing mid-request.
-
-When you add a new env var:
-
-1. Add a `required()` / `oneOf()` / `minLength()` call in `lib/env.ts`.
-2. Document it in `.env.example`.
-
-Never read `process.env` for a required variable without a corresponding entry
-in `validateEnv()`.
-
----
-
-## 6. Email (`lib/mailer.ts`)
-
-Transactional email goes through `sendMail()` from `lib/mailer.ts`. It uses
-Gmail SMTP with retry/backoff and logs failed sends to the `failed_mail` table.
-HTML templates live in `lib/mail-templates.ts`.
-
-```ts
-import { sendMail } from "@/lib/mailer"
-
-await sendMail({
-  to: "user@example.com",
-  subject: "Your order",
-  html: template,
-})
-```
-
-Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`.
-
----
-
-## 7. Site identity (`config/site.json` + `config/site.ts`)
-
-Brand name, tagline, description, and icon live in `config/site.json`. Import the
-typed `siteConfig` or the `SiteIcon` alias from `config/site.ts` — do not read
-the JSON directly in components.
-
----
-
-## 8. Recipes — step-by-step playbook
-
-### Recipe A — Add a field to an existing entity
-
-Example: the `rider.taskType` column added recently.
-
-1. **Schema** — add the column in `lib/db/schema.ts`. Use a `text(... { enum })`
-   for enums and export the values array if the UI needs it:
-   ```ts
-   export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
-   // ...
-   taskType: text("taskType", { enum: riderTaskTypes })
-     .notNull()
-     .default("DELIVERY")
-   ```
-2. **Type** — if a named union helps, add it to `lib/types.ts`:
-   ```ts
-   export type RiderTaskType = (typeof rider.$inferSelect)["taskType"]
-   ```
-3. **Validation** — add the field to the relevant zod schema in
-   `lib/validation.ts` (create schema, and an update schema if editable).
-4. **API** — read/write the new field in the matching route(s).
-5. **Hook** — add it to the create/update input types in `use-<resource>.ts`.
-6. **UI** — surface it in the dialog(s) and any table columns / detail views.
-7. **Seed** — add the field to `lib/db/seed.ts` sample rows.
-8. **Apply the DB change** — see [Applying schema changes](#applying-schema-changes).
-
-> If the column is `NOT NULL` and existing rows would violate it, either give it
-> a `.default(...)` or backfill before pushing (the push will otherwise fail).
-
-### Recipe B — Add a brand-new resource (full CRUD)
-
-Example structure to mirror: **divisions** (simple) or **merchants** (rich).
-
-1. **Schema** — add the `pgTable` in `lib/db/schema.ts`, with `createId()` PK and
-   relations via `.references()`.
-2. **Type** — re-export from `lib/types.ts`:
-   `export type Thing = typeof thing.$inferSelect`.
-3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
-   `lib/validation.ts`.
-4. **API routes**:
-    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-      handler with `requireSession()`; gate writes by `me.role`.
-    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-      role-scoped — **enforce it server-side; Neon has no RLS.**
-5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
-   `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
-   `data ?? []`, and `useCallback` mutations that do an optimistic
-   `mutate(..., { revalidate: false })`. If the resource needs a search box,
-   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
-6. **UI** — a page (Recipe C) and dialogs (Recipe D).
-7. **Seed** — add sample rows to `lib/db/seed.ts`.
-
-### Recipe C — Add a page / screen
-
-1. Create `app/<role>/<name>/page.tsx`. `<role>` is `dashboard`, `merchant`,
-   `warehouse`, or `rider`. Mirror a sibling page in the same role folder.
-2. Use `PageHeader` for the title/description and pull copy from
-   `config/content.ts` (add a key there rather than hard-coding strings):
-   ```tsx
-   <PageHeader
-     title={pageContent.warehouse.riders.title(firstName)}
-     description={pageContent.warehouse.riders.description(warehouseName)}
-   />
-   ```
-3. Get data from the resource hook(s) — never fetch in the page directly.
-4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
-   from the hook and render the search `<Input>` (with a `Search` icon, see
-   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
-   `useState` for it. `DataTable`'s own footer already places pagination on
-   the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page.
-5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
-   (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
-   add the import.
-
-### Recipe D — Add a dialog (create / edit / confirm)
-
-1. Put it in `features/<name>/dialogs/`. Flat file
-   (`create-thing-dialog.tsx`) unless it needs a local Props interface or
-   constants — then a folder with `index.tsx` + `types.ts`.
-2. Build on `components/form-dialog.tsx`, not the raw dialog primitive.
-3. Drive all mutations through the resource hook; show errors via `toast` and
-   the hook's `{ ok, error }` result.
-4. **Shared options/labels** used by sibling dialogs go in a flat module beside
-   them (e.g. `features/riders/dialogs/task-type.ts`), never duplicated.
-5. For role-conditional controls, take a prop (e.g.
-   `canReassignWarehouse?: boolean`) rather than reading the role inside the
-   dialog.
-
-### Recipe E — Add a server endpoint (non-order)
-
-Every handler follows the same template:
-
-```ts
-import { requireSession } from "@/lib/api-auth"
-import { db } from "@/lib/db"
-import { thing } from "@/lib/db/schema"
-import { thingCreateSchema, parseBody } from "@/lib/validation"
-import { and, ilike, or } from "drizzle-orm"
-import { NextResponse } from "next/server"
-
-// Accept `req: Request` even if the resource has no search yet — adding `?q=`
-// later then doesn't require touching the function signature.
-export async function GET(req: Request) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-
-  // Scope role-limited readers server-side.
-  let where = undefined
-  if (me.role === "WAREHOUSE_ADMIN") {
-    if (!me.warehouseId) return NextResponse.json([])
-    // ...build the role-scoped where
-  }
-
-  // Optional free-text search, layered on top of the role-scoped where —
-  // search narrows what a role already sees, never widens it.
-  const search = new URL(req.url).searchParams.get("q")?.trim()
-  if (search) {
-    const likeQ = `%${search}%`
-    const searchClause = or(ilike(thing.name, likeQ) /* ...other fields */)
-    where = where ? and(where, searchClause) : searchClause
-  }
-
-  const rows = where
-    ? await db.select().from(thing).where(where)
-    : await db.select().from(thing)
-  return NextResponse.json(rows)
-}
-
-export async function POST(req: Request) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-  const parsed = await parseBody(req, thingCreateSchema)
-  if (parsed.error) return parsed.error
-  // ...insert + return NextResponse.json(created, { status: 201 })
-}
-```
-
-Rules: `requireSession()` first; validate the body with `parseBody` + a zod
-schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
-return the created/updated row so the hook can update its cache.
-
-### Recipe F — Add an order lifecycle action
-
-**Do not** write a custom route handler. Orders use the declarative state
-machine in `features/orders/transitions.ts`.
-
-1. Add one entry to the `transitions` object: `authorize`, optional `schema`,
-   ordered `guard`, and `buildUpdate`.
-2. Add a one-line wrapper route
-   `app/api/orders/[id]/<action>/route.ts`:
-   ```ts
-   import { applyOrderTransition } from "@/features/orders/transitions"
-   export const PATCH = (req, ctx) => applyOrderTransition("<action>", req, ctx)
-   ```
-3. Add a spec case in
-   `app/api/orders/[id]/__tests__/transitions.spec.ts`.
-4. Expose it through `use-orders.ts` and the relevant UI.
-
-Never duplicate the auth/parse/guard/update plumbing inline.
-
----
-
-## Applying schema changes
-
-The DB connection string lives in `.env.development.local` (not `.env`), so load
-it explicitly when running DB scripts from the shell:
-
-```bash
-set -a && . ./.env.development.local && set +a && pnpm db:push
-set -a && . ./.env.development.local && set +a && pnpm db:seed
-```
-
-- `pnpm db:push` applies `schema.ts` to Neon. A `NOT NULL` add fails if existing
-  rows violate it — backfill first (a quick `UPDATE` via the Neon SQL tooling) or
-  give the column a default.
-- The seed is **idempotent** — it skips rows that already exist. After changing
-  seed values for existing ids, either reset the data or run a targeted `UPDATE`.
-
----
-
-## Naming & style conventions
-
-- Files: `kebab-case.tsx` / `kebab-case.ts`. Hooks: `use-<resource>.ts`
-  exporting `useResource()`. Dialogs: `<verb>-<thing>-dialog.tsx`.
-- Components/types: `PascalCase`. Variables/functions: `camelCase`.
-- Prefer `type` aliases derived from the schema over hand-written interfaces.
-- Comment the **why**, not the **what** — match the terse, intent-explaining
-  comment style already in the routes and hooks.
-- Tailwind: follow the design tokens and the rules in the design guidelines
-  (3–5 colors, flexbox-first, spacing scale, no inline hex).
-
----
-
-## Verification checklist
-
-Run all five before opening a PR — they must pass with zero errors:
-
-```bash
-pnpm typecheck     # tsc --noEmit
-pnpm lint          # eslint .
-pnpm format:check  # prettier --check .
-pnpm test:run      # vitest run (includes the order-transition spec suite)
-pnpm build         # next build
-```
-
-For anything user-visible, also verify in the browser: load the page, exercise
-the primary path, and confirm the behavior works. A clean compile is **not**
-proof the behavior is correct.
 ````
 
 ## File: drizzle/meta/0005_snapshot.json
@@ -19244,323 +18397,6 @@ proof the behavior is correct.
 }
 ````
 
-## File: features/orders/hooks/use-orders.ts
-````typescript
-"use client"
-
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
-import type { CreateOrderInput, Order } from "@/lib/types"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { ApiError, jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
-
-const KEY = "/api/orders"
-
-// Maps each order-lifecycle PATCH path to the status the order is expected to
-// land in, so the UI can update optimistically before the server responds.
-// Paths that don't change status (e.g. "settle-cod") are handled separately.
-const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
-  approve: "APPROVED",
-  "picked-up": "PICKED_UP",
-  receive: "IN_WAREHOUSE",
-  dispatch: "IN_TRANSIT",
-  "out-for-delivery": "OUT_FOR_DELIVERY",
-  delivered: "DELIVERED",
-  failed: "FAILED_ATTEMPT",
-  reattempt: "OUT_FOR_DELIVERY",
-  return: "RETURNED",
-}
-
-type Result = { ok: boolean; error?: string }
-
-// Orders resource: the order list, merchant order creation, every rider/
-// warehouse status transition (applied optimistically with rollback), and the
-// warehouse/merchant-scoped views derived from the shared warehouses/merchants
-// caches.
-export function useOrders() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { currentMerchant } = useMerchants()
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is left untouched (mutations and useDataError both
-  // dedupe against it) — search results are a separate, parallel SWR entry
-  // that only activates once a debounced, non-empty query exists.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allOrders = data ?? []
-
-  // FAILED_ATTEMPT parcels at the admin's warehouse awaiting a decision.
-  // Derived from the unfiltered list — these are fixed operational queues,
-  // not affected by what's currently being searched.
-  const warehouseFailedOrders = currentWarehouse
-    ? allOrders.filter(
-        (o) =>
-          o.status === "FAILED_ATTEMPT" &&
-          o.warehouseId === currentWarehouse.id,
-      )
-    : []
-
-  // DELIVERED parcels at the admin's warehouse whose COD is not yet settled.
-  const warehouseUnsettledOrders = currentWarehouse
-    ? allOrders.filter(
-        (o) =>
-          o.status === "DELIVERED" &&
-          o.warehouseId === currentWarehouse.id &&
-          !o.codSettledAt,
-      )
-    : []
-
-  // Delivered, COD-settled orders not locked to an active payout request.
-  const merchantPayableOrders = currentMerchant
-    ? allOrders.filter(
-        (o) =>
-          o.merchantId === currentMerchant.id &&
-          o.status === "DELIVERED" &&
-          Boolean(o.codSettledAt) &&
-          !o.payoutRequestId,
-      )
-    : []
-
-  // Shared helper for every order-lifecycle PATCH. We optimistically apply the
-  // expected status immediately so the UI feels instant, then reconcile with
-  // the authoritative server row on success — or roll back on failure (handled
-  // by SWR's rollbackOnError). The server still validates every transition.
-  const patchOrder = useCallback(
-    async (
-      orderId: string,
-      path: string,
-      body?: Record<string, unknown>,
-    ): Promise<Result> => {
-      const optimisticStatus = OPTIMISTIC_STATUS[path]
-
-      const applyOptimistic = (list: Order[] = []) =>
-        list.map((o) => {
-          if (o.id !== orderId) return o
-          return {
-            ...o,
-            ...(optimisticStatus ? { status: optimisticStatus } : {}),
-            ...(path === "settle-cod"
-              ? { codSettledAt: new Date().toISOString() }
-              : {}),
-            ...(path === "approve" && body?.riderId
-              ? { pickupRiderId: body.riderId as string }
-              : {}),
-            ...(path === "dispatch" && body?.riderId
-              ? { deliveryRiderId: body.riderId as string }
-              : {}),
-          }
-        })
-
-      try {
-        await mutate(
-          async (current?: Order[]) => {
-            const res = await fetch(`/api/orders/${orderId}/${path}`, {
-              method: "PATCH",
-              ...(body
-                ? {
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body),
-                  }
-                : {}),
-            })
-            const resData = await res.json().catch(() => null)
-            if (!res.ok) {
-              throw new ApiError(resData?.error ?? "Action failed.")
-            }
-            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
-          },
-          {
-            optimisticData: applyOptimistic,
-            rollbackOnError: true,
-            populateCache: true,
-            revalidate: false,
-          },
-        )
-        return { ok: true }
-      } catch (err) {
-        if (err instanceof ApiError) return { ok: false, error: err.message }
-        return { ok: false, error: "Network error. Please try again." }
-      }
-    },
-    [mutate],
-  )
-
-  const createOrder = useCallback(
-    async (
-      input: CreateOrderInput,
-    ): Promise<{ ok: boolean; order?: Order; error?: string }> => {
-      const res = await fetch(KEY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      })
-      const resData = await res.json()
-      if (!res.ok) {
-        return { ok: false, error: resData.error ?? "Failed to create order." }
-      }
-      await mutate((prev) => [resData, ...(prev ?? [])], { revalidate: false })
-      return { ok: true, order: resData }
-    },
-    [mutate],
-  )
-
-  const createOrders = useCallback(
-    async (
-      inputs: CreateOrderInput[],
-    ): Promise<{ ok: boolean; orders?: Order[]; error?: string }> => {
-      const res = await fetch("/api/orders/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders: inputs }),
-      })
-      const resData = await res.json()
-      if (!res.ok) {
-        return { ok: false, error: resData.error ?? "Failed to create orders." }
-      }
-      await mutate((prev) => [...resData, ...(prev ?? [])], {
-        revalidate: false,
-      })
-      return { ok: true, orders: resData }
-    },
-    [mutate],
-  )
-
-  // --- Bound transitions (same signatures the old context exposed) ---------
-  const approveAndAssignOrder = useCallback(
-    (orderId: string, riderId: string) =>
-      patchOrder(orderId, "approve", { riderId }),
-    [patchOrder],
-  )
-  const markOrderPickedUp = useCallback(
-    (orderId: string, proofRefs: string[]) =>
-      patchOrder(orderId, "picked-up", { proofRefs }),
-    [patchOrder],
-  )
-  const receiveOrderAtWarehouse = useCallback(
-    (orderId: string) => patchOrder(orderId, "receive"),
-    [patchOrder],
-  )
-  const assignDeliveryRider = useCallback(
-    (orderId: string, riderId: string) =>
-      patchOrder(orderId, "dispatch", { riderId }),
-    [patchOrder],
-  )
-  const markOutForDelivery = useCallback(
-    (orderId: string) => patchOrder(orderId, "out-for-delivery"),
-    [patchOrder],
-  )
-  const markDelivered = useCallback(
-    (orderId: string, proofRef?: string) =>
-      patchOrder(orderId, "delivered", proofRef ? { proofRef } : undefined),
-    [patchOrder],
-  )
-  const markDeliveryFailed = useCallback(
-    (orderId: string, note: string) => patchOrder(orderId, "failed", { note }),
-    [patchOrder],
-  )
-  const reattemptFailedOrder = useCallback(
-    (orderId: string) => patchOrder(orderId, "reattempt"),
-    [patchOrder],
-  )
-  const returnFailedOrder = useCallback(
-    (orderId: string, reason: string) =>
-      patchOrder(orderId, "return", { reason }),
-    [patchOrder],
-  )
-  const settleOrderCod = useCallback(
-    (orderId: string) => patchOrder(orderId, "settle-cod"),
-    [patchOrder],
-  )
-
-  // Public mutation — used from the tracking page without a session. Updates
-  // receiverNote optimistically and reconciles with the server row.
-  const updateReceiverNote = useCallback(
-    async (orderId: string, receiverNote: string): Promise<Result> => {
-      try {
-        await mutate(
-          async (current?: Order[]) => {
-            const res = await fetch(`/api/orders/${orderId}/receiver-note`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ receiverNote }),
-            })
-            const resData = await res.json().catch(() => null)
-            if (!res.ok) {
-              throw new ApiError(resData?.error ?? "Failed to save note.")
-            }
-            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
-          },
-          {
-            optimisticData: (list: Order[] = []) =>
-              list.map((o) => (o.id === orderId ? { ...o, receiverNote } : o)),
-            rollbackOnError: true,
-            populateCache: true,
-            revalidate: false,
-          },
-        )
-        return { ok: true }
-      } catch (err) {
-        if (err instanceof ApiError) return { ok: false, error: err.message }
-        return { ok: false, error: "Network error. Please try again." }
-      }
-    },
-    [mutate],
-  )
-
-  return {
-    orders,
-    allOrders,
-    query,
-    setQuery,
-    warehouseFailedOrders,
-    warehouseUnsettledOrders,
-    merchantPayableOrders,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    createOrder,
-    createOrders,
-    approveAndAssignOrder,
-    markOrderPickedUp,
-    receiveOrderAtWarehouse,
-    assignDeliveryRider,
-    markOutForDelivery,
-    markDelivered,
-    markDeliveryFailed,
-    reattemptFailedOrder,
-    returnFailedOrder,
-    settleOrderCod,
-    updateReceiverNote,
-  }
-}
-````
-
 ## File: features/orders/transitions.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
@@ -19988,33 +18824,46 @@ export async function applyOrderTransition(
     body = parsed.data
   }
 
-  const [orderRow] = await db
-    .select()
-    .from(order)
-    .where(eq(order.id, orderId))
-    .limit(1)
-  if (!orderRow) {
-    return NextResponse.json({ error: "Order not found" }, { status: 404 })
-  }
+  // Transaction: lock this order row for the duration of the guard + write so
+  // two concurrent transitions on the same order (e.g. two admins approving,
+  // or a rider double-submitting a delivery outcome) can't both pass the
+  // guard against stale state. `FOR UPDATE` makes a second concurrent
+  // transaction block here until the first commits, then re-reads the
+  // already-updated row — so its own guard correctly sees the new status.
+  return await db.transaction(async (tx) => {
+    const [orderRow] = await tx
+      .select()
+      .from(order)
+      .where(eq(order.id, orderId))
+      .for("update")
+      .limit(1)
+    if (!orderRow) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    }
 
-  const ctx = { order: orderRow, session: me, body } as TransitionContext<never>
+    const ctx = {
+      order: orderRow,
+      session: me,
+      body,
+    } as TransitionContext<never>
 
-  const guardError = await def.guard(ctx)
-  if (guardError) {
-    return NextResponse.json(
-      { error: guardError.error },
-      { status: guardError.status },
-    )
-  }
+    const guardError = await def.guard(ctx)
+    if (guardError) {
+      return NextResponse.json(
+        { error: guardError.error },
+        { status: guardError.status },
+      )
+    }
 
-  const updateValues = await def.buildUpdate(ctx)
-  const [updated] = await db
-    .update(order)
-    .set(updateValues)
-    .where(eq(order.id, orderId))
-    .returning()
+    const updateValues = await def.buildUpdate(ctx)
+    const [updated] = await tx
+      .update(order)
+      .set(updateValues)
+      .where(eq(order.id, orderId))
+      .returning()
 
-  return NextResponse.json(updated)
+    return NextResponse.json(updated)
+  })
 }
 ````
 
@@ -21258,172 +20107,236 @@ export async function PATCH(
 }
 ````
 
-## File: app/dashboard/riders/page.tsx
+## File: app/dashboard/divisions/page.tsx
 ````typescript
 "use client"
 
-import { useState } from "react"
-import {
-  Bike,
-  CheckCircle2,
-  Search,
-  Users,
-  Warehouse as WarehouseIcon,
-} from "lucide-react"
-import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { Plus, Pencil, Search, Trash2, MapPin } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import type { Rider } from "@/lib/types"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import type { Division } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { CreateRiderDialog } from "@/features/riders/dialogs/create-rider-dialog"
-import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
-import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { FormDialog } from "@/components/form-dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { StatCardList } from "@/components/stat-card-list"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
-export default function RidersPage() {
-  const { riders, allRiders, query, setQuery } = useRiders()
-  const { warehouses } = useWarehouses()
-  const [editingRider, setEditingRider] = useState<Rider | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
+interface DivisionRow extends Division {
+  usageCount: number
+}
 
-  function warehouseName(id?: string | null) {
-    if (!id) return null
-    return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
+export default function DivisionsPage() {
+  const router = useRouter()
+  const { currentUser } = useAuth()
+  const {
+    divisions,
+    query,
+    setQuery,
+    createDivision,
+    updateDivision,
+    deleteDivision,
+  } = useDivisions()
+  const { allWarehouses } = useWarehouses()
+  const { allMerchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const { allOrders } = useOrders()
+
+  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
+  useEffect(() => {
+    if (currentUser && !isSuperAdmin) {
+      router.replace("/dashboard")
+    }
+  }, [currentUser, isSuperAdmin, router])
+
+  // Dialog state.
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editing, setEditing] = useState<Division | null>(null)
+  const [deleting, setDeleting] = useState<DivisionRow | null>(null)
+  const [name, setName] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+
+  // Count how many records reference each division so admins understand the
+  // impact of disabling/deleting one, and we can block deletes of in-use rows.
+  // Usage counts always reflect the full sets of the other resources, never
+  // narrowed by an unrelated search on those resources' own pages.
+  const rows = useMemo<DivisionRow[]>(() => {
+    return divisions.map((d) => {
+      const usageCount =
+        allWarehouses.filter((w) => w.divisionId === d.id).length +
+        allMerchants.filter((m) => m.divisionId === d.id).length +
+        pickupLocations.filter((p) => p.divisionId === d.id).length +
+        allOrders.filter((o) => o.deliveryDivisionId === d.id).length
+      return { ...d, usageCount }
+    })
+  }, [divisions, allWarehouses, allMerchants, pickupLocations, allOrders])
+
+  function openCreate() {
+    setName("")
+    setCreateOpen(true)
   }
 
-  function handleRowClick(rider: Rider) {
-    setEditingRider(rider)
-    setEditOpen(true)
+  function openEdit(division: Division) {
+    setName(division.name)
+    setEditing(division)
   }
 
-  // Stats always reflect the full roster, not the current search.
-  const activeCount = allRiders.filter((r) => r.isActive).length
-  const deliveryCount = allRiders.filter(
-    (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
-  ).length
-  const pickupCount = allRiders.filter(
-    (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
-  ).length
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    const res = await createDivision(name.trim())
+    setSubmitting(false)
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not create the division.")
+      return
+    }
+    toast.success(`Division "${name.trim()}" created.`)
+    setCreateOpen(false)
+  }
 
-  const columns: DataTableColumn<Rider>[] = [
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editing) return
+    setSubmitting(true)
+    const res = await updateDivision(editing.id, { name: name.trim() })
+    setSubmitting(false)
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not rename the division.")
+      return
+    }
+    toast.success("Division renamed.")
+    setEditing(null)
+  }
+
+  async function handleToggleActive(division: Division) {
+    const res = await updateDivision(division.id, {
+      isActive: !division.isActive,
+    })
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not update the division.")
+      return
+    }
+    toast.success(
+      `${division.name} ${division.isActive ? "disabled" : "enabled"}.`,
+    )
+  }
+
+  async function handleDelete() {
+    if (!deleting) return
+    setSubmitting(true)
+    const res = await deleteDivision(deleting.id)
+    setSubmitting(false)
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not delete the division.")
+      return
+    }
+    toast.success(`Division "${deleting.name}" deleted.`)
+    setDeleting(null)
+  }
+
+  const columns: DataTableColumn<DivisionRow>[] = [
     {
       id: "name",
-      header: "Name",
+      header: "Division",
       sortable: true,
-      sortValue: (r) => r.name,
-      cell: (r) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{r.name}</span>
-          <span className="text-muted-foreground text-xs sm:hidden">
-            {r.phone}
-          </span>
+      sortValue: (d) => d.name,
+      cell: (d) => (
+        <div className="flex items-center gap-2 font-medium">
+          <MapPin className="text-muted-foreground size-4" aria-hidden />
+          {d.name}
         </div>
       ),
     },
     {
-      id: "phone",
-      header: "Phone",
+      id: "usage",
+      header: "In use by",
       sortable: true,
-      sortValue: (r) => r.phone,
+      sortValue: (d) => d.usageCount,
       headClassName: "hidden sm:table-cell",
       cellClassName: "hidden sm:table-cell",
-      cell: (r) => <span className="text-sm tabular-nums">{r.phone}</span>,
-    },
-    {
-      id: "zone",
-      header: "Zone",
-      sortable: true,
-      sortValue: (r) => r.zone,
-      cell: (r) => <span className="text-sm">{r.zone}</span>,
-    },
-    {
-      id: "taskType",
-      header: "Task type",
-      sortable: true,
-      sortValue: (r) => r.taskType,
-      cell: (r) => (
-        <Badge variant="outline" className="font-normal">
-          {taskTypeLabel(r.taskType)}
-        </Badge>
+      cell: (d) => (
+        <span className="text-muted-foreground text-sm">
+          {d.usageCount} {d.usageCount === 1 ? "record" : "records"}
+        </span>
       ),
-    },
-    {
-      id: "assignment",
-      header: "Warehouse",
-      sortable: true,
-      sortValue: (r) => warehouseName(r.warehouseId) ?? "",
-      cell: (r) => {
-        const name = warehouseName(r.warehouseId)
-        return name ? (
-          <Badge variant="secondary" className="font-normal">
-            {name}
-          </Badge>
-        ) : (
-          <span className="text-muted-foreground text-sm">—</span>
-        )
-      },
     },
     {
       id: "status",
       header: "Status",
-      align: "right",
       sortable: true,
-      sortValue: (r) => (r.isActive ? 1 : 0),
-      cell: (r) => (
-        <Switch
-          checked={r.isActive}
-          disabled
-          className="data-[state=checked]:bg-chart-2 disabled:opacity-100"
-          aria-label={r.isActive ? "Active" : "Disabled"}
-        />
+      sortValue: (d) => (d.isActive ? 1 : 0),
+      cell: (d) => (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={d.isActive}
+            onCheckedChange={() => handleToggleActive(d)}
+            aria-label={`Toggle active state for ${d.name}`}
+          />
+          <Badge variant={d.isActive ? "default" : "secondary"}>
+            {d.isActive ? "Active" : "Disabled"}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      cell: (d) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => openEdit(d)}
+            aria-label={`Rename ${d.name}`}
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setDeleting(d)}
+            aria-label={`Delete ${d.name}`}
+            disabled={d.usageCount > 0}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       ),
     },
   ]
 
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.dashboard.riders.title}
-        description={pageContent.dashboard.riders.description}
-      >
-        <CreateRiderDialog />
-      </PageHeader>
+  if (!isSuperAdmin) return null
 
-      <StatCardList
-        columns={4}
-        items={[
-          { label: "Total riders", value: allRiders.length, icon: Users },
-          {
-            label: "Active",
-            value: activeCount,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Delivery riders",
-            value: deliveryCount,
-            icon: WarehouseIcon,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Pickup riders",
-            value: pickupCount,
-            icon: Bike,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-        ]}
-      />
+  return (
+    <>
+      <PageHeader
+        title={pageContent.dashboard.divisions.title}
+        description={pageContent.dashboard.divisions.description}
+      >
+        <Button type="button" onClick={openCreate}>
+          <Plus className="size-4" />
+          Add division
+        </Button>
+      </PageHeader>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <div className="relative w-full sm:max-w-xs">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
-            placeholder="Search name, phone, zone"
+            placeholder="Search division name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
@@ -21435,21 +20348,93 @@ export default function RidersPage() {
         <CardContent className="p-0">
           <DataTable
             columns={columns}
-            data={riders}
-            getRowKey={(r) => r.id}
+            data={rows}
+            getRowKey={(d) => d.id}
             initialSortId="name"
-            emptyMessage="No riders yet. Add one to get started."
-            onRowClick={handleRowClick}
+            emptyMessage="No divisions yet. Add one to get started."
           />
         </CardContent>
       </Card>
 
-      <EditRiderDialog
-        rider={editingRider}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-      />
-    </div>
+      <p className="text-muted-foreground mt-4 text-xs">
+        A division can only be deleted when no records reference it. Disable a
+        division instead to stop it appearing in new address forms while keeping
+        existing records intact.
+      </p>
+
+      {/* Create */}
+      <FormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="Add division"
+        description="Create a new geographic division."
+        onSubmit={handleCreate}
+        submitLabel="Create division"
+        submittingLabel="Creating…"
+        submitting={submitting}
+        submitDisabled={!name.trim()}
+      >
+        <div className="flex flex-col gap-2">
+          <label htmlFor="division-name" className="text-sm font-medium">
+            Division name
+          </label>
+          <Input
+            id="division-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Dhaka"
+            autoFocus
+          />
+        </div>
+      </FormDialog>
+
+      {/* Edit */}
+      <FormDialog
+        open={editing !== null}
+        onOpenChange={(o) => !o && setEditing(null)}
+        title="Rename division"
+        description="Update the name of this division."
+        onSubmit={handleEdit}
+        submitLabel="Save changes"
+        submittingLabel="Saving…"
+        submitting={submitting}
+        submitDisabled={!name.trim()}
+      >
+        <div className="flex flex-col gap-2">
+          <label htmlFor="division-edit-name" className="text-sm font-medium">
+            Division name
+          </label>
+          <Input
+            id="division-edit-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+        </div>
+      </FormDialog>
+
+      {/* Delete confirm */}
+      <FormDialog
+        open={deleting !== null}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title="Delete division"
+        description={
+          deleting
+            ? `Permanently delete "${deleting.name}"? This cannot be undone.`
+            : ""
+        }
+        onConfirm={handleDelete}
+        submitLabel="Delete"
+        submittingLabel="Deleting…"
+        submitting={submitting}
+        submitVariant="destructive"
+      >
+        <p className="text-muted-foreground text-sm">
+          This division is not referenced by any records, so it is safe to
+          remove.
+        </p>
+      </FormDialog>
+    </>
   )
 }
 ````
@@ -21672,6 +20657,620 @@ export function DataErrorBanner() {
     </div>
   )
 }
+````
+
+## File: CONTRIBUTING.md
+````markdown
+# Contributing
+
+This document covers both the architectural conventions and the step-by-step
+recipes for adding or changing code in ParcelFlow. The principles come first;
+the recipes follow. Use the recipe that matches your task, use the exact paths
+shown, and finish with the [verification checklist](#verification-checklist).
+
+> Golden rule: **find the closest existing example and mirror it.** This
+> codebase is highly consistent — almost every new thing has a twin already in
+> the tree. Search for it before writing anything new.
+
+---
+
+## Where things live
+
+```
+app/
+  api/<resource>/route.ts            collection endpoints (GET list, POST create)
+  api/<resource>/[id]/route.ts       item endpoints (PATCH, DELETE)
+  api/orders/[id]/<action>/route.ts  order lifecycle wrappers (see Recipe F)
+  <role>/<page>/page.tsx             a screen for a role (dashboard|merchant|warehouse|rider)
+features/<name>/
+  components/                        presentational pieces for this domain
+  dialogs/                           dialogs that drive this domain's mutations
+  hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
+  transitions.ts                     orders only — the state machine
+components/                          generic, feature-agnostic UI only
+lib/
+  db/schema.ts                       Drizzle tables — source of truth for entities
+  types.ts                           re-exports entity types from schema
+  validation.ts                      zod schemas + parseBody
+  api-auth.ts                        requireSession()
+  nav-config.ts                      sidebar entries per role
+  constants.ts, pricing.ts           cross-cutting domain logic
+  mailer.ts, mail-templates.ts       transactional email
+  storage/                           file upload backends (local / R2)
+config/
+  site.json, site.ts                 brand name, tagline, icon
+  content.ts                         page titles/descriptions (copy)
+```
+
+---
+
+## 1. Feature-based folder structure
+
+Domain code lives under `features/<name>/`, **not** in kind-based folders like
+`components/dialog/` or `components/badge/`. Each feature owns its UI, hooks, and
+domain logic:
+
+```
+features/
+  orders/
+    components/    presentational pieces (badges, cells, timelines)
+    dialogs/       dialogs that drive this domain's mutations
+    hooks/         use-orders.ts (the resource hook — see §3)
+    transitions.ts the order state machine (see §2)
+  riders/
+  merchants/
+  warehouses/
+  payouts/
+  divisions/
+  pickup-locations/
+  team/
+  account/         hooks/use-auth.tsx (the auth context)
+  security/
+```
+
+`components/` keeps **only generic, feature-agnostic** building blocks
+(`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
+`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
+(`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
+`hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
+
+### Only split a component into a folder when there's real content
+
+A component stays a single flat `.tsx` file. Promote it to a folder
+(`index.tsx` + `types.ts`) **only when it has genuine local types or constants**
+worth isolating. Do not create empty or near-empty `types.ts` files.
+
+```
+# Good: has a real local Props interface
+features/riders/dialogs/edit-rider-dialog/
+  index.tsx     component
+  types.ts      EditRiderDialogProps
+
+# Good: no local types/constants -> stays flat
+features/merchants/dialogs/pricing-dialog.tsx
+```
+
+Constants/options shared by sibling components live in their own flat module
+rather than being duplicated. For example, the rider task-type labels and
+`<Select>` options used by both the create and edit rider dialogs live in
+`features/riders/dialogs/task-type.ts`.
+
+Entity types (`Order`, `Rider`, `Merchant`, …) are derived from
+`lib/db/schema.ts` and re-exported from `lib/types.ts` — the single source of
+truth. Only component-local Props/input shapes that don't already exist there
+belong in a feature's `types.ts`. Do not fragment `lib/types.ts` or
+`lib/constants.ts`.
+
+---
+
+## 2. Order state machine (`features/orders/transitions.ts`)
+
+Every order lifecycle transition is a **declarative definition**, not a
+hand-written route handler. A transition declares who may run it, what body it
+accepts, what guards must hold, and what fields it writes:
+
+```ts
+const transitions = {
+  approve: {
+    authorize: (session) => session.role === "ADMIN",
+    schema: approveSchema, // optional zod schema for the body
+    guard: async ({ order }) => {
+      // ordered checks; first failure wins
+      if (order.status !== "PENDING")
+        return { error: "Order is not pending", status: 409 }
+    },
+    buildUpdate: ({ body, now }) => ({ status: "APPROVED", approvedAt: now }),
+  },
+  // ...10 transitions total
+}
+```
+
+The shared runner `applyOrderTransition(name, orderId, req)` performs the
+identical sequence for all of them: resolve session → authorize → parse body
+→ **(inside one transaction)** load order with a row lock → run guard → write
+update → return the updated order. **Route files are thin wrappers** — they
+only name the transition:
+
+```ts
+// app/api/orders/[id]/approve/route.ts
+import { applyOrderTransition } from "@/features/orders/transitions"
+export const PATCH = (req, ctx) => applyOrderTransition("approve", req, ctx)
+```
+
+To add a lifecycle action: add one entry to `transitions`, add a one-line route
+wrapper, and add a spec case in
+`app/api/orders/[id]/__tests__/transitions.spec.ts`. Never duplicate the
+auth/parse/guard/update plumbing inline.
+
+### Transaction boundary + row lock
+
+The fetch → guard → write sequence inside `applyOrderTransition` runs inside
+`db.transaction(async (tx) => { ... })`, and the initial fetch uses
+`.for("update")` to lock the order row for the duration of the transaction:
+
+```ts
+return await db.transaction(async (tx) => {
+  const [orderRow] = await tx
+    .select()
+    .from(order)
+    .where(eq(order.id, orderId))
+    .for("update")
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
+
+  const guardError = await def.guard({ order: orderRow, session: me, body })
+  if (guardError)
+    return NextResponse.json(
+      { error: guardError.error },
+      { status: guardError.status },
+    )
+
+  const [updated] = await tx
+    .update(order)
+    .set(await def.buildUpdate({ order: orderRow, session: me, body }))
+    .where(eq(order.id, orderId))
+    .returning()
+  return NextResponse.json(updated)
+})
+```
+
+Without this, two concurrent transitions on the same order (two admins
+approving at once, a rider double-submitting a delivery outcome) could both
+read the same pre-write status, both pass the guard, and both write —
+corrupting state (e.g. double-incrementing `deliveryAttempts`, or an approve
+and a reject both succeeding). The lock makes the second request block until
+the first commits, then re-fetches the now-updated row, so its guard correctly
+sees the new status and fails closed instead of racing.
+
+This is the project's general pattern for any guard-then-write sequence, not
+just orders — see the matching shape in `app/api/payouts/[id]/approve/route.ts`
+and `.../paid/route.ts`. When you add a new endpoint that reads a row, checks
+its status, and conditionally writes to it, wrap the read + guard + write in
+one `db.transaction()` with `.for("update")` on the initial read. A plain
+`db.transaction()` with no lock (as in Recipe B's bulk-insert sequence-number
+read, or the payout-request/payout-reject multi-table writes) is enough when
+the only risk is multiple _inserts_ racing on a derived value, not a
+stale-read guard on a row that already exists.
+
+**Mocked `db` in tests**: if a spec hand-mocks `@/lib/db` (see
+`transitions.spec.ts`), the mock's `transaction` must run the callback against
+the same mock object so it shares state with every `select`/`update`
+assertion, and `.for()` on the select chain must be a no-op passthrough —
+otherwise adding a transaction boundary breaks every test that exercises the
+wrapped code path.
+
+---
+
+## 3. Per-resource SWR hooks
+
+There is **no global data context**. Each resource has a focused hook in
+`features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
+key, the typed data, loading/error state, any derived selectors, the
+mutation functions for that resource, and — for searchable resources — the
+`query` state described below.
+
+```ts
+export function useMerchants() {
+  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
+    "/api/merchants",
+    fetcher,
+  )
+  const merchants = data ?? []
+
+  async function approveMerchant(id: string) {
+    // optimistic update + revalidate via mutate()
+  }
+
+  return { merchants, isLoading, error, approveMerchant }
+}
+```
+
+Rules:
+
+- **Read data only through these hooks** — never re-introduce `fetch()` +
+  `useState`/`useEffect` loading plumbing in components. (The one exception is
+  the pre-auth `app/register` flow, which runs before a session exists and so
+  cannot use these session-scoped hooks.)
+- **Cross-resource mutations** coordinate caches explicitly. When a mutation
+  changes more than one resource (e.g. a payout request touches both payouts and
+  orders), call `mutate()` on every affected key, not just the primary one.
+- Authentication/session lives in `features/account/hooks/use-auth.tsx`
+  (`useAuth()`), the one piece of shared state that remains a React context.
+- The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
+  which aggregates the error state of every resource key.
+
+### Search state lives in the hook, not the page
+
+Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
+`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
+all seven hooks — copy `use-orders.ts` rather than improvising:
+
+```ts
+const KEY = "/api/orders"
+
+export function useOrders() {
+  const { currentUser } = useAuth()
+  // 1. Base key — untouched. Every mutation and useDataError still dedupes
+  //    against this exact string; never repoint it at the search key.
+  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 2. Debounced query state, owned by the hook.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  // 3. A second, parallel SWR call for the search results — only active once
+  //    there's a non-empty debounced query. Separate cache entry from KEY.
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // 4. `orders` is search-aware; `allOrders` is always the full base list.
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
+
+  return {
+    orders,
+    allOrders,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    // ...mutations, all still writing through the base `mutate`/`KEY`
+  }
+}
+```
+
+Rules:
+
+- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
+  route — it narrows what a role-scoped `where` already returns, never
+  bypasses it. Every resource's `GET` composes the search clause onto the
+  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
+  same order the role scoping is already applied — see Recipe E's template.
+- **Always export both `orders` and `allOrders`** (substitute the resource
+  name). Any derived value that should stay stable while the user searches —
+  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
+  `currentWarehouse`, cross-resource usage counts — must be computed from the
+  `allX` list, never from the search-aware one. Get this wrong and a stat card
+  silently shrinks to the size of the search box's matches.
+- **Mutations always target `KEY`**, the literal base-key string, not the
+  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
+  does this correctly — don't reroute it.
+- A page with a search `<Input>` destructures `query`/`setQuery` from the
+  hook; it never keeps its own `useState` for this. Tab/status filters stay
+  client-side `useMemo`s layered **on top of** the hook's `orders` (or
+  equivalent), not on `allOrders`.
+
+---
+
+## 4. Storage (`lib/storage/`)
+
+File uploads go through a single entry point — **never import the local or R2
+drivers directly**:
+
+```ts
+import { saveFile } from "@/lib/storage"
+
+const { publicUrl } = await saveFile(relativePath, buffer, mimeType)
+```
+
+The active backend is selected by the `STORAGE_PROVIDER` env var (`"local"` or
+`"r2"`). `"local"` writes to disk and serves files via `/api/uploads`; `"r2"`
+uploads to Cloudflare R2. Defaults to `"local"` when the var is unset.
+
+On the client side, use `uploadImage()` from `lib/upload-image.ts`. It compresses
+the file before sending and targets the correct folder (avatar vs. photo). The
+`<ImageUpload>` component in `components/image-upload.tsx` wraps this for form use.
+
+Never write backend-specific upload logic outside `lib/storage/`.
+
+---
+
+## 5. Environment validation (`lib/env.ts`)
+
+All required env vars are declared and validated in `lib/env.ts`. The
+`instrumentation.ts` hook calls `validateEnv()` at server startup so the app
+**refuses to boot** with a clear error rather than failing mid-request.
+
+When you add a new env var:
+
+1. Add a `required()` / `oneOf()` / `minLength()` call in `lib/env.ts`.
+2. Document it in `.env.example`.
+
+Never read `process.env` for a required variable without a corresponding entry
+in `validateEnv()`.
+
+---
+
+## 6. Email (`lib/mailer.ts`)
+
+Transactional email goes through `sendMail()` from `lib/mailer.ts`. It uses
+Gmail SMTP with retry/backoff and logs failed sends to the `failed_mail` table.
+HTML templates live in `lib/mail-templates.ts`.
+
+```ts
+import { sendMail } from "@/lib/mailer"
+
+await sendMail({
+  to: "user@example.com",
+  subject: "Your order",
+  html: template,
+})
+```
+
+Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`.
+
+---
+
+## 7. Site identity (`config/site.json` + `config/site.ts`)
+
+Brand name, tagline, description, and icon live in `config/site.json`. Import the
+typed `siteConfig` or the `SiteIcon` alias from `config/site.ts` — do not read
+the JSON directly in components.
+
+---
+
+## 8. Recipes — step-by-step playbook
+
+### Recipe A — Add a field to an existing entity
+
+Example: the `rider.taskType` column added recently.
+
+1. **Schema** — add the column in `lib/db/schema.ts`. Use a `text(... { enum })`
+   for enums and export the values array if the UI needs it:
+   ```ts
+   export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
+   // ...
+   taskType: text("taskType", { enum: riderTaskTypes })
+     .notNull()
+     .default("DELIVERY")
+   ```
+2. **Type** — if a named union helps, add it to `lib/types.ts`:
+   ```ts
+   export type RiderTaskType = (typeof rider.$inferSelect)["taskType"]
+   ```
+3. **Validation** — add the field to the relevant zod schema in
+   `lib/validation.ts` (create schema, and an update schema if editable).
+4. **API** — read/write the new field in the matching route(s).
+5. **Hook** — add it to the create/update input types in `use-<resource>.ts`.
+6. **UI** — surface it in the dialog(s) and any table columns / detail views.
+7. **Seed** — add the field to `lib/db/seed.ts` sample rows.
+8. **Apply the DB change** — see [Applying schema changes](#applying-schema-changes).
+
+> If the column is `NOT NULL` and existing rows would violate it, either give it
+> a `.default(...)` or backfill before pushing (the push will otherwise fail).
+
+### Recipe B — Add a brand-new resource (full CRUD)
+
+Example structure to mirror: **divisions** (simple) or **merchants** (rich).
+
+1. **Schema** — add the `pgTable` in `lib/db/schema.ts`, with `createId()` PK and
+   relations via `.references()`.
+2. **Type** — re-export from `lib/types.ts`:
+   `export type Thing = typeof thing.$inferSelect`.
+3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
+   `lib/validation.ts`.
+4. **API routes**:
+   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+     handler with `requireSession()`; gate writes by `me.role`.
+   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+     role-scoped — **enforce it server-side; Neon has no RLS.**
+5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
+   `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
+   `data ?? []`, and `useCallback` mutations that do an optimistic
+   `mutate(..., { revalidate: false })`. If the resource needs a search box,
+   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
+6. **UI** — a page (Recipe C) and dialogs (Recipe D).
+7. **Seed** — add sample rows to `lib/db/seed.ts`.
+
+### Recipe C — Add a page / screen
+
+1. Create `app/<role>/<name>/page.tsx`. `<role>` is `dashboard`, `merchant`,
+   `warehouse`, or `rider`. Mirror a sibling page in the same role folder.
+2. Use `PageHeader` for the title/description and pull copy from
+   `config/content.ts` (add a key there rather than hard-coding strings):
+   ```tsx
+   <PageHeader
+     title={pageContent.warehouse.riders.title(firstName)}
+     description={pageContent.warehouse.riders.description(warehouseName)}
+   />
+   ```
+3. Get data from the resource hook(s) — never fetch in the page directly.
+4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
+   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
+   from the hook and render the search `<Input>` (with a `Search` icon, see
+   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
+   `useState` for it. `DataTable`'s own footer already places pagination on
+   the left and the CSV button on the right (disabled when no `csv` prop is
+   passed); don't rebuild that layout per page.
+5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
+   (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
+   add the import.
+
+### Recipe D — Add a dialog (create / edit / confirm)
+
+1. Put it in `features/<name>/dialogs/`. Flat file
+   (`create-thing-dialog.tsx`) unless it needs a local Props interface or
+   constants — then a folder with `index.tsx` + `types.ts`.
+2. Build on `components/form-dialog.tsx`, not the raw dialog primitive.
+3. Drive all mutations through the resource hook; show errors via `toast` and
+   the hook's `{ ok, error }` result.
+4. **Shared options/labels** used by sibling dialogs go in a flat module beside
+   them (e.g. `features/riders/dialogs/task-type.ts`), never duplicated.
+5. For role-conditional controls, take a prop (e.g.
+   `canReassignWarehouse?: boolean`) rather than reading the role inside the
+   dialog.
+
+### Recipe E — Add a server endpoint (non-order)
+
+Every handler follows the same template:
+
+```ts
+import { requireSession } from "@/lib/api-auth"
+import { db } from "@/lib/db"
+import { thing } from "@/lib/db/schema"
+import { thingCreateSchema, parseBody } from "@/lib/validation"
+import { and, ilike, or } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+// Accept `req: Request` even if the resource has no search yet — adding `?q=`
+// later then doesn't require touching the function signature.
+export async function GET(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+
+  // Scope role-limited readers server-side.
+  let where = undefined
+  if (me.role === "WAREHOUSE_ADMIN") {
+    if (!me.warehouseId) return NextResponse.json([])
+    // ...build the role-scoped where
+  }
+
+  // Optional free-text search, layered on top of the role-scoped where —
+  // search narrows what a role already sees, never widens it.
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    const searchClause = or(ilike(thing.name, likeQ) /* ...other fields */)
+    where = where ? and(where, searchClause) : searchClause
+  }
+
+  const rows = where
+    ? await db.select().from(thing).where(where)
+    : await db.select().from(thing)
+  return NextResponse.json(rows)
+}
+
+export async function POST(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+  const parsed = await parseBody(req, thingCreateSchema)
+  if (parsed.error) return parsed.error
+  // ...insert + return NextResponse.json(created, { status: 201 })
+}
+```
+
+Rules: `requireSession()` first; validate the body with `parseBody` + a zod
+schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
+return the created/updated row so the hook can update its cache. **If the
+handler reads a row, checks its status, and conditionally writes to it**
+(an approve/reject/mark-paid style endpoint), wrap the read + guard + write in
+`db.transaction()` with `.for("update")` on the initial read — see
+[§2's transaction subsection](#transaction-boundary--row-lock) for why and the
+exact shape. Plain inserts or multi-table writes that don't re-check a status
+still want `db.transaction()`, just without the lock.
+
+### Recipe F — Add an order lifecycle action
+
+**Do not** write a custom route handler. Orders use the declarative state
+machine in `features/orders/transitions.ts`.
+
+1. Add one entry to the `transitions` object: `authorize`, optional `schema`,
+   ordered `guard`, and `buildUpdate`.
+2. Add a one-line wrapper route
+   `app/api/orders/[id]/<action>/route.ts`:
+   ```ts
+   import { applyOrderTransition } from "@/features/orders/transitions"
+   export const PATCH = (req, ctx) => applyOrderTransition("<action>", req, ctx)
+   ```
+3. Add a spec case in
+   `app/api/orders/[id]/__tests__/transitions.spec.ts`.
+4. Expose it through `use-orders.ts` and the relevant UI.
+
+Never duplicate the auth/parse/guard/update plumbing inline — the shared
+runner already handles the transaction boundary and row lock (see
+[§2](#transaction-boundary--row-lock)), so a new transition only needs to
+define its `guard`/`buildUpdate`, never its own `db.transaction()` call.
+
+---
+
+## Applying schema changes
+
+The DB connection string lives in `.env.development.local` (not `.env`), so load
+it explicitly when running DB scripts from the shell:
+
+```bash
+set -a && . ./.env.development.local && set +a && pnpm db:push
+set -a && . ./.env.development.local && set +a && pnpm db:seed
+```
+
+- `pnpm db:push` applies `schema.ts` to Neon. A `NOT NULL` add fails if existing
+  rows violate it — backfill first (a quick `UPDATE` via the Neon SQL tooling) or
+  give the column a default.
+- The seed is **idempotent** — it skips rows that already exist. After changing
+  seed values for existing ids, either reset the data or run a targeted `UPDATE`.
+
+---
+
+## Naming & style conventions
+
+- Files: `kebab-case.tsx` / `kebab-case.ts`. Hooks: `use-<resource>.ts`
+  exporting `useResource()`. Dialogs: `<verb>-<thing>-dialog.tsx`.
+- Components/types: `PascalCase`. Variables/functions: `camelCase`.
+- Prefer `type` aliases derived from the schema over hand-written interfaces.
+- Comment the **why**, not the **what** — match the terse, intent-explaining
+  comment style already in the routes and hooks.
+- Tailwind: follow the design tokens and the rules in the design guidelines
+  (3–5 colors, flexbox-first, spacing scale, no inline hex).
+
+---
+
+## Verification checklist
+
+Run all five before opening a PR — they must pass with zero errors:
+
+```bash
+pnpm typecheck     # tsc --noEmit
+pnpm lint          # eslint .
+pnpm format:check  # prettier --check .
+pnpm test:run      # vitest run (includes the order-transition spec suite)
+pnpm build         # next build
+```
+
+For anything user-visible, also verify in the browser: load the page, exercise
+the primary path, and confirm the behavior works. A clean compile is **not**
+proof the behavior is correct.
 ````
 
 ## File: drizzle/meta/0003_snapshot.json
@@ -22938,6 +22537,323 @@ export function DataErrorBanner() {
 }
 ````
 
+## File: features/orders/hooks/use-orders.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { CreateOrderInput, Order } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { ApiError, jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/orders"
+
+// Maps each order-lifecycle PATCH path to the status the order is expected to
+// land in, so the UI can update optimistically before the server responds.
+// Paths that don't change status (e.g. "settle-cod") are handled separately.
+const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
+  approve: "APPROVED",
+  "picked-up": "PICKED_UP",
+  receive: "IN_WAREHOUSE",
+  dispatch: "IN_TRANSIT",
+  "out-for-delivery": "OUT_FOR_DELIVERY",
+  delivered: "DELIVERED",
+  failed: "FAILED_ATTEMPT",
+  reattempt: "OUT_FOR_DELIVERY",
+  return: "RETURNED",
+}
+
+type Result = { ok: boolean; error?: string }
+
+// Orders resource: the order list, merchant order creation, every rider/
+// warehouse status transition (applied optimistically with rollback), and the
+// warehouse/merchant-scoped views derived from the shared warehouses/merchants
+// caches.
+export function useOrders() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { currentMerchant } = useMerchants()
+  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  // Search state lives here per the no-global-context rule. The base KEY
+  // subscription above is left untouched (mutations and useDataError both
+  // dedupe against it) — search results are a separate, parallel SWR entry
+  // that only activates once a debounced, non-empty query exists.
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allOrders = data ?? []
+
+  // FAILED_ATTEMPT parcels at the admin's warehouse awaiting a decision.
+  // Derived from the unfiltered list — these are fixed operational queues,
+  // not affected by what's currently being searched.
+  const warehouseFailedOrders = currentWarehouse
+    ? allOrders.filter(
+        (o) =>
+          o.status === "FAILED_ATTEMPT" &&
+          o.warehouseId === currentWarehouse.id,
+      )
+    : []
+
+  // DELIVERED parcels at the admin's warehouse whose COD is not yet settled.
+  const warehouseUnsettledOrders = currentWarehouse
+    ? allOrders.filter(
+        (o) =>
+          o.status === "DELIVERED" &&
+          o.warehouseId === currentWarehouse.id &&
+          !o.codSettledAt,
+      )
+    : []
+
+  // Delivered, COD-settled orders not locked to an active payout request.
+  const merchantPayableOrders = currentMerchant
+    ? allOrders.filter(
+        (o) =>
+          o.merchantId === currentMerchant.id &&
+          o.status === "DELIVERED" &&
+          Boolean(o.codSettledAt) &&
+          !o.payoutRequestId,
+      )
+    : []
+
+  // Shared helper for every order-lifecycle PATCH. We optimistically apply the
+  // expected status immediately so the UI feels instant, then reconcile with
+  // the authoritative server row on success — or roll back on failure (handled
+  // by SWR's rollbackOnError). The server still validates every transition.
+  const patchOrder = useCallback(
+    async (
+      orderId: string,
+      path: string,
+      body?: Record<string, unknown>,
+    ): Promise<Result> => {
+      const optimisticStatus = OPTIMISTIC_STATUS[path]
+
+      const applyOptimistic = (list: Order[] = []) =>
+        list.map((o) => {
+          if (o.id !== orderId) return o
+          return {
+            ...o,
+            ...(optimisticStatus ? { status: optimisticStatus } : {}),
+            ...(path === "settle-cod"
+              ? { codSettledAt: new Date().toISOString() }
+              : {}),
+            ...(path === "approve" && body?.riderId
+              ? { pickupRiderId: body.riderId as string }
+              : {}),
+            ...(path === "dispatch" && body?.riderId
+              ? { deliveryRiderId: body.riderId as string }
+              : {}),
+          }
+        })
+
+      try {
+        await mutate(
+          async (current?: Order[]) => {
+            const res = await fetch(`/api/orders/${orderId}/${path}`, {
+              method: "PATCH",
+              ...(body
+                ? {
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                  }
+                : {}),
+            })
+            const resData = await res.json().catch(() => null)
+            if (!res.ok) {
+              throw new ApiError(resData?.error ?? "Action failed.")
+            }
+            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
+          },
+          {
+            optimisticData: applyOptimistic,
+            rollbackOnError: true,
+            populateCache: true,
+            revalidate: false,
+          },
+        )
+        return { ok: true }
+      } catch (err) {
+        if (err instanceof ApiError) return { ok: false, error: err.message }
+        return { ok: false, error: "Network error. Please try again." }
+      }
+    },
+    [mutate],
+  )
+
+  const createOrder = useCallback(
+    async (
+      input: CreateOrderInput,
+    ): Promise<{ ok: boolean; order?: Order; error?: string }> => {
+      const res = await fetch(KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      })
+      const resData = await res.json()
+      if (!res.ok) {
+        return { ok: false, error: resData.error ?? "Failed to create order." }
+      }
+      await mutate((prev) => [resData, ...(prev ?? [])], { revalidate: false })
+      return { ok: true, order: resData }
+    },
+    [mutate],
+  )
+
+  const createOrders = useCallback(
+    async (
+      inputs: CreateOrderInput[],
+    ): Promise<{ ok: boolean; orders?: Order[]; error?: string }> => {
+      const res = await fetch("/api/orders/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: inputs }),
+      })
+      const resData = await res.json()
+      if (!res.ok) {
+        return { ok: false, error: resData.error ?? "Failed to create orders." }
+      }
+      await mutate((prev) => [...resData, ...(prev ?? [])], {
+        revalidate: false,
+      })
+      return { ok: true, orders: resData }
+    },
+    [mutate],
+  )
+
+  // --- Bound transitions (same signatures the old context exposed) ---------
+  const approveAndAssignOrder = useCallback(
+    (orderId: string, riderId: string) =>
+      patchOrder(orderId, "approve", { riderId }),
+    [patchOrder],
+  )
+  const markOrderPickedUp = useCallback(
+    (orderId: string, proofRefs: string[]) =>
+      patchOrder(orderId, "picked-up", { proofRefs }),
+    [patchOrder],
+  )
+  const receiveOrderAtWarehouse = useCallback(
+    (orderId: string) => patchOrder(orderId, "receive"),
+    [patchOrder],
+  )
+  const assignDeliveryRider = useCallback(
+    (orderId: string, riderId: string) =>
+      patchOrder(orderId, "dispatch", { riderId }),
+    [patchOrder],
+  )
+  const markOutForDelivery = useCallback(
+    (orderId: string) => patchOrder(orderId, "out-for-delivery"),
+    [patchOrder],
+  )
+  const markDelivered = useCallback(
+    (orderId: string, proofRef?: string) =>
+      patchOrder(orderId, "delivered", proofRef ? { proofRef } : undefined),
+    [patchOrder],
+  )
+  const markDeliveryFailed = useCallback(
+    (orderId: string, note: string) => patchOrder(orderId, "failed", { note }),
+    [patchOrder],
+  )
+  const reattemptFailedOrder = useCallback(
+    (orderId: string) => patchOrder(orderId, "reattempt"),
+    [patchOrder],
+  )
+  const returnFailedOrder = useCallback(
+    (orderId: string, reason: string) =>
+      patchOrder(orderId, "return", { reason }),
+    [patchOrder],
+  )
+  const settleOrderCod = useCallback(
+    (orderId: string) => patchOrder(orderId, "settle-cod"),
+    [patchOrder],
+  )
+
+  // Public mutation — used from the tracking page without a session. Updates
+  // receiverNote optimistically and reconciles with the server row.
+  const updateReceiverNote = useCallback(
+    async (orderId: string, receiverNote: string): Promise<Result> => {
+      try {
+        await mutate(
+          async (current?: Order[]) => {
+            const res = await fetch(`/api/orders/${orderId}/receiver-note`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ receiverNote }),
+            })
+            const resData = await res.json().catch(() => null)
+            if (!res.ok) {
+              throw new ApiError(resData?.error ?? "Failed to save note.")
+            }
+            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
+          },
+          {
+            optimisticData: (list: Order[] = []) =>
+              list.map((o) => (o.id === orderId ? { ...o, receiverNote } : o)),
+            rollbackOnError: true,
+            populateCache: true,
+            revalidate: false,
+          },
+        )
+        return { ok: true }
+      } catch (err) {
+        if (err instanceof ApiError) return { ok: false, error: err.message }
+        return { ok: false, error: "Network error. Please try again." }
+      }
+    },
+    [mutate],
+  )
+
+  return {
+    orders,
+    allOrders,
+    query,
+    setQuery,
+    warehouseFailedOrders,
+    warehouseUnsettledOrders,
+    merchantPayableOrders,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    createOrder,
+    createOrders,
+    approveAndAssignOrder,
+    markOrderPickedUp,
+    receiveOrderAtWarehouse,
+    assignDeliveryRider,
+    markOutForDelivery,
+    markDelivered,
+    markDeliveryFailed,
+    reattemptFailedOrder,
+    returnFailedOrder,
+    settleOrderCod,
+    updateReceiverNote,
+  }
+}
+````
+
 ## File: app/api/merchants/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
@@ -23271,6 +23187,202 @@ export async function POST(req: Request) {
     .returning()
 
   return NextResponse.json(created, { status: 201 })
+}
+````
+
+## File: app/dashboard/riders/page.tsx
+````typescript
+"use client"
+
+import { useState } from "react"
+import {
+  Bike,
+  CheckCircle2,
+  Search,
+  Users,
+  Warehouse as WarehouseIcon,
+} from "lucide-react"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import type { Rider } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { CreateRiderDialog } from "@/features/riders/dialogs/create-rider-dialog"
+import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
+import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { StatCardList } from "@/components/stat-card-list"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+export default function RidersPage() {
+  const { riders, allRiders, query, setQuery } = useRiders()
+  const { warehouses } = useWarehouses()
+  const [editingRider, setEditingRider] = useState<Rider | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+
+  function warehouseName(id?: string | null) {
+    if (!id) return null
+    return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
+  }
+
+  function handleRowClick(rider: Rider) {
+    setEditingRider(rider)
+    setEditOpen(true)
+  }
+
+  // Stats always reflect the full roster, not the current search.
+  const activeCount = allRiders.filter((r) => r.isActive).length
+  const deliveryCount = allRiders.filter(
+    (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
+  ).length
+  const pickupCount = allRiders.filter(
+    (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
+  ).length
+
+  const columns: DataTableColumn<Rider>[] = [
+    {
+      id: "name",
+      header: "Name",
+      sortable: true,
+      sortValue: (r) => r.name,
+      cell: (r) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{r.name}</span>
+          <span className="text-muted-foreground text-xs sm:hidden">
+            {r.phone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "phone",
+      header: "Phone",
+      sortable: true,
+      sortValue: (r) => r.phone,
+      headClassName: "hidden sm:table-cell",
+      cellClassName: "hidden sm:table-cell",
+      cell: (r) => <span className="text-sm tabular-nums">{r.phone}</span>,
+    },
+    {
+      id: "zone",
+      header: "Zone",
+      sortable: true,
+      sortValue: (r) => r.zone,
+      cell: (r) => <span className="text-sm">{r.zone}</span>,
+    },
+    {
+      id: "taskType",
+      header: "Task type",
+      sortable: true,
+      sortValue: (r) => r.taskType,
+      cell: (r) => (
+        <Badge variant="outline" className="font-normal">
+          {taskTypeLabel(r.taskType)}
+        </Badge>
+      ),
+    },
+    {
+      id: "assignment",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (r) => warehouseName(r.warehouseId) ?? "",
+      cell: (r) => {
+        const name = warehouseName(r.warehouseId)
+        return name ? (
+          <Badge variant="secondary" className="font-normal">
+            {name}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        )
+      },
+    },
+    {
+      id: "status",
+      header: "Status",
+      align: "right",
+      sortable: true,
+      sortValue: (r) => (r.isActive ? 1 : 0),
+      cell: (r) => (
+        <Switch
+          checked={r.isActive}
+          disabled
+          className="data-[state=checked]:bg-chart-2 disabled:opacity-100"
+          aria-label={r.isActive ? "Active" : "Disabled"}
+        />
+      ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.dashboard.riders.title}
+        description={pageContent.dashboard.riders.description}
+      >
+        <CreateRiderDialog />
+      </PageHeader>
+
+      <StatCardList
+        columns={4}
+        items={[
+          { label: "Total riders", value: allRiders.length, icon: Users },
+          {
+            label: "Active",
+            value: activeCount,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Delivery riders",
+            value: deliveryCount,
+            icon: WarehouseIcon,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Pickup riders",
+            value: pickupCount,
+            icon: Bike,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, phone, zone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={riders}
+            getRowKey={(r) => r.id}
+            initialSortId="name"
+            emptyMessage="No riders yet. Add one to get started."
+            onRowClick={handleRowClick}
+          />
+        </CardContent>
+      </Card>
+
+      <EditRiderDialog
+        rider={editingRider}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+    </div>
+  )
 }
 ````
 
@@ -25823,241 +25935,6 @@ export default function MerchantLayout({
 }
 ````
 
-## File: app/rider/delivery/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { CheckCircle2, Navigation, Search } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attempt-dialog"
-import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
-const COMPLETED_STATUSES = ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"]
-
-type FilterTab = "TO_DELIVER" | "COMPLETED"
-
-export default function RiderDeliveryQueuePage() {
-  const { currentUser } = useAuth()
-  const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [startTarget, setStartTarget] = useState<Order | null>(null)
-  const [startDialogOpen, setStartDialogOpen] = useState(false)
-
-  // All orders dispatched to this rider for delivery. Tab counts use the
-  // unfiltered list; the table-facing versions below use the
-  // search-narrowed `orders`.
-  const myDeliveries = useMemo(
-    () =>
-      currentRider
-        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
-        : [],
-    [allOrders, currentRider],
-  )
-
-  const toDeliver = myDeliveries.filter((o) =>
-    TO_DELIVER_STATUSES.includes(o.status),
-  )
-  const completed = myDeliveries.filter((o) =>
-    COMPLETED_STATUSES.includes(o.status),
-  )
-
-  const visibleMyDeliveries = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-  const visibleToDeliver = visibleMyDeliveries.filter((o) =>
-    TO_DELIVER_STATUSES.includes(o.status),
-  )
-  const visibleCompleted = visibleMyDeliveries.filter((o) =>
-    COMPLETED_STATUSES.includes(o.status),
-  )
-
-  const visible = tab === "TO_DELIVER" ? visibleToDeliver : visibleCompleted
-
-  function openAttempt(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  function openStartDelivery(order: Order) {
-    setStartTarget(order)
-    setStartDialogOpen(true)
-  }
-
-  // Delivery is a recipient-facing step — the rider only needs to know who
-  // they're delivering to and where. Merchant/pickup details aren't
-  // relevant anymore, so they're left off this view entirely.
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "recipient",
-      header: "Recipient",
-      sortable: true,
-      sortValue: (o) => o.recipientName,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{o.recipientName}</span>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientPhone}
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.deliveryAddress}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType}
-        </span>
-      ),
-    },
-    {
-      id: "collectible",
-      header: "Collect",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "IN_TRANSIT" ? (
-          <Button size="sm" onClick={() => openStartDelivery(o)}>
-            <Navigation className="size-4" />
-            Out for delivery
-          </Button>
-        ) : o.status === "OUT_FOR_DELIVERY" ? (
-          <Button size="sm" onClick={() => openAttempt(o)}>
-            <CheckCircle2 className="size-4" />
-            Record outcome
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.rider.delivery.title(
-          currentUser?.name.split(" ")[0] ?? "Rider",
-        )}
-        description={pageContent.rider.delivery.description}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="TO_DELIVER">
-              To deliver ({toDeliver.length})
-            </TabsTrigger>
-            <TabsTrigger value="COMPLETED">
-              Completed ({completed.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "TO_DELIVER"
-                ? "No deliveries waiting. Parcels appear here once a Warehouse Admin dispatches them to you."
-                : "Nothing completed yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <OutForDeliveryDialog
-        order={startTarget}
-        open={startDialogOpen}
-        onOpenChange={setStartDialogOpen}
-      />
-
-      <DeliveryAttemptDialog
-        order={activeOrder}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
 ## File: app/api/orders/bulk/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
@@ -26341,303 +26218,6 @@ export async function DELETE(
 
   await db.delete(pickupLocation).where(eq(pickupLocation.id, id))
   return NextResponse.json({ ok: true })
-}
-````
-
-## File: app/dashboard/merchants/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import {
-  Ban,
-  CheckCircle2,
-  Clock,
-  MoreHorizontal,
-  RotateCcw,
-  Search,
-  ShieldCheck,
-  Store,
-  Tag,
-} from "lucide-react"
-import { toast } from "sonner"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { formatTk } from "@/lib/pricing"
-import type { Merchant, MerchantStatus } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { MerchantStatusBadge } from "@/features/merchants/components/merchant-status-badge"
-import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "ALL" | MerchantStatus
-
-export default function MerchantsPage() {
-  const {
-    merchants,
-    allMerchants,
-    query,
-    setQuery,
-    approveMerchant,
-    suspendMerchant,
-    reactivateMerchant,
-  } = useMerchants()
-  const [tab, setTab] = useState<FilterTab>("ALL")
-  const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
-  const [pricingOpen, setPricingOpen] = useState(false)
-
-  // Stats always reflect the full merchant set, not the current search.
-  const counts = useMemo(
-    () => ({
-      total: allMerchants.length,
-      active: allMerchants.filter((m) => m.status === "ACTIVE").length,
-      pending: allMerchants.filter((m) => m.status === "PENDING").length,
-      suspended: allMerchants.filter((m) => m.status === "SUSPENDED").length,
-    }),
-    [allMerchants],
-  )
-
-  // Search is server-side now (see useMerchants); the tab status filter
-  // stays client-side, layered on top of the already-search-narrowed
-  // `merchants`.
-  const filtered = useMemo(
-    () => merchants.filter((m) => tab === "ALL" || m.status === tab),
-    [merchants, tab],
-  )
-
-  function openPricing(merchant: Merchant) {
-    setPricingMerchant(merchant)
-    setPricingOpen(true)
-  }
-
-  function handleApprove(merchant: Merchant) {
-    approveMerchant(merchant.id)
-    toast.success(`${merchant.businessName} approved. Assign a base rate next.`)
-  }
-
-  const columns: DataTableColumn<Merchant>[] = [
-    {
-      id: "business",
-      header: "Business",
-      sortable: true,
-      sortValue: (m) => m.businessName,
-      cell: (m) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{m.businessName}</span>
-          <span className="text-muted-foreground text-xs">{m.email}</span>
-        </div>
-      ),
-    },
-    {
-      id: "owner",
-      header: "Owner",
-      sortable: true,
-      sortValue: (m) => m.ownerName,
-      cell: (m) => (
-        <div className="flex flex-col">
-          <span>{m.ownerName}</span>
-          <span className="text-muted-foreground text-xs">{m.phone}</span>
-        </div>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (m) => m.status,
-      cell: (m) => {
-        const needsPricing = m.status === "ACTIVE" && m.baseRate <= 0
-        return (
-          <div className="flex items-center gap-2">
-            <MerchantStatusBadge status={m.status} />
-            {needsPricing ? (
-              <span className="text-chart-3 text-xs font-medium">
-                Needs rate
-              </span>
-            ) : null}
-          </div>
-        )
-      },
-    },
-    {
-      id: "baseRate",
-      header: "Base rate",
-      align: "right",
-      sortable: true,
-      sortValue: (m) => m.baseRate,
-      cell: (m) => (
-        <span className="tabular-nums">
-          {m.baseRate > 0 ? formatTk(m.baseRate) : "—"}
-        </span>
-      ),
-    },
-    {
-      id: "perKg",
-      header: "Per KG",
-      align: "right",
-      sortable: true,
-      sortValue: (m) => m.extraRatePerKg,
-      cell: (m) => (
-        <span className="tabular-nums">{formatTk(m.extraRatePerKg)}</span>
-      ),
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (m) => (
-        <div className="flex items-center justify-end gap-2">
-          {m.status === "PENDING" ? (
-            <Button size="sm" onClick={() => handleApprove(m)}>
-              <ShieldCheck className="size-4" />
-              Approve
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon">
-                  <MoreHorizontal className="size-4" />
-                  <span className="sr-only">Actions</span>
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                disabled={m.status !== "ACTIVE"}
-                onClick={() => openPricing(m)}
-              >
-                <Tag className="size-4" />
-                Set pricing
-              </DropdownMenuItem>
-              {m.status === "PENDING" ? (
-                <DropdownMenuItem onClick={() => handleApprove(m)}>
-                  <ShieldCheck className="size-4" />
-                  Approve merchant
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuSeparator />
-              {m.status === "SUSPENDED" ? (
-                <DropdownMenuItem
-                  onClick={() => {
-                    reactivateMerchant(m.id)
-                    toast.success(`${m.businessName} reactivated.`)
-                  }}
-                >
-                  <RotateCcw className="size-4" />
-                  Reactivate
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={m.status === "PENDING"}
-                  onClick={() => {
-                    suspendMerchant(m.id)
-                    toast.success(`${m.businessName} suspended.`)
-                  }}
-                >
-                  <Ban className="size-4" />
-                  Suspend
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.dashboard.merchants.title}
-        description={pageContent.dashboard.merchants.description}
-      />
-
-      {/* Stats */}
-      <StatCardList
-        columns={4}
-        items={[
-          {
-            label: "Total merchants",
-            value: counts.total,
-            icon: Store,
-          },
-          {
-            label: "Active",
-            value: counts.active,
-            icon: CheckCircle2,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Pending approval",
-            value: counts.pending,
-            icon: Clock,
-            tone: "bg-chart-3/15 text-chart-3",
-          },
-          {
-            label: "Suspended",
-            value: counts.suspended,
-            icon: Ban,
-            tone: "bg-destructive/10 text-destructive",
-          },
-        ]}
-      />
-
-      {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="ALL">All</TabsTrigger>
-            <TabsTrigger value="PENDING">Pending</TabsTrigger>
-            <TabsTrigger value="ACTIVE">Active</TabsTrigger>
-            <TabsTrigger value="SUSPENDED">Suspended</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search business, owner, email"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={filtered}
-            getRowKey={(m) => m.id}
-            initialSortId="business"
-            emptyMessage="No merchants match the current filters."
-          />
-        </CardContent>
-      </Card>
-
-      <PricingDialog
-        merchant={pricingMerchant}
-        open={pricingOpen}
-        onOpenChange={setPricingOpen}
-      />
-    </div>
-  )
 }
 ````
 
@@ -27015,6 +26595,586 @@ function SuperAdminOverview() {
 }
 ````
 
+## File: app/rider/delivery/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { CheckCircle2, Navigation, Search } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attempt-dialog"
+import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
+const COMPLETED_STATUSES = ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"]
+
+type FilterTab = "TO_DELIVER" | "COMPLETED"
+
+export default function RiderDeliveryQueuePage() {
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [startTarget, setStartTarget] = useState<Order | null>(null)
+  const [startDialogOpen, setStartDialogOpen] = useState(false)
+
+  // All orders dispatched to this rider for delivery. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
+  const myDeliveries = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toDeliver = myDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
+  )
+  const completed = myDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyDeliveries = useMemo(
+    () =>
+      currentRider
+        ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
+        : [],
+    [orders, currentRider],
+  )
+  const visibleToDeliver = visibleMyDeliveries.filter((o) =>
+    TO_DELIVER_STATUSES.includes(o.status),
+  )
+  const visibleCompleted = visibleMyDeliveries.filter((o) =>
+    COMPLETED_STATUSES.includes(o.status),
+  )
+
+  const visible = tab === "TO_DELIVER" ? visibleToDeliver : visibleCompleted
+
+  function openAttempt(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  function openStartDelivery(order: Order) {
+    setStartTarget(order)
+    setStartDialogOpen(true)
+  }
+
+  // Delivery is a recipient-facing step — the rider only needs to know who
+  // they're delivering to and where. Merchant/pickup details aren't
+  // relevant anymore, so they're left off this view entirely.
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "recipient",
+      header: "Recipient",
+      sortable: true,
+      sortValue: (o) => o.recipientName,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{o.recipientName}</span>
+          <span className="text-muted-foreground text-xs">
+            {o.recipientPhone}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.deliveryAddress}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collect",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "IN_TRANSIT" ? (
+          <Button size="sm" onClick={() => openStartDelivery(o)}>
+            <Navigation className="size-4" />
+            Out for delivery
+          </Button>
+        ) : o.status === "OUT_FOR_DELIVERY" ? (
+          <Button size="sm" onClick={() => openAttempt(o)}>
+            <CheckCircle2 className="size-4" />
+            Record outcome
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.rider.delivery.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.delivery.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_DELIVER">
+              To deliver ({toDeliver.length})
+            </TabsTrigger>
+            <TabsTrigger value="COMPLETED">
+              Completed ({completed.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "TO_DELIVER"
+                ? "No deliveries waiting. Parcels appear here once a Warehouse Admin dispatches them to you."
+                : "Nothing completed yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <OutForDeliveryDialog
+        order={startTarget}
+        open={startDialogOpen}
+        onOpenChange={setStartDialogOpen}
+      />
+
+      <DeliveryAttemptDialog
+        order={activeOrder}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: lib/auth.ts
+````typescript
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+import { pool } from "@/lib/db"
+
+export const auth = betterAuth({
+  database: pool,
+  plugins: [admin()],
+  baseURL:
+    process.env.BETTER_AUTH_DEV_URL ??
+    process.env.BETTER_AUTH_PRD_URL ??
+    undefined,
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+  },
+  trustedOrigins: [
+    ...(process.env.NEXT_PUBLIC_ENV === "development"
+      ? ["http://localhost:3000"]
+      : []),
+    ...(process.env.BETTER_AUTH_DEV_URL
+      ? [process.env.BETTER_AUTH_DEV_URL]
+      : []),
+    ...(process.env.BETTER_AUTH_PRD_URL
+      ? [process.env.BETTER_AUTH_PRD_URL]
+      : []),
+  ],
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
+})
+````
+
+## File: app/api/orders/[id]/picked-up/route.ts
+````typescript
+import { applyOrderTransition } from "@/features/orders/transitions"
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  return applyOrderTransition("picked-up", id, req)
+}
+````
+
+## File: app/dashboard/merchants/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import {
+  Store,
+  CheckCircle2,
+  Clock,
+  Ban,
+  Search,
+  MoreHorizontal,
+  Tag,
+  ShieldCheck,
+  RotateCcw,
+} from "lucide-react"
+import { toast } from "sonner"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { formatTk } from "@/lib/pricing"
+import type { Merchant, MerchantStatus } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { MerchantStatusBadge } from "@/features/merchants/components/merchant-status-badge"
+import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "ALL" | MerchantStatus
+
+export default function MerchantsPage() {
+  const {
+    merchants,
+    allMerchants,
+    query,
+    setQuery,
+    approveMerchant,
+    suspendMerchant,
+    reactivateMerchant,
+  } = useMerchants()
+  const [tab, setTab] = useState<FilterTab>("ALL")
+  const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
+  const [pricingOpen, setPricingOpen] = useState(false)
+
+  // Stats always reflect the full merchant set, not the current search.
+  const counts = useMemo(
+    () => ({
+      total: allMerchants.length,
+      active: allMerchants.filter((m) => m.status === "ACTIVE").length,
+      pending: allMerchants.filter((m) => m.status === "PENDING").length,
+      suspended: allMerchants.filter((m) => m.status === "SUSPENDED").length,
+    }),
+    [allMerchants],
+  )
+
+  // Search is server-side now (see useMerchants); the tab status filter
+  // stays client-side, layered on top of the already-search-narrowed
+  // `merchants`.
+  const filtered = useMemo(
+    () => merchants.filter((m) => tab === "ALL" || m.status === tab),
+    [merchants, tab],
+  )
+
+  function openPricing(merchant: Merchant) {
+    setPricingMerchant(merchant)
+    setPricingOpen(true)
+  }
+
+  function handleApprove(merchant: Merchant) {
+    approveMerchant(merchant.id)
+    toast.success(`${merchant.businessName} approved. Assign a base rate next.`)
+  }
+
+  const columns: DataTableColumn<Merchant>[] = [
+    {
+      id: "business",
+      header: "Business",
+      sortable: true,
+      sortValue: (m) => m.businessName,
+      cell: (m) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{m.businessName}</span>
+          <span className="text-muted-foreground text-xs">{m.email}</span>
+        </div>
+      ),
+    },
+    {
+      id: "owner",
+      header: "Owner",
+      sortable: true,
+      sortValue: (m) => m.ownerName,
+      cell: (m) => (
+        <div className="flex flex-col">
+          <span>{m.ownerName}</span>
+          <span className="text-muted-foreground text-xs">{m.phone}</span>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (m) => m.status,
+      cell: (m) => {
+        const needsPricing = m.status === "ACTIVE" && m.baseRate <= 0
+        return (
+          <div className="flex items-center gap-2">
+            <MerchantStatusBadge status={m.status} />
+            {needsPricing ? (
+              <span className="text-chart-3 text-xs font-medium">
+                Needs rate
+              </span>
+            ) : null}
+          </div>
+        )
+      },
+    },
+    {
+      id: "baseRate",
+      header: "Base rate",
+      align: "right",
+      sortable: true,
+      sortValue: (m) => m.baseRate,
+      cell: (m) => (
+        <span className="tabular-nums">
+          {m.baseRate > 0 ? formatTk(m.baseRate) : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "perKg",
+      header: "Per KG",
+      align: "right",
+      sortable: true,
+      sortValue: (m) => m.extraRatePerKg,
+      cell: (m) => (
+        <span className="tabular-nums">{formatTk(m.extraRatePerKg)}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (m) => (
+        <div className="flex items-center justify-end gap-2">
+          {m.status === "PENDING" ? (
+            <Button size="sm" onClick={() => handleApprove(m)}>
+              <ShieldCheck className="size-4" />
+              Approve
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Actions</span>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem
+                disabled={m.status !== "ACTIVE"}
+                onClick={() => openPricing(m)}
+              >
+                <Tag className="size-4" />
+                Set pricing
+              </DropdownMenuItem>
+              {m.status === "PENDING" ? (
+                <DropdownMenuItem onClick={() => handleApprove(m)}>
+                  <ShieldCheck className="size-4" />
+                  Approve merchant
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              {m.status === "SUSPENDED" ? (
+                <DropdownMenuItem
+                  onClick={() => {
+                    reactivateMerchant(m.id)
+                    toast.success(`${m.businessName} reactivated.`)
+                  }}
+                >
+                  <RotateCcw className="size-4" />
+                  Reactivate
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={m.status === "PENDING"}
+                  onClick={() => {
+                    suspendMerchant(m.id)
+                    toast.success(`${m.businessName} suspended.`)
+                  }}
+                >
+                  <Ban className="size-4" />
+                  Suspend
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.dashboard.merchants.title}
+        description={pageContent.dashboard.merchants.description}
+      />
+
+      {/* Stats */}
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Total merchants",
+            value: counts.total,
+            icon: Store,
+          },
+          {
+            label: "Active",
+            value: counts.active,
+            icon: CheckCircle2,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Pending approval",
+            value: counts.pending,
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Suspended",
+            value: counts.suspended,
+            icon: Ban,
+            tone: "bg-destructive/10 text-destructive",
+          },
+        ]}
+      />
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="ALL">All</TabsTrigger>
+            <TabsTrigger value="PENDING">Pending</TabsTrigger>
+            <TabsTrigger value="ACTIVE">Active</TabsTrigger>
+            <TabsTrigger value="SUSPENDED">Suspended</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search business, owner, email"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowKey={(m) => m.id}
+            initialSortId="business"
+            emptyMessage="No merchants match the current filters."
+          />
+        </CardContent>
+      </Card>
+
+      <PricingDialog
+        merchant={pricingMerchant}
+        open={pricingOpen}
+        onOpenChange={setPricingOpen}
+      />
+    </div>
+  )
+}
+````
+
 ## File: app/dashboard/warehouses/page.tsx
 ````typescript
 "use client"
@@ -27023,8 +27183,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
-  Pencil,
   Plus,
+  Pencil,
   Search,
   Trash2,
   Warehouse as WarehouseIcon,
@@ -27485,6 +27645,120 @@ function WarehouseFields({
 }
 ````
 
+## File: app/rider/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { RiderSidebar } from "@/components/navigation/rider-sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { RIDER_SIDEBAR } from "@/lib/nav-config"
+
+export default function RiderLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role !== "RIDER") {
+      router.replace(homeForRole(currentUser.role))
+    }
+  }, [isReady, currentUser, router])
+
+  if (!isReady || !currentUser || currentUser.role !== "RIDER") {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <RiderSidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={RIDER_SIDEBAR} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { WarehouseSidebar } from "@/components/navigation/warehouse-sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { WAREHOUSE_SIDEBAR } from "@/lib/nav-config"
+
+export default function WarehouseLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role !== "WAREHOUSE_ADMIN") {
+      router.replace(homeForRole(currentUser.role))
+    }
+  }, [isReady, currentUser, router])
+
+  if (!isReady || !currentUser || currentUser.role !== "WAREHOUSE_ADMIN") {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <WarehouseSidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={WAREHOUSE_SIDEBAR} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
 ## File: components/data-table.tsx
 ````typescript
 "use client"
@@ -27500,7 +27774,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { downloadCsv, toCsv } from "@/lib/csv"
+import { toCsv, downloadCsv } from "@/lib/csv"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -27820,16 +28094,558 @@ export function DataTable<T>({
 }
 ````
 
-## File: app/api/orders/[id]/picked-up/route.ts
+## File: components/image-upload.tsx
 ````typescript
-import { applyOrderTransition } from "@/features/orders/transitions"
+"use client"
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
-  return applyOrderTransition("picked-up", id, req)
+import { useRef, useState } from "react"
+import { ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react"
+import { toast } from "sonner"
+import type { UploadFolder } from "@/lib/storage/config"
+import { uploadImage } from "@/lib/upload-image"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { ImageZoom } from "@/components/image-zoom"
+
+// --- Single image uploader (used for avatar + delivery proof) ---------------
+
+export function ImageUpload({
+  value,
+  onChange,
+  folder,
+  disabled,
+  label = "Upload image",
+  className,
+  previewClassName,
+  hidePreview = false,
+}: {
+  value: string | null | undefined
+  onChange: (url: string | null) => void
+  folder: UploadFolder
+  disabled?: boolean
+  label?: string
+  className?: string
+  previewClassName?: string
+  // When true, render only the action buttons (the caller shows its own
+  // preview, e.g. an Avatar). Only applies when a value is present.
+  hidePreview?: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  async function handleFile(file: File | undefined) {
+    if (!file) return
+    setUploading(true)
+    try {
+      const result = await uploadImage(file, folder)
+      if (result.ok) {
+        onChange(result.url)
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ""
+    }
+  }
+
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="sr-only"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+        disabled={disabled || uploading}
+      />
+      {value ? (
+        <div className="flex items-start gap-3">
+          {hidePreview ? null : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={value || "/placeholder.svg"}
+              alt="Uploaded preview"
+              className={cn(
+                "border-border size-20 rounded-lg border object-cover",
+                previewClassName,
+              )}
+            />
+          )}
+          <div className="flex flex-col gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => inputRef.current?.click()}
+              disabled={disabled || uploading}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Uploading
+                </>
+              ) : (
+                <>
+                  <Upload className="size-4" /> Replace
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange(null)}
+              disabled={disabled || uploading}
+            >
+              <Trash2 className="size-4" /> Remove
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={disabled || uploading}
+          className="border-border text-muted-foreground hover:border-primary/50 hover:text-foreground flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {uploading ? (
+            <Loader2 className="size-5 animate-spin" />
+          ) : (
+            <ImageIcon className="size-5" />
+          )}
+          <span>{uploading ? "Uploading…" : label}</span>
+          <span className="px-1 text-xs">PNG, JPG, WEBP up to 5MB</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// --- Multi-image uploader (used for pickup-location photos) -----------------
+
+export function ImageGalleryUpload({
+  value,
+  onChange,
+  folder,
+  max = 10,
+  disabled,
+}: {
+  value: string[]
+  onChange: (urls: string[]) => void
+  folder: UploadFolder
+  max?: number
+  disabled?: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const atMax = value.length >= max
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const remaining = max - value.length
+    const selected = Array.from(files).slice(0, remaining)
+    if (selected.length === 0) {
+      toast.error(`You can add up to ${max} photos.`)
+      return
+    }
+    setUploading(true)
+    try {
+      const uploaded: string[] = []
+      for (const file of selected) {
+        const result = await uploadImage(file, folder)
+        if (result.ok) {
+          uploaded.push(result.url)
+        } else {
+          toast.error(result.error)
+        }
+      }
+      if (uploaded.length > 0) onChange([...value, ...uploaded])
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ""
+    }
+  }
+
+  function removeAt(index: number) {
+    onChange(value.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        className="sr-only"
+        onChange={(e) => handleFiles(e.target.files)}
+        disabled={disabled || uploading || atMax}
+      />
+      {value.length > 0 ? (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {value.map((url, index) => (
+            <div
+              key={url}
+              className="group border-border relative aspect-square overflow-hidden rounded-lg border"
+            >
+              <ImageZoom
+                src={url}
+                alt={`Photo ${index + 1}`}
+                className="size-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => removeAt(index)}
+                disabled={disabled || uploading}
+                aria-label={`Remove photo ${index + 1}`}
+                className="bg-background/80 text-foreground hover:bg-destructive hover:text-destructive-foreground absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded-md backdrop-blur-sm transition-colors"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled || uploading || atMax}
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="size-4 animate-spin" /> Uploading
+          </>
+        ) : (
+          <>
+            <Plus className="size-3.5" /> Add photos
+          </>
+        )}
+      </Button>
+      <p className="text-muted-foreground text-xs">
+        {atMax
+          ? `Maximum of ${max} photos reached.`
+          : `Up to ${max} photos, PNG/JPG/WEBP up to 5MB each.`}
+      </p>
+    </div>
+  )
+}
+````
+
+## File: lib/types.ts
+````typescript
+import type {
+  user,
+  profile,
+  warehouse,
+  rider,
+  merchant,
+  pickupLocation,
+  securityConfig,
+  payoutRequest,
+  order,
+  division,
+} from "@/lib/db/schema"
+
+// =============================================================================
+// All domain types below are *derived* from the Drizzle schema (lib/db/schema.ts)
+// instead of hand-duplicated here. This is the single source of truth: add a
+// column to a table and every type that uses it (mock data, context state,
+// components) is updated automatically by the compiler — no more drift
+// between what the DB actually stores and what the app thinks it stores.
+// =============================================================================
+
+// Drizzle's $inferSelect marks a nullable column as `T | null` but keeps the
+// key required, since a real `SELECT *` always returns the column (with a
+// possibly-null value). For in-memory/app-state objects that's noisier than
+// we want (mock seed data and optimistic updates routinely omit columns that
+// are simply null), so this utility makes any column whose type includes
+// `null` optional too, while leaving every other column's shape untouched.
+type NullableKeys<T> = {
+  [K in keyof T]: null extends T[K] ? K : never
+}[keyof T]
+type Loosen<T> = Omit<T, NullableKeys<T>> & Partial<Pick<T, NullableKeys<T>>>
+
+// --- Literal unions, derived from the schema's `enum`-hinted columns -------
+// (see schema.ts: these are still plain `text` columns in Postgres — the
+// `enum` option is a Drizzle/TypeScript-only hint, not a runtime check.)
+export type Role = (typeof profile.$inferSelect)["role"]
+export type MerchantStatus = (typeof merchant.$inferSelect)["status"]
+export type DeliveryType = (typeof order.$inferSelect)["deliveryType"]
+export type OrderStatus = (typeof order.$inferSelect)["status"]
+export type PayoutRequestStatus = (typeof payoutRequest.$inferSelect)["status"]
+export type RiderTaskType = (typeof rider.$inferSelect)["taskType"]
+
+// --- User: Better Auth's `user` row joined 1:1 with our `profile` row ------
+// `userId` is just profile's PK/FK back to user.id, and profile.createdAt
+// mirrors user.createdAt, so both are dropped from the profile side to avoid
+// duplicate/conflicting keys.
+type JoinedUser = typeof user.$inferSelect &
+  Omit<typeof profile.$inferSelect, "userId" | "createdAt"> & {
+    // Optional per-user password — only set on self-registered users (seeded
+    // demo users authenticate with the shared demo passwords below). Not a
+    // DB column: Better Auth's own `account` table owns real credentials.
+    password?: string
+  }
+
+export type User = Loosen<JoinedUser>
+
+export type Division = Loosen<typeof division.$inferSelect>
+export type Warehouse = Loosen<typeof warehouse.$inferSelect>
+export type SecurityMoneyConfig = Loosen<typeof securityConfig.$inferSelect>
+export type Merchant = Loosen<typeof merchant.$inferSelect>
+export type PickupLocation = Loosen<typeof pickupLocation.$inferSelect>
+export type Rider = Loosen<typeof rider.$inferSelect>
+export type Order = Loosen<typeof order.$inferSelect>
+export type PayoutRequest = Loosen<typeof payoutRequest.$inferSelect>
+
+// =============================================================================
+// App-only input shapes — request payloads, not DB rows, so there's no table
+// to derive these from.
+// =============================================================================
+
+export interface MerchantRegistrationInput {
+  businessName: string
+  ownerName: string
+  email: string
+  phone: string
+  address: string
+  password: string
+}
+
+export interface MerchantPricingInput {
+  baseRate: number
+  extraRatePerKg: number
+  freeWeightKg: number
+  maxWeightKg: number
+}
+
+export interface CreateOrderInput {
+  pickupLocationId: string
+  recipientName: string
+  recipientPhone: string
+  deliveryAddress: string
+  deliveryCity: string
+  deliveryDivisionId: string
+  deliveryMapLink?: string | null
+  deliveryImageLinks?: string[] | null
+  parcelWeightKg: number
+  deliveryType: DeliveryType
+  productCost: number
+  merchantNote?: string | null
+}
+````
+
+## File: app/api/orders/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { db } from "@/lib/db"
+import { division, merchant, order, securityConfig } from "@/lib/db/schema"
+import { parsePagination } from "@/lib/pagination"
+import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
+import { orderCreateSchema, parseBody } from "@/lib/validation"
+import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+export async function GET(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+
+  // Resolve the role-scoped WHERE clause first; SUPER_ADMIN / ADMIN see all.
+  let where: SQL | undefined
+  switch (me.role) {
+    case "MERCHANT":
+      if (!me.merchantId) return NextResponse.json([])
+      where = eq(order.merchantId, me.merchantId)
+      break
+    case "RIDER":
+      if (!me.riderId) return NextResponse.json([])
+      where = or(
+        eq(order.pickupRiderId, me.riderId),
+        eq(order.deliveryRiderId, me.riderId),
+      )
+      break
+    case "WAREHOUSE_ADMIN":
+      if (!me.warehouseId) return NextResponse.json([])
+      // Orders already logged into this warehouse, plus picked-up parcels
+      // not yet assigned to any warehouse — these are the incoming
+      // candidates any warehouse admin can receive (see app/warehouse/page.tsx).
+      where = or(
+        eq(order.warehouseId, me.warehouseId),
+        and(isNull(order.warehouseId), eq(order.status, "PICKED_UP")),
+      )
+      break
+    case "ADMIN":
+    case "SUPER_ADMIN":
+      where = undefined
+      break
+    default:
+      return NextResponse.json([])
+  }
+
+  // Free-text search layered on top of the role-scoped where above — search
+  // never widens the visibility a user already has.
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    const searchClause = or(
+      ilike(order.code, likeQ),
+      ilike(order.recipientName, likeQ),
+      ilike(order.recipientPhone, likeQ),
+      ilike(order.deliveryCity, likeQ),
+    )
+    where = where ? and(where, searchClause) : searchClause
+  }
+
+  const { limit, offset } = parsePagination(req)
+  let dbQuery = db.select().from(order).$dynamic()
+  if (where) dbQuery = dbQuery.where(where)
+  if (limit !== undefined) dbQuery = dbQuery.limit(limit)
+  if (offset !== undefined) dbQuery = dbQuery.offset(offset)
+
+  const rows = await dbQuery
+  return NextResponse.json(rows)
+}
+
+export async function POST(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "MERCHANT" || !me.merchantId) {
+    return NextResponse.json(
+      { error: "Only merchants can create orders" },
+      { status: 403 },
+    )
+  }
+
+  const parsed = await parseBody(req, orderCreateSchema)
+  if (parsed.error) return parsed.error
+  const {
+    pickupLocationId,
+    recipientName,
+    recipientPhone,
+    deliveryAddress,
+    deliveryCity,
+    deliveryDivisionId,
+    deliveryMapLink,
+    deliveryImageLinks,
+    parcelWeightKg,
+    deliveryType,
+    productCost,
+    merchantNote,
+  } = parsed.data
+
+  // Receiver division must exist and be active.
+  const [deliveryDivision] = await db
+    .select({ id: division.id })
+    .from(division)
+    .where(
+      and(eq(division.id, deliveryDivisionId), eq(division.isActive, true)),
+    )
+    .limit(1)
+  if (!deliveryDivision) {
+    return NextResponse.json(
+      { error: "Select a valid delivery division." },
+      { status: 400 },
+    )
+  }
+
+  const normalizedMapLink = deliveryMapLink?.trim()
+    ? deliveryMapLink.trim()
+    : null
+  const normalizedImageLinks = (deliveryImageLinks ?? [])
+    .map((link) => link.trim())
+    .filter((link) => link.length > 0)
+
+  const [merchantRow] = await db
+    .select()
+    .from(merchant)
+    .where(eq(merchant.id, me.merchantId))
+    .limit(1)
+
+  if (!merchantRow) {
+    return NextResponse.json({ error: "Merchant not found" }, { status: 404 })
+  }
+  if (merchantRow.status !== "ACTIVE") {
+    return NextResponse.json(
+      {
+        error:
+          merchantRow.status === "PENDING"
+            ? "Your merchant account is pending approval."
+            : "Your merchant account is suspended and cannot create orders.",
+      },
+      { status: 400 },
+    )
+  }
+  if (parcelWeightKg > merchantRow.maxWeightKg) {
+    return NextResponse.json(
+      {
+        error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit.`,
+      },
+      { status: 400 },
+    )
+  }
+
+  const { total: deliveryCharge } = calcDeliveryCharge(
+    merchantRow,
+    parcelWeightKg,
+  )
+
+  const [configRow] = await db
+    .select()
+    .from(securityConfig)
+    .where(eq(securityConfig.id, "default"))
+    .limit(1)
+
+  if (!configRow) {
+    return NextResponse.json(
+      { error: "Security config not found" },
+      { status: 500 },
+    )
+  }
+  const securityMoney = calcSecurityMoney(configRow, productCost)
+  const totalCollectible = productCost + deliveryCharge + securityMoney
+
+  // MAX(code) is a DB-level operation, avoiding collisions under concurrent
+  // inserts that the client-side reduce over in-memory state couldn't prevent.
+  const [{ maxCode }] = await db
+    .select({ maxCode: sql<string>`max(${order.code})` })
+    .from(order)
+  const maxSeq = maxCode
+    ? Number.parseInt(maxCode.replace(/^PF-0*/, ""), 10)
+    : 100258
+  const seq = (Number.isFinite(maxSeq) ? maxSeq : 100258) + 1
+  const code = `PF-${String(seq).padStart(6, "0")}`
+
+  const [newOrder] = await db
+    .insert(order)
+    .values({
+      code,
+      merchantId: me.merchantId,
+      pickupLocationId,
+      recipientName,
+      recipientPhone,
+      deliveryAddress,
+      deliveryCity,
+      deliveryDivisionId,
+      deliveryMapLink: normalizedMapLink,
+      deliveryImageLinks: normalizedImageLinks.length
+        ? normalizedImageLinks
+        : null,
+      parcelWeightKg,
+      deliveryType: deliveryType ?? "STANDARD",
+      productCost,
+      deliveryCharge,
+      securityMoney,
+      totalCollectible,
+      status: "PENDING",
+      deliveryAttempts: 0,
+      merchantNote: merchantNote?.trim() || null,
+    })
+    .returning()
+
+  return NextResponse.json(newOrder, { status: 201 })
 }
 ````
 
@@ -27840,13 +28656,13 @@ export async function PATCH(
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
-  Banknote,
-  Check,
-  Clock,
-  Loader2,
-  Search,
   Wallet,
+  Clock,
+  Banknote,
+  Loader2,
+  Check,
   X,
+  Search,
 } from "lucide-react"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -28225,1819 +29041,6 @@ export default function PayoutsPage() {
       </Dialog>
     </div>
   )
-}
-````
-
-## File: app/rider/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { RiderSidebar } from "@/components/navigation/rider-sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { RIDER_SIDEBAR } from "@/lib/nav-config"
-
-export default function RiderLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role !== "RIDER") {
-      router.replace(homeForRole(currentUser.role))
-    }
-  }, [isReady, currentUser, router])
-
-  if (!isReady || !currentUser || currentUser.role !== "RIDER") {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <RiderSidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={RIDER_SIDEBAR} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
-## File: app/rider/pickup/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { PackageCheck, Search } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-const COLLECTED_STATUSES = [
-  "PICKED_UP",
-  "IN_WAREHOUSE",
-  "IN_TRANSIT",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED",
-]
-
-type FilterTab = "TO_COLLECT" | "COLLECTED"
-
-export default function RiderPickupQueuePage() {
-  const { currentUser } = useAuth()
-  const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { pickupLocations } = usePickupLocations()
-  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
-
-  // All orders assigned to this rider for pickup. Tab counts use the
-  // unfiltered list; the table-facing versions below use the
-  // search-narrowed `orders`.
-  const myPickups = useMemo(
-    () =>
-      currentRider
-        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [allOrders, currentRider],
-  )
-
-  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
-  const collected = myPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visibleMyPickups = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-  const visibleToCollect = visibleMyPickups.filter(
-    (o) => o.status === "APPROVED",
-  )
-  const visibleCollected = visibleMyPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
-
-  function openConfirm(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  // Pickup is a merchant-facing step — the rider only needs to know who
-  // they're collecting from and where. Recipient/delivery details aren't
-  // relevant yet, so they're left off this view entirely.
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => {
-        const m = merchant(o.merchantId)
-        return (
-          <div className="flex flex-col">
-            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
-            <span className="text-muted-foreground text-xs">{m?.phone}</span>
-          </div>
-        )
-      },
-    },
-    {
-      id: "pickup",
-      header: "Pickup from",
-      sortable: true,
-      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickup(o.pickupLocationId)
-        return (
-          <PickupLocationModal location={p ?? null}>
-            <div className="flex flex-col">
-              <span className="font-medium underline decoration-dotted underline-offset-4">
-                {p?.label ?? "—"}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {p?.address ?? "—"}
-              </span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "APPROVED" ? (
-          <Button size="sm" onClick={() => openConfirm(o)}>
-            <PackageCheck className="size-4" />
-            Mark picked up
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.rider.pickup.title(
-          currentUser?.name.split(" ")[0] ?? "Rider",
-        )}
-        description={pageContent.rider.pickup.description}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="TO_COLLECT">
-              To collect ({toCollect.length})
-            </TabsTrigger>
-            <TabsTrigger value="COLLECTED">
-              Collected ({collected.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "TO_COLLECT"
-                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
-                : "Nothing collected yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <PickupConfirmDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        pickupLocation={
-          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
-        }
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/dispatch/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { Bike, PackageOpen, Search, Send, Truck } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "READY" | "DISPATCHED"
-
-export default function WarehouseDispatchPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders, warehouseDeliveryRiders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("READY")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
-  // counts come from the unfiltered `allOrders`; the table-facing versions
-  // below use the search-narrowed `orders`.
-  const ready = useMemo(
-    () =>
-      currentWarehouse
-        ? allOrders.filter(
-            (o) =>
-              o.status === "IN_WAREHOUSE" &&
-              o.warehouseId === currentWarehouse.id,
-          )
-        : [],
-    [allOrders, currentWarehouse],
-  )
-
-  // Parcels this warehouse has already dispatched for delivery.
-  const dispatched = useMemo(
-    () =>
-      currentWarehouse
-        ? allOrders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.deliveryRiderId != null &&
-              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-                o.status,
-              ),
-          )
-        : [],
-    [allOrders, currentWarehouse],
-  )
-
-  const visibleReady = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.status === "IN_WAREHOUSE" &&
-              o.warehouseId === currentWarehouse.id,
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visibleDispatched = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.deliveryRiderId != null &&
-              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-                o.status,
-              ),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "READY" ? visibleReady : visibleDispatched
-
-  function openDispatch(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) =>
-        o.deliveryRiderId ? (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="text-muted-foreground size-4" />
-            {rider(o.deliveryRiderId)?.name ?? "—"}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-sm">Unassigned</span>
-        ),
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType}
-        </span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "IN_WAREHOUSE" ? (
-          <Button size="sm" onClick={() => openDispatch(o)}>
-            <Send className="size-4" />
-            Assign rider
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.dispatch.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.dispatch.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Ready to dispatch",
-            value: ready.length,
-            icon: PackageOpen,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Dispatched",
-            value: dispatched.length,
-            icon: Truck,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-          {
-            label: "Available riders",
-            value: warehouseDeliveryRiders.length,
-            icon: Bike,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-        ]}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="READY">
-              Ready to dispatch ({ready.length})
-            </TabsTrigger>
-            <TabsTrigger value="DISPATCHED">
-              Dispatched ({dispatched.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "READY"
-                ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
-                : "Nothing dispatched yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <WarehouseDispatchDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        warehouseName={currentWarehouse?.name ?? "your warehouse"}
-        deliveryRiders={warehouseDeliveryRiders}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/exceptions/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { AlertTriangle, RotateCcw, Search, Undo2, Wrench } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "NEEDS_ACTION" | "RESOLVED"
-
-export default function WarehouseExceptionsPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders, allOrders, warehouseFailedOrders, query, setQuery } =
-    useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision. Already
-  // derived from the unfiltered list (see useOrders), so stats/tab counts
-  // stay stable regardless of the current search.
-  const needsAction = warehouseFailedOrders
-
-  // Parcels this warehouse has already resolved as returned.
-  const resolved = useMemo(
-    () =>
-      currentWarehouse
-        ? allOrders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
-          )
-        : [],
-    [allOrders, currentWarehouse],
-  )
-
-  // Table-facing versions, narrowed by the active search.
-  const visibleNeedsAction = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.status === "FAILED_ATTEMPT" &&
-              o.warehouseId === currentWarehouse.id,
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visibleResolved = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "NEEDS_ACTION" ? visibleNeedsAction : visibleResolved
-
-  function openResolve(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "attempts",
-      header: "Attempts",
-      align: "center",
-      sortable: true,
-      sortValue: (o) => o.deliveryAttempts ?? 1,
-      cell: (o) => (
-        <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
-      ),
-    },
-    {
-      id: "tracking",
-      header: "Tracking",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "note",
-      header: "Resolution",
-      cellClassName: "whitespace-normal align-top",
-      cell: (o) =>
-        o.status === "RETURNED" ? (
-          <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
-            Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
-            {o.returnReason ? ` — ${o.returnReason}` : ""}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-xs">
-            Open tracking for attempt details
-          </span>
-        ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "FAILED_ATTEMPT" ? (
-          <Button size="sm" onClick={() => openResolve(o)}>
-            <RotateCcw className="size-4" />
-            Resolve
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.exceptions.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.exceptions.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Needs action",
-            value: needsAction.length,
-            icon: AlertTriangle,
-            tone: "bg-destructive/10 text-destructive",
-          },
-          {
-            label: "Returned",
-            value: resolved.length,
-            icon: Undo2,
-            tone: "bg-muted text-muted-foreground",
-          },
-          {
-            label: "Total exceptions",
-            value: needsAction.length + resolved.length,
-            icon: Wrench,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-        ]}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="NEEDS_ACTION">
-              Needs action ({needsAction.length})
-            </TabsTrigger>
-            <TabsTrigger value="RESOLVED">
-              Returned ({resolved.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "NEEDS_ACTION"
-                ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."
-                : "Nothing returned yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <FailedDeliveryDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        riderName={
-          activeOrder ? (rider(activeOrder.deliveryRiderId)?.name ?? "—") : ""
-        }
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { WarehouseSidebar } from "@/components/navigation/warehouse-sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { WAREHOUSE_SIDEBAR } from "@/lib/nav-config"
-
-export default function WarehouseLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role !== "WAREHOUSE_ADMIN") {
-      router.replace(homeForRole(currentUser.role))
-    }
-  }, [isReady, currentUser, router])
-
-  if (!isReady || !currentUser || currentUser.role !== "WAREHOUSE_ADMIN") {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <WarehouseSidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={WAREHOUSE_SIDEBAR} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
-## File: app/warehouse/reconciliation/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
-import {
-  Banknote,
-  Bike,
-  CheckCircle2,
-  HandCoins,
-  Loader2,
-  Search,
-  Wallet,
-} from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "UNSETTLED" | "SETTLED"
-
-export default function WarehouseReconciliationPage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const {
-    orders,
-    allOrders,
-    warehouseUnsettledOrders,
-    settleOrderCod,
-    query,
-    setQuery,
-  } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("UNSETTLED")
-  const [settling, setSettling] = useState<string | null>(null)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // Already derived from the unfiltered list (see useOrders), so stats/tab
-  // counts stay stable regardless of the current search.
-  const unsettled = warehouseUnsettledOrders
-
-  // Delivered parcels at this warehouse whose COD has been settled.
-  const settled = useMemo(
-    () =>
-      currentWarehouse
-        ? allOrders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.status === "DELIVERED" &&
-              Boolean(o.codSettledAt),
-          )
-        : [],
-    [allOrders, currentWarehouse],
-  )
-
-  const unsettledCash = unsettled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-  const settledCash = settled.reduce(
-    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
-    0,
-  )
-
-  // Table-facing versions, narrowed by the active search.
-  const visibleUnsettled = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.status === "DELIVERED" &&
-              o.warehouseId === currentWarehouse.id &&
-              !o.codSettledAt,
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visibleSettled = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.status === "DELIVERED" &&
-              Boolean(o.codSettledAt),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
-
-  async function handleSettle(order: Order) {
-    setSettling(order.id)
-    try {
-      const result = await settleOrderCod(order.id)
-      if (result.ok) {
-        toast.success(
-          `${order.code} settled. Product cost is now available for merchant payout.`,
-        )
-      } else {
-        toast.error(result.error ?? "Unable to settle this parcel.")
-      }
-    } finally {
-      setSettling(null)
-    }
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="text-muted-foreground size-4" />
-          {rider(o.deliveryRiderId)?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "collected",
-      header: "Cash collected",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.amountCollected ?? o.totalCollectible,
-      cell: (o) => (
-        <span className="font-medium tabular-nums">
-          {formatTk(o.amountCollected ?? o.totalCollectible)}
-        </span>
-      ),
-    },
-    {
-      id: "platform",
-      header: "Platform revenue",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.deliveryCharge + o.securityMoney,
-      cell: (o) => (
-        <span className="text-muted-foreground tabular-nums">
-          {formatTk(o.deliveryCharge + o.securityMoney)}
-        </span>
-      ),
-    },
-    {
-      id: "payable",
-      header: "Merchant payable",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.productCost,
-      cell: (o) => (
-        <span className="text-primary tabular-nums">
-          {formatTk(o.productCost)}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
-      cell: (o) =>
-        o.codSettledAt ? (
-          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
-            <CheckCircle2 className="size-4" />
-            Settled by {o.codSettledBy ?? "Admin"}
-          </span>
-        ) : (
-          <OrderStatusBadge status={o.status} />
-        ),
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.codSettledAt ? null : (
-          <Button
-            size="sm"
-            onClick={() => handleSettle(o)}
-            disabled={settling === o.id}
-          >
-            {settling === o.id ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Settling
-              </>
-            ) : (
-              <>
-                <HandCoins className="size-4" />
-                Settle cash
-              </>
-            )}
-          </Button>
-        ),
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.reconciliation.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.reconciliation.description}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Awaiting settlement",
-            value: unsettled.length,
-            icon: HandCoins,
-            tone: "bg-chart-3/15 text-chart-3",
-          },
-          {
-            label: "Cash to collect",
-            value: formatTk(unsettledCash),
-            icon: Banknote,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Settled cash",
-            value: formatTk(settledCash),
-            icon: Wallet,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-        ]}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="UNSETTLED">
-              Awaiting settlement ({unsettled.length})
-            </TabsTrigger>
-            <TabsTrigger value="SETTLED">
-              Settled ({settled.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "UNSETTLED"
-                ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
-                : "No settlements yet."
-            }
-          />
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-````
-
-## File: components/image-upload.tsx
-````typescript
-"use client"
-
-import { useRef, useState } from "react"
-import { ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react"
-import { toast } from "sonner"
-import type { UploadFolder } from "@/lib/storage/config"
-import { uploadImage } from "@/lib/upload-image"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { ImageZoom } from "@/components/image-zoom"
-
-// --- Single image uploader (used for avatar + delivery proof) ---------------
-
-export function ImageUpload({
-  value,
-  onChange,
-  folder,
-  disabled,
-  label = "Upload image",
-  className,
-  previewClassName,
-  hidePreview = false,
-}: {
-  value: string | null | undefined
-  onChange: (url: string | null) => void
-  folder: UploadFolder
-  disabled?: boolean
-  label?: string
-  className?: string
-  previewClassName?: string
-  // When true, render only the action buttons (the caller shows its own
-  // preview, e.g. an Avatar). Only applies when a value is present.
-  hidePreview?: boolean
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
-
-  async function handleFile(file: File | undefined) {
-    if (!file) return
-    setUploading(true)
-    try {
-      const result = await uploadImage(file, folder)
-      if (result.ok) {
-        onChange(result.url)
-      } else {
-        toast.error(result.error)
-      }
-    } finally {
-      setUploading(false)
-      if (inputRef.current) inputRef.current.value = ""
-    }
-  }
-
-  return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="sr-only"
-        onChange={(e) => handleFile(e.target.files?.[0])}
-        disabled={disabled || uploading}
-      />
-      {value ? (
-        <div className="flex items-start gap-3">
-          {hidePreview ? null : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={value || "/placeholder.svg"}
-              alt="Uploaded preview"
-              className={cn(
-                "border-border size-20 rounded-lg border object-cover",
-                previewClassName,
-              )}
-            />
-          )}
-          <div className="flex flex-col gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => inputRef.current?.click()}
-              disabled={disabled || uploading}
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Uploading
-                </>
-              ) : (
-                <>
-                  <Upload className="size-4" /> Replace
-                </>
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onChange(null)}
-              disabled={disabled || uploading}
-            >
-              <Trash2 className="size-4" /> Remove
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={disabled || uploading}
-          className="border-border text-muted-foreground hover:border-primary/50 hover:text-foreground flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {uploading ? (
-            <Loader2 className="size-5 animate-spin" />
-          ) : (
-            <ImageIcon className="size-5" />
-          )}
-          <span>{uploading ? "Uploading…" : label}</span>
-          <span className="px-1 text-xs">PNG, JPG, WEBP up to 5MB</span>
-        </button>
-      )}
-    </div>
-  )
-}
-
-// --- Multi-image uploader (used for pickup-location photos) -----------------
-
-export function ImageGalleryUpload({
-  value,
-  onChange,
-  folder,
-  max = 10,
-  disabled,
-}: {
-  value: string[]
-  onChange: (urls: string[]) => void
-  folder: UploadFolder
-  max?: number
-  disabled?: boolean
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
-  const atMax = value.length >= max
-
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return
-    const remaining = max - value.length
-    const selected = Array.from(files).slice(0, remaining)
-    if (selected.length === 0) {
-      toast.error(`You can add up to ${max} photos.`)
-      return
-    }
-    setUploading(true)
-    try {
-      const uploaded: string[] = []
-      for (const file of selected) {
-        const result = await uploadImage(file, folder)
-        if (result.ok) {
-          uploaded.push(result.url)
-        } else {
-          toast.error(result.error)
-        }
-      }
-      if (uploaded.length > 0) onChange([...value, ...uploaded])
-    } finally {
-      setUploading(false)
-      if (inputRef.current) inputRef.current.value = ""
-    }
-  }
-
-  function removeAt(index: number) {
-    onChange(value.filter((_, i) => i !== index))
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        multiple
-        className="sr-only"
-        onChange={(e) => handleFiles(e.target.files)}
-        disabled={disabled || uploading || atMax}
-      />
-      {value.length > 0 ? (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {value.map((url, index) => (
-            <div
-              key={url}
-              className="group border-border relative aspect-square overflow-hidden rounded-lg border"
-            >
-              <ImageZoom
-                src={url}
-                alt={`Photo ${index + 1}`}
-                className="size-full object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => removeAt(index)}
-                disabled={disabled || uploading}
-                aria-label={`Remove photo ${index + 1}`}
-                className="bg-background/80 text-foreground hover:bg-destructive hover:text-destructive-foreground absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded-md backdrop-blur-sm transition-colors"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="self-start"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled || uploading || atMax}
-      >
-        {uploading ? (
-          <>
-            <Loader2 className="size-4 animate-spin" /> Uploading
-          </>
-        ) : (
-          <>
-            <Plus className="size-3.5" /> Add photos
-          </>
-        )}
-      </Button>
-      <p className="text-muted-foreground text-xs">
-        {atMax
-          ? `Maximum of ${max} photos reached.`
-          : `Up to ${max} photos, PNG/JPG/WEBP up to 5MB each.`}
-      </p>
-    </div>
-  )
-}
-````
-
-## File: lib/auth.ts
-````typescript
-import { betterAuth } from "better-auth"
-import { admin } from "better-auth/plugins"
-import { pool } from "@/lib/db"
-
-export const auth = betterAuth({
-  database: pool,
-  plugins: [admin()],
-  baseURL:
-    process.env.BETTER_AUTH_DEV_URL ??
-    process.env.BETTER_AUTH_PRD_URL ??
-    undefined,
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
-  },
-  trustedOrigins: [
-    ...(process.env.NEXT_PUBLIC_ENV === "development"
-      ? ["http://localhost:3000"]
-      : []),
-    ...(process.env.BETTER_AUTH_DEV_URL
-      ? [process.env.BETTER_AUTH_DEV_URL]
-      : []),
-    ...(process.env.BETTER_AUTH_PRD_URL
-      ? [process.env.BETTER_AUTH_PRD_URL]
-      : []),
-  ],
-  session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
-  },
-})
-````
-
-## File: lib/types.ts
-````typescript
-import type {
-  user,
-  profile,
-  warehouse,
-  rider,
-  merchant,
-  pickupLocation,
-  securityConfig,
-  payoutRequest,
-  order,
-  division,
-} from "@/lib/db/schema"
-
-// =============================================================================
-// All domain types below are *derived* from the Drizzle schema (lib/db/schema.ts)
-// instead of hand-duplicated here. This is the single source of truth: add a
-// column to a table and every type that uses it (mock data, context state,
-// components) is updated automatically by the compiler — no more drift
-// between what the DB actually stores and what the app thinks it stores.
-// =============================================================================
-
-// Drizzle's $inferSelect marks a nullable column as `T | null` but keeps the
-// key required, since a real `SELECT *` always returns the column (with a
-// possibly-null value). For in-memory/app-state objects that's noisier than
-// we want (mock seed data and optimistic updates routinely omit columns that
-// are simply null), so this utility makes any column whose type includes
-// `null` optional too, while leaving every other column's shape untouched.
-type NullableKeys<T> = {
-  [K in keyof T]: null extends T[K] ? K : never
-}[keyof T]
-type Loosen<T> = Omit<T, NullableKeys<T>> & Partial<Pick<T, NullableKeys<T>>>
-
-// --- Literal unions, derived from the schema's `enum`-hinted columns -------
-// (see schema.ts: these are still plain `text` columns in Postgres — the
-// `enum` option is a Drizzle/TypeScript-only hint, not a runtime check.)
-export type Role = (typeof profile.$inferSelect)["role"]
-export type MerchantStatus = (typeof merchant.$inferSelect)["status"]
-export type DeliveryType = (typeof order.$inferSelect)["deliveryType"]
-export type OrderStatus = (typeof order.$inferSelect)["status"]
-export type PayoutRequestStatus = (typeof payoutRequest.$inferSelect)["status"]
-export type RiderTaskType = (typeof rider.$inferSelect)["taskType"]
-
-// --- User: Better Auth's `user` row joined 1:1 with our `profile` row ------
-// `userId` is just profile's PK/FK back to user.id, and profile.createdAt
-// mirrors user.createdAt, so both are dropped from the profile side to avoid
-// duplicate/conflicting keys.
-type JoinedUser = typeof user.$inferSelect &
-  Omit<typeof profile.$inferSelect, "userId" | "createdAt"> & {
-    // Optional per-user password — only set on self-registered users (seeded
-    // demo users authenticate with the shared demo passwords below). Not a
-    // DB column: Better Auth's own `account` table owns real credentials.
-    password?: string
-  }
-
-export type User = Loosen<JoinedUser>
-
-export type Division = Loosen<typeof division.$inferSelect>
-export type Warehouse = Loosen<typeof warehouse.$inferSelect>
-export type SecurityMoneyConfig = Loosen<typeof securityConfig.$inferSelect>
-export type Merchant = Loosen<typeof merchant.$inferSelect>
-export type PickupLocation = Loosen<typeof pickupLocation.$inferSelect>
-export type Rider = Loosen<typeof rider.$inferSelect>
-export type Order = Loosen<typeof order.$inferSelect>
-export type PayoutRequest = Loosen<typeof payoutRequest.$inferSelect>
-
-// =============================================================================
-// App-only input shapes — request payloads, not DB rows, so there's no table
-// to derive these from.
-// =============================================================================
-
-export interface MerchantRegistrationInput {
-  businessName: string
-  ownerName: string
-  email: string
-  phone: string
-  address: string
-  password: string
-}
-
-export interface MerchantPricingInput {
-  baseRate: number
-  extraRatePerKg: number
-  freeWeightKg: number
-  maxWeightKg: number
-}
-
-export interface CreateOrderInput {
-  pickupLocationId: string
-  recipientName: string
-  recipientPhone: string
-  deliveryAddress: string
-  deliveryCity: string
-  deliveryDivisionId: string
-  deliveryMapLink?: string | null
-  deliveryImageLinks?: string[] | null
-  parcelWeightKg: number
-  deliveryType: DeliveryType
-  productCost: number
-  merchantNote?: string | null
-}
-````
-
-## File: app/api/orders/route.ts
-````typescript
-import { requireSession } from "@/lib/api-auth"
-import { db } from "@/lib/db"
-import { division, merchant, order, securityConfig } from "@/lib/db/schema"
-import { parsePagination } from "@/lib/pagination"
-import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
-import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm"
-import { NextResponse } from "next/server"
-
-export async function GET(req: Request) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-
-  // Resolve the role-scoped WHERE clause first; SUPER_ADMIN / ADMIN see all.
-  let where: SQL | undefined
-  switch (me.role) {
-    case "MERCHANT":
-      if (!me.merchantId) return NextResponse.json([])
-      where = eq(order.merchantId, me.merchantId)
-      break
-    case "RIDER":
-      if (!me.riderId) return NextResponse.json([])
-      where = or(
-        eq(order.pickupRiderId, me.riderId),
-        eq(order.deliveryRiderId, me.riderId),
-      )
-      break
-    case "WAREHOUSE_ADMIN":
-      if (!me.warehouseId) return NextResponse.json([])
-      // Orders already logged into this warehouse, plus picked-up parcels
-      // not yet assigned to any warehouse — these are the incoming
-      // candidates any warehouse admin can receive (see app/warehouse/page.tsx).
-      where = or(
-        eq(order.warehouseId, me.warehouseId),
-        and(isNull(order.warehouseId), eq(order.status, "PICKED_UP")),
-      )
-      break
-    case "ADMIN":
-    case "SUPER_ADMIN":
-      where = undefined
-      break
-    default:
-      return NextResponse.json([])
-  }
-
-  // Free-text search layered on top of the role-scoped where above — search
-  // never widens the visibility a user already has.
-  const search = new URL(req.url).searchParams.get("q")?.trim()
-  if (search) {
-    const likeQ = `%${search}%`
-    const searchClause = or(
-      ilike(order.code, likeQ),
-      ilike(order.recipientName, likeQ),
-      ilike(order.recipientPhone, likeQ),
-      ilike(order.deliveryCity, likeQ),
-    )
-    where = where ? and(where, searchClause) : searchClause
-  }
-
-  const { limit, offset } = parsePagination(req)
-  let dbQuery = db.select().from(order).$dynamic()
-  if (where) dbQuery = dbQuery.where(where)
-  if (limit !== undefined) dbQuery = dbQuery.limit(limit)
-  if (offset !== undefined) dbQuery = dbQuery.offset(offset)
-
-  const rows = await dbQuery
-  return NextResponse.json(rows)
-}
-
-export async function POST(req: Request) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "MERCHANT" || !me.merchantId) {
-    return NextResponse.json(
-      { error: "Only merchants can create orders" },
-      { status: 403 },
-    )
-  }
-
-  const parsed = await parseBody(req, orderCreateSchema)
-  if (parsed.error) return parsed.error
-  const {
-    pickupLocationId,
-    recipientName,
-    recipientPhone,
-    deliveryAddress,
-    deliveryCity,
-    deliveryDivisionId,
-    deliveryMapLink,
-    deliveryImageLinks,
-    parcelWeightKg,
-    deliveryType,
-    productCost,
-    merchantNote,
-  } = parsed.data
-
-  // Receiver division must exist and be active.
-  const [deliveryDivision] = await db
-    .select({ id: division.id })
-    .from(division)
-    .where(
-      and(eq(division.id, deliveryDivisionId), eq(division.isActive, true)),
-    )
-    .limit(1)
-  if (!deliveryDivision) {
-    return NextResponse.json(
-      { error: "Select a valid delivery division." },
-      { status: 400 },
-    )
-  }
-
-  const normalizedMapLink = deliveryMapLink?.trim()
-    ? deliveryMapLink.trim()
-    : null
-  const normalizedImageLinks = (deliveryImageLinks ?? [])
-    .map((link) => link.trim())
-    .filter((link) => link.length > 0)
-
-  const [merchantRow] = await db
-    .select()
-    .from(merchant)
-    .where(eq(merchant.id, me.merchantId))
-    .limit(1)
-
-  if (!merchantRow) {
-    return NextResponse.json({ error: "Merchant not found" }, { status: 404 })
-  }
-  if (merchantRow.status !== "ACTIVE") {
-    return NextResponse.json(
-      {
-        error:
-          merchantRow.status === "PENDING"
-            ? "Your merchant account is pending approval."
-            : "Your merchant account is suspended and cannot create orders.",
-      },
-      { status: 400 },
-    )
-  }
-  if (parcelWeightKg > merchantRow.maxWeightKg) {
-    return NextResponse.json(
-      {
-        error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit.`,
-      },
-      { status: 400 },
-    )
-  }
-
-  const { total: deliveryCharge } = calcDeliveryCharge(
-    merchantRow,
-    parcelWeightKg,
-  )
-
-  const [configRow] = await db
-    .select()
-    .from(securityConfig)
-    .where(eq(securityConfig.id, "default"))
-    .limit(1)
-
-  if (!configRow) {
-    return NextResponse.json(
-      { error: "Security config not found" },
-      { status: 500 },
-    )
-  }
-  const securityMoney = calcSecurityMoney(configRow, productCost)
-  const totalCollectible = productCost + deliveryCharge + securityMoney
-
-  // MAX(code) is a DB-level operation, avoiding collisions under concurrent
-  // inserts that the client-side reduce over in-memory state couldn't prevent.
-  const [{ maxCode }] = await db
-    .select({ maxCode: sql<string>`max(${order.code})` })
-    .from(order)
-  const maxSeq = maxCode
-    ? Number.parseInt(maxCode.replace(/^PF-0*/, ""), 10)
-    : 100258
-  const seq = (Number.isFinite(maxSeq) ? maxSeq : 100258) + 1
-  const code = `PF-${String(seq).padStart(6, "0")}`
-
-  const [newOrder] = await db
-    .insert(order)
-    .values({
-      code,
-      merchantId: me.merchantId,
-      pickupLocationId,
-      recipientName,
-      recipientPhone,
-      deliveryAddress,
-      deliveryCity,
-      deliveryDivisionId,
-      deliveryMapLink: normalizedMapLink,
-      deliveryImageLinks: normalizedImageLinks.length
-        ? normalizedImageLinks
-        : null,
-      parcelWeightKg,
-      deliveryType: deliveryType ?? "STANDARD",
-      productCost,
-      deliveryCharge,
-      securityMoney,
-      totalCollectible,
-      status: "PENDING",
-      deliveryAttempts: 0,
-      merchantNote: merchantNote?.trim() || null,
-    })
-    .returning()
-
-  return NextResponse.json(newOrder, { status: 201 })
 }
 ````
 
@@ -30623,6 +29626,1115 @@ export default function MerchantFinancePage() {
         onOpenChange={setDialogOpen}
       />
     </>
+  )
+}
+````
+
+## File: app/rider/pickup/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { PackageCheck, Search } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const COLLECTED_STATUSES = [
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+]
+
+type FilterTab = "TO_COLLECT" | "COLLECTED"
+
+export default function RiderPickupQueuePage() {
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+
+  // All orders assigned to this rider for pickup. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
+  const myPickups = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
+  const collected = myPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyPickups = useMemo(
+    () =>
+      currentRider
+        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [orders, currentRider],
+  )
+  const visibleToCollect = visibleMyPickups.filter(
+    (o) => o.status === "APPROVED",
+  )
+  const visibleCollected = visibleMyPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
+
+  function openConfirm(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  // Pickup is a merchant-facing step — the rider only needs to know who
+  // they're collecting from and where. Recipient/delivery details aren't
+  // relevant yet, so they're left off this view entirely.
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
+      cell: (o) => {
+        const m = merchant(o.merchantId)
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
+            <span className="text-muted-foreground text-xs">{m?.phone}</span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "pickup",
+      header: "Pickup from",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <PickupLocationModal location={p ?? null}>
+            <div className="flex flex-col">
+              <span className="font-medium underline decoration-dotted underline-offset-4">
+                {p?.label ?? "—"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {p?.address ?? "—"}
+              </span>
+            </div>
+          </PickupLocationModal>
+        )
+      },
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "APPROVED" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackageCheck className="size-4" />
+            Mark picked up
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.rider.pickup.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.pickup.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_COLLECT">
+              To collect ({toCollect.length})
+            </TabsTrigger>
+            <TabsTrigger value="COLLECTED">
+              Collected ({collected.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "TO_COLLECT"
+                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
+                : "Nothing collected yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <PickupConfirmDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        pickupLocation={
+          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
+        }
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/dispatch/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { Truck, PackageOpen, Bike, Search, Send } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "READY" | "DISPATCHED"
+
+export default function WarehouseDispatchPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders, warehouseDeliveryRiders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("READY")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
+  // counts come from the unfiltered `allOrders`; the table-facing versions
+  // below use the search-narrowed `orders`.
+  const ready = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.status === "IN_WAREHOUSE" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Parcels this warehouse has already dispatched for delivery.
+  const dispatched = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.deliveryRiderId != null &&
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const visibleReady = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "IN_WAREHOUSE" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleDispatched = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.deliveryRiderId != null &&
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "READY" ? visibleReady : visibleDispatched
+
+  function openDispatch(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) =>
+        o.deliveryRiderId ? (
+          <span className="flex items-center gap-1.5 text-sm">
+            <Bike className="text-muted-foreground size-4" />
+            {rider(o.deliveryRiderId)?.name ?? "—"}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-sm">Unassigned</span>
+        ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "IN_WAREHOUSE" ? (
+          <Button size="sm" onClick={() => openDispatch(o)}>
+            <Send className="size-4" />
+            Assign rider
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.dispatch.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.dispatch.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Ready to dispatch",
+            value: ready.length,
+            icon: PackageOpen,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Dispatched",
+            value: dispatched.length,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Available riders",
+            value: warehouseDeliveryRiders.length,
+            icon: Bike,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="READY">
+              Ready to dispatch ({ready.length})
+            </TabsTrigger>
+            <TabsTrigger value="DISPATCHED">
+              Dispatched ({dispatched.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "READY"
+                ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
+                : "Nothing dispatched yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <WarehouseDispatchDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        warehouseName={currentWarehouse?.name ?? "your warehouse"}
+        deliveryRiders={warehouseDeliveryRiders}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/exceptions/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { AlertTriangle, RotateCcw, Search, Undo2, Wrench } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "NEEDS_ACTION" | "RESOLVED"
+
+export default function WarehouseExceptionsPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders, allOrders, warehouseFailedOrders, query, setQuery } =
+    useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision. Already
+  // derived from the unfiltered list (see useOrders), so stats/tab counts
+  // stay stable regardless of the current search.
+  const needsAction = warehouseFailedOrders
+
+  // Parcels this warehouse has already resolved as returned.
+  const resolved = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleNeedsAction = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "FAILED_ATTEMPT" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleResolved = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "NEEDS_ACTION" ? visibleNeedsAction : visibleResolved
+
+  function openResolve(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "attempts",
+      header: "Attempts",
+      align: "center",
+      sortable: true,
+      sortValue: (o) => o.deliveryAttempts ?? 1,
+      cell: (o) => (
+        <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
+      ),
+    },
+    {
+      id: "tracking",
+      header: "Tracking",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "note",
+      header: "Resolution",
+      cellClassName: "whitespace-normal align-top",
+      cell: (o) =>
+        o.status === "RETURNED" ? (
+          <span className="text-muted-foreground block w-56 text-xs break-words whitespace-normal">
+            Returned by {o.failedResolvedBy ?? "Warehouse Admin"}
+            {o.returnReason ? ` — ${o.returnReason}` : ""}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">
+            Open tracking for attempt details
+          </span>
+        ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "FAILED_ATTEMPT" ? (
+          <Button size="sm" onClick={() => openResolve(o)}>
+            <RotateCcw className="size-4" />
+            Resolve
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.exceptions.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.exceptions.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Needs action",
+            value: needsAction.length,
+            icon: AlertTriangle,
+            tone: "bg-destructive/10 text-destructive",
+          },
+          {
+            label: "Returned",
+            value: resolved.length,
+            icon: Undo2,
+            tone: "bg-muted text-muted-foreground",
+          },
+          {
+            label: "Total exceptions",
+            value: needsAction.length + resolved.length,
+            icon: Wrench,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="NEEDS_ACTION">
+              Needs action ({needsAction.length})
+            </TabsTrigger>
+            <TabsTrigger value="RESOLVED">
+              Returned ({resolved.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "NEEDS_ACTION"
+                ? "No failed deliveries. Parcels appear here when a delivery rider records a failed attempt."
+                : "Nothing returned yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <FailedDeliveryDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        riderName={
+          activeOrder ? (rider(activeOrder.deliveryRiderId)?.name ?? "—") : ""
+        }
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: app/warehouse/reconciliation/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { toast } from "sonner"
+import {
+  Wallet,
+  HandCoins,
+  CheckCircle2,
+  Banknote,
+  Bike,
+  Loader2,
+  Search,
+} from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "UNSETTLED" | "SETTLED"
+
+export default function WarehouseReconciliationPage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const {
+    orders,
+    allOrders,
+    warehouseUnsettledOrders,
+    settleOrderCod,
+    query,
+    setQuery,
+  } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("UNSETTLED")
+  const [settling, setSettling] = useState<string | null>(null)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Already derived from the unfiltered list (see useOrders), so stats/tab
+  // counts stay stable regardless of the current search.
+  const unsettled = warehouseUnsettledOrders
+
+  // Delivered parcels at this warehouse whose COD has been settled.
+  const settled = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.status === "DELIVERED" &&
+              Boolean(o.codSettledAt),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const unsettledCash = unsettled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+  const settledCash = settled.reduce(
+    (sum, o) => sum + (o.amountCollected ?? o.totalCollectible),
+    0,
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleUnsettled = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "DELIVERED" &&
+              o.warehouseId === currentWarehouse.id &&
+              !o.codSettledAt,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleSettled = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.status === "DELIVERED" &&
+              Boolean(o.codSettledAt),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
+
+  async function handleSettle(order: Order) {
+    setSettling(order.id)
+    try {
+      const result = await settleOrderCod(order.id)
+      if (result.ok) {
+        toast.success(
+          `${order.code} settled. Product cost is now available for merchant payout.`,
+        )
+      } else {
+        toast.error(result.error ?? "Unable to settle this parcel.")
+      }
+    } finally {
+      setSettling(null)
+    }
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Delivery rider",
+      sortable: true,
+      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="text-muted-foreground size-4" />
+          {rider(o.deliveryRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "collected",
+      header: "Cash collected",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.amountCollected ?? o.totalCollectible,
+      cell: (o) => (
+        <span className="font-medium tabular-nums">
+          {formatTk(o.amountCollected ?? o.totalCollectible)}
+        </span>
+      ),
+    },
+    {
+      id: "platform",
+      header: "Platform revenue",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.deliveryCharge + o.securityMoney,
+      cell: (o) => (
+        <span className="text-muted-foreground tabular-nums">
+          {formatTk(o.deliveryCharge + o.securityMoney)}
+        </span>
+      ),
+    },
+    {
+      id: "payable",
+      header: "Merchant payable",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.productCost,
+      cell: (o) => (
+        <span className="text-primary tabular-nums">
+          {formatTk(o.productCost)}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
+      cell: (o) =>
+        o.codSettledAt ? (
+          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
+            <CheckCircle2 className="size-4" />
+            Settled by {o.codSettledBy ?? "Admin"}
+          </span>
+        ) : (
+          <OrderStatusBadge status={o.status} />
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.codSettledAt ? null : (
+          <Button
+            size="sm"
+            onClick={() => handleSettle(o)}
+            disabled={settling === o.id}
+          >
+            {settling === o.id ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Settling
+              </>
+            ) : (
+              <>
+                <HandCoins className="size-4" />
+                Settle cash
+              </>
+            )}
+          </Button>
+        ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.reconciliation.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.reconciliation.description}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Awaiting settlement",
+            value: unsettled.length,
+            icon: HandCoins,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Cash to collect",
+            value: formatTk(unsettledCash),
+            icon: Banknote,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Settled cash",
+            value: formatTk(settledCash),
+            icon: Wallet,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="UNSETTLED">
+              Awaiting settlement ({unsettled.length})
+            </TabsTrigger>
+            <TabsTrigger value="SETTLED">
+              Settled ({settled.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "UNSETTLED"
+                ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
+                : "No settlements yet."
+            }
+          />
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 ````
@@ -31400,287 +31512,6 @@ export default function OrderDetailPage() {
 }
 ````
 
-## File: app/dashboard/orders/page.tsx
-````typescript
-"use client"
-
-import Link from "next/link"
-import { useMemo, useState } from "react"
-import {
-  Bike,
-  CheckCircle2,
-  Clock,
-  Package,
-  Search,
-  ShieldCheck,
-  Truck,
-} from "lucide-react"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import { cn } from "@/lib/utils"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
-import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "PENDING" | "APPROVED" | "ALL"
-
-export default function OrdersPage() {
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const { pickupLocations } = usePickupLocations()
-  const [tab, setTab] = useState<FilterTab>("PENDING")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchantName = (id: string) =>
-    merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
-  const riderName = (id?: string | null) =>
-    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
-  const pickupLocation = (id: string) =>
-    pickupLocations.find((p) => p.id === id) ?? null
-
-  // Stats always reflect the full order set, not the current search.
-  const counts = useMemo(
-    () => ({
-      pending: allOrders.filter((o) => o.status === "PENDING").length,
-      approved: allOrders.filter((o) => o.status === "APPROVED").length,
-      inProgress: allOrders.filter(
-        (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
-      ).length,
-      total: allOrders.length,
-    }),
-    [allOrders],
-  )
-
-  // Search is server-side now (see useOrders); the tab status filter stays
-  // client-side, layered on top of the already-search-narrowed `orders`.
-  const filtered = useMemo(
-    () => orders.filter((o) => tab === "ALL" || o.status === tab),
-    [orders, tab],
-  )
-
-  function openApprove(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <Link
-            href={`/dashboard/orders/${o.id}`}
-            className="text-primary font-medium hover:underline"
-          >
-            {o.code}
-          </Link>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} ·{" "}
-            <AddressModal
-              order={o}
-              className="underline decoration-dotted underline-offset-4"
-            >
-              {o.deliveryCity}
-            </AddressModal>
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => merchantName(o.merchantId),
-    },
-    {
-      id: "pickup",
-      header: "Pickup location",
-      sortable: true,
-      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickupLocation(o.pickupLocationId)
-        if (!p) return <span className="text-muted-foreground text-sm">—</span>
-        return (
-          <PickupLocationModal location={p}>
-            <div className="flex flex-col">
-              <span className="underline decoration-dotted underline-offset-4">
-                {p.label}
-              </span>
-              <span className="text-muted-foreground text-xs">{p.address}</span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "weight",
-      header: "Weight",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.parcelWeightKg,
-      cell: (o) => {
-        const merchant = merchants.find((m) => m.id === o.merchantId)
-        const exceedsWeight = merchant
-          ? o.parcelWeightKg > merchant.maxWeightKg
-          : false
-        return (
-          <span
-            className={cn(
-              "tabular-nums",
-              exceedsWeight && "text-destructive font-medium",
-            )}
-          >
-            {o.parcelWeightKg} KG
-          </span>
-        )
-      },
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "rider",
-      header: "Rider",
-      sortable: true,
-      sortValue: (o) => riderName(o.pickupRiderId),
-      cell: (o) =>
-        o.pickupRiderId ? (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="text-muted-foreground size-4" />
-            {riderName(o.pickupRiderId)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-sm">—</span>
-        ),
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "PENDING" ? (
-          <Button size="sm" onClick={() => openApprove(o)}>
-            <ShieldCheck className="size-4" />
-            Review
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.dashboard.orders.title}
-        description={pageContent.dashboard.orders.description}
-      />
-
-      {/* Stats */}
-      <StatCardList
-        columns={4}
-        items={[
-          {
-            label: "Pending approval",
-            value: counts.pending,
-            icon: Clock,
-            tone: "bg-chart-3/15 text-chart-3",
-          },
-          {
-            label: "Approved",
-            value: counts.approved,
-            icon: CheckCircle2,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "In progress",
-            value: counts.inProgress,
-            icon: Truck,
-            tone: "bg-chart-4/15 text-chart-4",
-          },
-          {
-            label: "Total orders",
-            value: counts.total,
-            icon: Package,
-          },
-        ]}
-      />
-
-      {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="PENDING">Pending</TabsTrigger>
-            <TabsTrigger value="APPROVED">Approved</TabsTrigger>
-            <TabsTrigger value="ALL">All</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={filtered}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage="No orders match the current filters."
-          />
-        </CardContent>
-      </Card>
-
-      <ApproveOrderDialog
-        order={activeOrder}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
 ## File: app/merchant/business/page.tsx
 ````typescript
 "use client"
@@ -32363,6 +32194,287 @@ export default function RegisterPage() {
         </div>
       </section>
     </main>
+  )
+}
+````
+
+## File: app/dashboard/orders/page.tsx
+````typescript
+"use client"
+
+import Link from "next/link"
+import { useMemo, useState } from "react"
+import {
+  Package,
+  Clock,
+  CheckCircle2,
+  Truck,
+  Search,
+  ShieldCheck,
+  Bike,
+} from "lucide-react"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { cn } from "@/lib/utils"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "PENDING" | "APPROVED" | "ALL"
+
+export default function OrdersPage() {
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const { pickupLocations } = usePickupLocations()
+  const [tab, setTab] = useState<FilterTab>("PENDING")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchantName = (id: string) =>
+    merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
+  const riderName = (id?: string | null) =>
+    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
+  const pickupLocation = (id: string) =>
+    pickupLocations.find((p) => p.id === id) ?? null
+
+  // Stats always reflect the full order set, not the current search.
+  const counts = useMemo(
+    () => ({
+      pending: allOrders.filter((o) => o.status === "PENDING").length,
+      approved: allOrders.filter((o) => o.status === "APPROVED").length,
+      inProgress: allOrders.filter(
+        (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
+      ).length,
+      total: allOrders.length,
+    }),
+    [allOrders],
+  )
+
+  // Search is server-side now (see useOrders); the tab status filter stays
+  // client-side, layered on top of the already-search-narrowed `orders`.
+  const filtered = useMemo(
+    () => orders.filter((o) => tab === "ALL" || o.status === tab),
+    [orders, tab],
+  )
+
+  function openApprove(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <Link
+            href={`/dashboard/orders/${o.id}`}
+            className="text-primary font-medium hover:underline"
+          >
+            {o.code}
+          </Link>
+          <span className="text-muted-foreground text-xs">
+            {o.recipientName} ·{" "}
+            <AddressModal
+              order={o}
+              className="underline decoration-dotted underline-offset-4"
+            >
+              {o.deliveryCity}
+            </AddressModal>
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
+      cell: (o) => merchantName(o.merchantId),
+    },
+    {
+      id: "pickup",
+      header: "Pickup location",
+      sortable: true,
+      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickupLocation(o.pickupLocationId)
+        if (!p) return <span className="text-muted-foreground text-sm">—</span>
+        return (
+          <PickupLocationModal location={p}>
+            <div className="flex flex-col">
+              <span className="underline decoration-dotted underline-offset-4">
+                {p.label}
+              </span>
+              <span className="text-muted-foreground text-xs">{p.address}</span>
+            </div>
+          </PickupLocationModal>
+        )
+      },
+    },
+    {
+      id: "weight",
+      header: "Weight",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.parcelWeightKg,
+      cell: (o) => {
+        const merchant = merchants.find((m) => m.id === o.merchantId)
+        const exceedsWeight = merchant
+          ? o.parcelWeightKg > merchant.maxWeightKg
+          : false
+        return (
+          <span
+            className={cn(
+              "tabular-nums",
+              exceedsWeight && "text-destructive font-medium",
+            )}
+          >
+            {o.parcelWeightKg} KG
+          </span>
+        )
+      },
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "rider",
+      header: "Rider",
+      sortable: true,
+      sortValue: (o) => riderName(o.pickupRiderId),
+      cell: (o) =>
+        o.pickupRiderId ? (
+          <span className="flex items-center gap-1.5 text-sm">
+            <Bike className="text-muted-foreground size-4" />
+            {riderName(o.pickupRiderId)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "PENDING" ? (
+          <Button size="sm" onClick={() => openApprove(o)}>
+            <ShieldCheck className="size-4" />
+            Review
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.dashboard.orders.title}
+        description={pageContent.dashboard.orders.description}
+      />
+
+      {/* Stats */}
+      <StatCardList
+        columns={4}
+        items={[
+          {
+            label: "Pending approval",
+            value: counts.pending,
+            icon: Clock,
+            tone: "bg-chart-3/15 text-chart-3",
+          },
+          {
+            label: "Approved",
+            value: counts.approved,
+            icon: CheckCircle2,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "In progress",
+            value: counts.inProgress,
+            icon: Truck,
+            tone: "bg-chart-4/15 text-chart-4",
+          },
+          {
+            label: "Total orders",
+            value: counts.total,
+            icon: Package,
+          },
+        ]}
+      />
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="PENDING">Pending</TabsTrigger>
+            <TabsTrigger value="APPROVED">Approved</TabsTrigger>
+            <TabsTrigger value="ALL">All</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage="No orders match the current filters."
+          />
+        </CardContent>
+      </Card>
+
+      <ApproveOrderDialog
+        order={activeOrder}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
   )
 }
 ````

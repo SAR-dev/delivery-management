@@ -122,10 +122,11 @@ const transitions = {
 }
 ```
 
-The shared runner `applyOrderTransition(name, req, ctx)` performs the identical
-sequence for all of them: resolve session → authorize → parse body → load order
-→ run guard → write update → return the updated order. **Route files are thin
-wrappers** — they only name the transition:
+The shared runner `applyOrderTransition(name, orderId, req)` performs the
+identical sequence for all of them: resolve session → authorize → parse body
+→ **(inside one transaction)** load order with a row lock → run guard → write
+update → return the updated order. **Route files are thin wrappers** — they
+only name the transition:
 
 ```ts
 // app/api/orders/[id]/approve/route.ts
@@ -137,6 +138,64 @@ To add a lifecycle action: add one entry to `transitions`, add a one-line route
 wrapper, and add a spec case in
 `app/api/orders/[id]/__tests__/transitions.spec.ts`. Never duplicate the
 auth/parse/guard/update plumbing inline.
+
+### Transaction boundary + row lock
+
+The fetch → guard → write sequence inside `applyOrderTransition` runs inside
+`db.transaction(async (tx) => { ... })`, and the initial fetch uses
+`.for("update")` to lock the order row for the duration of the transaction:
+
+```ts
+return await db.transaction(async (tx) => {
+  const [orderRow] = await tx
+    .select()
+    .from(order)
+    .where(eq(order.id, orderId))
+    .for("update")
+    .limit(1)
+  if (!orderRow)
+    return NextResponse.json({ error: "Order not found" }, { status: 404 })
+
+  const guardError = await def.guard({ order: orderRow, session: me, body })
+  if (guardError)
+    return NextResponse.json(
+      { error: guardError.error },
+      { status: guardError.status },
+    )
+
+  const [updated] = await tx
+    .update(order)
+    .set(await def.buildUpdate({ order: orderRow, session: me, body }))
+    .where(eq(order.id, orderId))
+    .returning()
+  return NextResponse.json(updated)
+})
+```
+
+Without this, two concurrent transitions on the same order (two admins
+approving at once, a rider double-submitting a delivery outcome) could both
+read the same pre-write status, both pass the guard, and both write —
+corrupting state (e.g. double-incrementing `deliveryAttempts`, or an approve
+and a reject both succeeding). The lock makes the second request block until
+the first commits, then re-fetches the now-updated row, so its guard correctly
+sees the new status and fails closed instead of racing.
+
+This is the project's general pattern for any guard-then-write sequence, not
+just orders — see the matching shape in `app/api/payouts/[id]/approve/route.ts`
+and `.../paid/route.ts`. When you add a new endpoint that reads a row, checks
+its status, and conditionally writes to it, wrap the read + guard + write in
+one `db.transaction()` with `.for("update")` on the initial read. A plain
+`db.transaction()` with no lock (as in Recipe B's bulk-insert sequence-number
+read, or the payout-request/payout-reject multi-table writes) is enough when
+the only risk is multiple _inserts_ racing on a derived value, not a
+stale-read guard on a row that already exists.
+
+**Mocked `db` in tests**: if a spec hand-mocks `@/lib/db` (see
+`transitions.spec.ts`), the mock's `transaction` must run the callback against
+the same mock object so it shares state with every `select`/`update`
+assertion, and `.for()` on the select chain must be a no-op passthrough —
+otherwise adding a transaction boundary breaks every test that exercises the
+wrapped code path.
 
 ---
 
@@ -366,11 +425,11 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
    `lib/validation.ts`.
 4. **API routes**:
-    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-      handler with `requireSession()`; gate writes by `me.role`.
-    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-      role-scoped — **enforce it server-side; Neon has no RLS.**
+   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+     handler with `requireSession()`; gate writes by `me.role`.
+   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+     role-scoped — **enforce it server-side; Neon has no RLS.**
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
@@ -471,7 +530,13 @@ export async function POST(req: Request) {
 
 Rules: `requireSession()` first; validate the body with `parseBody` + a zod
 schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
-return the created/updated row so the hook can update its cache.
+return the created/updated row so the hook can update its cache. **If the
+handler reads a row, checks its status, and conditionally writes to it**
+(an approve/reject/mark-paid style endpoint), wrap the read + guard + write in
+`db.transaction()` with `.for("update")` on the initial read — see
+[§2's transaction subsection](#transaction-boundary--row-lock) for why and the
+exact shape. Plain inserts or multi-table writes that don't re-check a status
+still want `db.transaction()`, just without the lock.
 
 ### Recipe F — Add an order lifecycle action
 
@@ -490,7 +555,10 @@ machine in `features/orders/transitions.ts`.
    `app/api/orders/[id]/__tests__/transitions.spec.ts`.
 4. Expose it through `use-orders.ts` and the relevant UI.
 
-Never duplicate the auth/parse/guard/update plumbing inline.
+Never duplicate the auth/parse/guard/update plumbing inline — the shared
+runner already handles the transaction boundary and row lock (see
+[§2](#transaction-boundary--row-lock)), so a new transition only needs to
+define its `guard`/`buildUpdate`, never its own `db.transaction()` call.
 
 ---
 

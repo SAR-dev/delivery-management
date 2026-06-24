@@ -20,7 +20,7 @@
     "db:seed": "tsx lib/db/seed.ts",
     "db:seed:min": "tsx lib/db/seed.ts --min",
     "repomix": "repomix",
-    "check": "pnpm typecheck && pnpm lint:check && pnpm format:check && pnpm repomix"
+    "check": "pnpm typecheck && pnpm lint && pnpm format && pnpm repomix"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

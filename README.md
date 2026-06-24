@@ -19,17 +19,23 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    pnpm install
    ```
 
-2. Create a `.env.local` file with:
+2. Copy the example env file and fill in your values:
 
    ```bash
-   DATABASE_URL=your-neon-connection-string
-   BETTER_AUTH_SECRET=run `openssl rand -base64 32`
-   BETTER_AUTH_DEV_URL=http://localhost:3000
+   cp .env.example .env.local
    ```
 
+   At minimum you need `DATABASE_URL` and `BETTER_AUTH_SECRET` (generate one
+   with `openssl rand -base64 32`). Everything else in `.env.example` is
+   either optional or has a safe default — see the comments in that file for
+   what each one does and when you need it (R2 storage, mail, tunnel, etc).
+   The app validates required vars on boot (`lib/env.ts`) and refuses to
+   start with a clear error if something's missing.
+
 3. Image uploads (avatars, delivery proof, pickup-location photos) work out
-   of the box — files are written to `./uploads` (override with `UPLOADS_DIR`)
-   and served from `app/uploads/[...path]/route.ts`. No extra setup needed.
+   of the box with the default `STORAGE_PROVIDER=local` — files are written
+   to `./uploads` (override with `UPLOADS_DIR`) and served from
+   `app/uploads/[...path]/route.ts`. No extra setup needed.
 
 4. Set up the database:
 
@@ -48,16 +54,17 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 
 ## Scripts
 
-| Command          | What it does                       |
-| ---------------- | ---------------------------------- |
-| `pnpm dev`       | Start the development server       |
-| `pnpm build`     | Production build                   |
-| `pnpm start`     | Run the production build           |
-| `pnpm lint`      | Lint the codebase                  |
-| `pnpm typecheck` | Type-check with TypeScript         |
-| `pnpm db:push`   | Push the schema to the database    |
-| `pnpm db:seed`   | Seed the database with sample data |
-| `pnpm db:studio` | Open Drizzle Studio                |
+The commands you'll use day-to-day:
+
+| Command        | What it does                       |
+| -------------- | ---------------------------------- |
+| `pnpm dev`     | Start the development server       |
+| `pnpm db:push` | Push the schema to the database    |
+| `pnpm db:seed` | Seed the database with sample data |
+
+For everything else (build, lint, typecheck, format, test, Drizzle Studio,
+etc.) see the full, current list in [`package.json`](./package.json)'s
+`scripts` block — that's the source of truth, so it can't go stale here.
 
 ## Roles & Areas
 

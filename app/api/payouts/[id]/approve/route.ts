@@ -15,30 +15,37 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const [current] = await db
-    .select({ status: payoutRequest.status })
-    .from(payoutRequest)
-    .where(eq(payoutRequest.id, id))
-    .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (current.status !== "PENDING") {
-    return NextResponse.json(
-      { error: "Only PENDING requests can be approved." },
-      { status: 400 },
-    )
-  }
+  // Transaction: lock the request row for the guard + write so two
+  // concurrent approve/reject calls on the same request can't both pass the
+  // "still PENDING" check against stale state.
+  return await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
 
-  const [updated] = await db
-    .update(payoutRequest)
-    .set({
-      status: "APPROVED",
-      reviewedBy: me.name,
-      reviewedAt: new Date().toISOString(),
-    })
-    .where(eq(payoutRequest.id, id))
-    .returning()
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Only PENDING requests can be approved." },
+        { status: 400 },
+      )
+    }
 
-  return NextResponse.json(updated)
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({
+        status: "APPROVED",
+        reviewedBy: me.name,
+        reviewedAt: new Date().toISOString(),
+      })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    return NextResponse.json(updated)
+  })
 }

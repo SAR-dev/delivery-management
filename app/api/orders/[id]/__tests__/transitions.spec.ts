@@ -9,7 +9,18 @@
  * by the real validation/business logic; only the Drizzle `db` layer and the
  * session lookup are mocked.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+// Imports must come after the vi.mock calls (which are hoisted regardless).
+import { PATCH as approve } from "../approve/route"
+import { PATCH as dispatch } from "../dispatch/route"
+import { PATCH as pickedUp } from "../picked-up/route"
+import { PATCH as receive } from "../receive/route"
+import { PATCH as outForDelivery } from "../out-for-delivery/route"
+import { PATCH as delivered } from "../delivered/route"
+import { PATCH as failed } from "../failed/route"
+import { PATCH as reattempt } from "../reattempt/route"
+import { PATCH as returnRoute } from "../return/route"
+import { PATCH as settleCod } from "../settle-cod/route"
 
 // --- Controllable mock of the Drizzle data layer ----------------------------
 // Routes do: `db.select().from(x).where(eq(...)).limit(1)` (awaited, FIFO) and
@@ -26,6 +37,11 @@ vi.mock("@/lib/db", () => {
       from: () => chain,
       where: () => chain,
       limit: () => chain,
+      // `.for("update")` (row locking inside a transaction) is a passthrough
+      // here — the mock has no real lock semantics, it just needs to not
+      // break the chain so `applyOrderTransition`'s `SELECT ... FOR UPDATE`
+      // call shape resolves from the same `selectQueue` as a plain select.
+      for: () => chain,
       then: (
         onFulfilled: (v: unknown) => unknown,
         onRejected?: (e: unknown) => unknown,
@@ -37,19 +53,32 @@ vi.mock("@/lib/db", () => {
     }
     return chain
   }
-  const db = {
+  const makeUpdateChain = () => {
+    const chain: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        dbState.updatePayloads.push(vals)
+        return chain
+      },
+      where: () => chain,
+      returning: () => Promise.resolve(dbState.updateResult),
+    }
+    return chain
+  }
+  interface MockDb {
+    select: () => ReturnType<typeof makeSelectChain>
+    update: () => ReturnType<typeof makeUpdateChain>
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => Promise<T>
+  }
+  const db: MockDb = {
     select: () => makeSelectChain(),
-    update: () => {
-      const chain: Record<string, unknown> = {
-        set: (vals: Record<string, unknown>) => {
-          dbState.updatePayloads.push(vals)
-          return chain
-        },
-        where: () => chain,
-        returning: () => Promise.resolve(dbState.updateResult),
-      }
-      return chain
-    },
+    update: () => makeUpdateChain(),
+    // `applyOrderTransition` runs its fetch+guard+update inside
+    // `db.transaction(async (tx) => ...)`. The mock `tx` is just another
+    // handle onto the same `select`/`update` chains and the same shared
+    // `dbState`, so every existing assertion on `selectQueue`/
+    // `updatePayloads` still applies — the transaction wrapper doesn't
+    // change which calls happen, only that they're grouped.
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => fn(db),
   }
   return { db, pool: {} }
 })
@@ -58,18 +87,6 @@ const sessionState: { value: Record<string, unknown> | null } = { value: null }
 vi.mock("@/lib/api-auth", () => ({
   requireSession: () => Promise.resolve(sessionState.value),
 }))
-
-// Imports must come after the vi.mock calls (which are hoisted regardless).
-import { PATCH as approve } from "../approve/route"
-import { PATCH as dispatch } from "../dispatch/route"
-import { PATCH as pickedUp } from "../picked-up/route"
-import { PATCH as receive } from "../receive/route"
-import { PATCH as outForDelivery } from "../out-for-delivery/route"
-import { PATCH as delivered } from "../delivered/route"
-import { PATCH as failed } from "../failed/route"
-import { PATCH as reattempt } from "../reattempt/route"
-import { PATCH as returnRoute } from "../return/route"
-import { PATCH as settleCod } from "../settle-cod/route"
 
 type Handler = (
   req: Request,
@@ -187,7 +204,7 @@ describe("PATCH /orders/:id/approve", () => {
     sessionState.value = admin
     dbState.selectQueue = [
       [makeOrder()],
-      [{ id: "r1", isActive: true, warehouseId: "wh_1" }],
+      [{ id: "r1", isActive: true, taskType: "DELIVERY" }],
     ]
     const { status, json } = await call(approve, { riderId: "r1" })
     expect(status).toBe(400)
@@ -201,7 +218,7 @@ describe("PATCH /orders/:id/approve", () => {
     sessionState.value = admin
     dbState.selectQueue = [
       [makeOrder({ parcelWeightKg: 10 })],
-      [{ id: "r1", isActive: true, warehouseId: null }],
+      [{ id: "r1", isActive: true, taskType: "PICKUP" }],
       [{ maxWeightKg: 5 }],
     ]
     const { status, json } = await call(approve, { riderId: "r1" })
@@ -215,7 +232,7 @@ describe("PATCH /orders/:id/approve", () => {
     sessionState.value = admin
     dbState.selectQueue = [
       [makeOrder({ parcelWeightKg: 2 })],
-      [{ id: "r1", isActive: true, warehouseId: null }],
+      [{ id: "r1", isActive: true, taskType: "PICKUP" }],
       [{ maxWeightKg: 5 }],
     ]
     dbState.updateResult = [makeOrder({ status: "APPROVED" })]
@@ -234,7 +251,7 @@ describe("PATCH /orders/:id/approve", () => {
     sessionState.value = superAdmin
     dbState.selectQueue = [
       [makeOrder()],
-      [{ id: "r1", isActive: true, warehouseId: null }],
+      [{ id: "r1", isActive: true, taskType: "BOTH" }],
       [{ maxWeightKg: 5 }],
     ]
     dbState.updateResult = [makeOrder({ status: "APPROVED" })]

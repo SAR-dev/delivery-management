@@ -15,26 +15,32 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const [current] = await db
-    .select({ status: payoutRequest.status })
-    .from(payoutRequest)
-    .where(eq(payoutRequest.id, id))
-    .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (current.status !== "APPROVED") {
-    return NextResponse.json(
-      { error: "Only APPROVED requests can be marked paid." },
-      { status: 400 },
-    )
-  }
+  // Transaction: lock the request row for the guard + write so a concurrent
+  // call can't slip in between the "still APPROVED" check and the write.
+  return await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
 
-  const [updated] = await db
-    .update(payoutRequest)
-    .set({ status: "PAID", paidAt: new Date().toISOString() })
-    .where(eq(payoutRequest.id, id))
-    .returning()
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Only APPROVED requests can be marked paid." },
+        { status: 400 },
+      )
+    }
 
-  return NextResponse.json(updated)
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({ status: "PAID", paidAt: new Date().toISOString() })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    return NextResponse.json(updated)
+  })
 }
