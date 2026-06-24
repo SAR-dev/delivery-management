@@ -3,13 +3,13 @@
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
-  Package,
-  Clock,
+  Bike,
   CheckCircle2,
-  Truck,
+  Clock,
+  Package,
   Search,
   ShieldCheck,
-  Bike,
+  Truck,
 } from "lucide-react"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -34,12 +34,11 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const { pickupLocations } = usePickupLocations()
   const [tab, setTab] = useState<FilterTab>("PENDING")
-  const [query, setQuery] = useState("")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -50,31 +49,25 @@ export default function OrdersPage() {
   const pickupLocation = (id: string) =>
     pickupLocations.find((p) => p.id === id) ?? null
 
+  // Stats always reflect the full order set, not the current search.
   const counts = useMemo(
     () => ({
-      pending: orders.filter((o) => o.status === "PENDING").length,
-      approved: orders.filter((o) => o.status === "APPROVED").length,
-      inProgress: orders.filter(
+      pending: allOrders.filter((o) => o.status === "PENDING").length,
+      approved: allOrders.filter((o) => o.status === "APPROVED").length,
+      inProgress: allOrders.filter(
         (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
       ).length,
-      total: orders.length,
+      total: allOrders.length,
     }),
-    [orders],
+    [allOrders],
   )
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return orders.filter((o) => {
-      const matchesTab = tab === "ALL" || o.status === tab
-      const matchesQuery =
-        !q ||
-        o.code.toLowerCase().includes(q) ||
-        o.recipientName.toLowerCase().includes(q) ||
-        merchantName(o.merchantId).toLowerCase().includes(q)
-      return matchesTab && matchesQuery
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orders, tab, query])
+  // Search is server-side now (see useOrders); the tab status filter stays
+  // client-side, layered on top of the already-search-narrowed `orders`.
+  const filtered = useMemo(
+    () => orders.filter((o) => tab === "ALL" || o.status === tab),
+    [orders, tab],
+  )
 
   function openApprove(order: Order) {
     setActiveOrder(order)
@@ -253,7 +246,7 @@ export default function OrdersPage() {
         <div className="relative w-full sm:max-w-xs">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
-            placeholder="Search code, recipient, merchant"
+            placeholder="Search code, recipient, phone, city"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"

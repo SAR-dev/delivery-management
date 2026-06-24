@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Wallet, Clock, Banknote, Loader2, Check, X } from "lucide-react"
+import {
+  Banknote,
+  Check,
+  Clock,
+  Loader2,
+  Search,
+  Wallet,
+  X,
+} from "lucide-react"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { formatTk } from "@/lib/pricing"
@@ -12,6 +20,7 @@ import { pageContent } from "@/config/content"
 import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -29,8 +38,15 @@ import { StatCardList } from "@/components/stat-card-list"
 type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
 
 export default function PayoutsPage() {
-  const { payoutRequests, approvePayout, rejectPayout, markPayoutPaid } =
-    usePayouts()
+  const {
+    payoutRequests,
+    allPayoutRequests,
+    query,
+    setQuery,
+    approvePayout,
+    rejectPayout,
+    markPayoutPaid,
+  } = usePayouts()
   const { merchants } = useMerchants()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [busy, setBusy] = useState<string | null>(null)
@@ -40,6 +56,8 @@ export default function PayoutsPage() {
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
 
+  // Search narrows what's displayed in the table; stats and tab counts
+  // always reflect the full request set.
   const pending = payoutRequests.filter((p) => p.status === "PENDING")
   const approved = payoutRequests.filter((p) => p.status === "APPROVED")
   const history = useMemo(
@@ -50,9 +68,23 @@ export default function PayoutsPage() {
     [payoutRequests],
   )
 
-  const pendingAmount = pending.reduce((sum, p) => sum + p.amount, 0)
-  const approvedAmount = approved.reduce((sum, p) => sum + p.amount, 0)
-  const paidAmount = payoutRequests
+  const totalPending = allPayoutRequests.filter(
+    (p) => p.status === "PENDING",
+  ).length
+  const totalApproved = allPayoutRequests.filter(
+    (p) => p.status === "APPROVED",
+  ).length
+  const totalHistory = allPayoutRequests.filter(
+    (p) => p.status === "PAID" || p.status === "REJECTED",
+  ).length
+
+  const pendingAmount = allPayoutRequests
+    .filter((p) => p.status === "PENDING")
+    .reduce((sum, p) => sum + p.amount, 0)
+  const approvedAmount = allPayoutRequests
+    .filter((p) => p.status === "APPROVED")
+    .reduce((sum, p) => sum + p.amount, 0)
+  const paidAmount = allPayoutRequests
     .filter((p) => p.status === "PAID")
     .reduce((sum, p) => sum + p.amount, 0)
 
@@ -266,15 +298,26 @@ export default function PayoutsPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="PENDING">Pending ({pending.length})</TabsTrigger>
-          <TabsTrigger value="APPROVED">
-            Approved ({approved.length})
-          </TabsTrigger>
-          <TabsTrigger value="HISTORY">History ({history.length})</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="PENDING">Pending ({totalPending})</TabsTrigger>
+            <TabsTrigger value="APPROVED">
+              Approved ({totalApproved})
+            </TabsTrigger>
+            <TabsTrigger value="HISTORY">History ({totalHistory})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search request code"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

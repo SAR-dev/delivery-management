@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Pencil, Trash2, Warehouse as WarehouseIcon } from "lucide-react"
+import {
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Warehouse as WarehouseIcon,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
@@ -50,12 +56,18 @@ const emptyForm: WarehouseForm = {
 export default function WarehousesPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { warehouses, createWarehouse, updateWarehouse, deleteWarehouse } =
-    useWarehouses()
+  const {
+    warehouses,
+    query,
+    setQuery,
+    createWarehouse,
+    updateWarehouse,
+    deleteWarehouse,
+  } = useWarehouses()
   const { divisions } = useDivisions()
-  const { orders } = useOrders()
-  const { riders } = useRiders()
-  const { team } = useTeam()
+  const { allOrders } = useOrders()
+  const { allRiders } = useRiders()
+  const { allTeam } = useTeam()
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -80,19 +92,21 @@ export default function WarehousesPage() {
 
   // Count how many records reference each warehouse so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
+  // Usage counts always reflect the full orders/riders/team sets, never
+  // narrowed by an unrelated search on those other resources.
   const rows = useMemo<WarehouseRow[]>(() => {
     return warehouses
       .map((w) => {
         const usageCount =
-          orders.filter((o) => o.warehouseId === w.id).length +
-          riders.filter((r) => r.warehouseId === w.id).length +
-          team.filter((u) => u.warehouseId === w.id).length
+          allOrders.filter((o) => o.warehouseId === w.id).length +
+          allRiders.filter((r) => r.warehouseId === w.id).length +
+          allTeam.filter((u) => u.warehouseId === w.id).length
         const divisionName =
           divisions.find((d) => d.id === w.divisionId)?.name ?? "—"
         return { ...w, usageCount, divisionName }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [warehouses, orders, riders, team, divisions])
+  }, [warehouses, allOrders, allRiders, allTeam, divisions])
 
   function openCreate() {
     setForm(emptyForm)
@@ -286,6 +300,18 @@ export default function WarehousesPage() {
           Add warehouse
         </Button>
       </PageHeader>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, address, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

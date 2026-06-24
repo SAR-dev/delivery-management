@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { PackageCheck } from "lucide-react"
+import { PackageCheck, Search } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -16,15 +16,24 @@ import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-di
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const COLLECTED_STATUSES = [
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+]
 
 type FilterTab = "TO_COLLECT" | "COLLECTED"
 
 export default function RiderPickupQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
   const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
@@ -35,27 +44,37 @@ export default function RiderPickupQueuePage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
 
-  // All orders assigned to this rider for pickup.
+  // All orders assigned to this rider for pickup. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
   const myPickups = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
+  const collected = myPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyPickups = useMemo(
     () =>
       currentRider
         ? orders.filter((o) => o.pickupRiderId === currentRider.id)
         : [],
     [orders, currentRider],
   )
-
-  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
-  const collected = myPickups.filter((o) =>
-    [
-      "PICKED_UP",
-      "IN_WAREHOUSE",
-      "IN_TRANSIT",
-      "OUT_FOR_DELIVERY",
-      "DELIVERED",
-    ].includes(o.status),
+  const visibleToCollect = visibleMyPickups.filter(
+    (o) => o.status === "APPROVED",
+  )
+  const visibleCollected = visibleMyPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
   )
 
-  const visible = tab === "TO_COLLECT" ? toCollect : collected
+  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
 
   function openConfirm(order: Order) {
     setActiveOrder(order)
@@ -149,16 +168,27 @@ export default function RiderPickupQueuePage() {
         description={pageContent.rider.pickup.description}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="TO_COLLECT">
-            To collect ({toCollect.length})
-          </TabsTrigger>
-          <TabsTrigger value="COLLECTED">
-            Collected ({collected.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_COLLECT">
+              To collect ({toCollect.length})
+            </TabsTrigger>
+            <TabsTrigger value="COLLECTED">
+              Collected ({collected.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

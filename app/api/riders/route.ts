@@ -2,26 +2,37 @@ import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { profile, rider } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq, ilike, or } from "drizzle-orm"
 import { parseBody, riderCreateSchema } from "@/lib/validation"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
+
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  const searchClause = search
+    ? or(
+        ilike(rider.name, `%${search}%`),
+        ilike(rider.phone, `%${search}%`),
+        ilike(rider.zone, `%${search}%`),
+      )
+    : undefined
 
   // Warehouse Admins only manage the riders based at their own hub. Admins and
   // Super Admins see the full roster.
   if (me.role === "WAREHOUSE_ADMIN") {
     if (!me.warehouseId) return NextResponse.json([])
-    const scoped = await db
-      .select()
-      .from(rider)
-      .where(eq(rider.warehouseId, me.warehouseId))
+    const scopedWhere = searchClause
+      ? and(eq(rider.warehouseId, me.warehouseId), searchClause)
+      : eq(rider.warehouseId, me.warehouseId)
+    const scoped = await db.select().from(rider).where(scopedWhere)
     return NextResponse.json(scoped)
   }
 
-  const rows = await db.select().from(rider)
+  const rows = searchClause
+    ? await db.select().from(rider).where(searchClause)
+    : await db.select().from(rider)
   return NextResponse.json(rows)
 }
 

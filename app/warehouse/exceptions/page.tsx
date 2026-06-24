@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { AlertTriangle, RotateCcw, Undo2, Wrench } from "lucide-react"
+import { AlertTriangle, RotateCcw, Search, Undo2, Wrench } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -17,6 +17,7 @@ import { AddressModal } from "@/features/orders/components/address-modal"
 import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -26,7 +27,8 @@ type FilterTab = "NEEDS_ACTION" | "RESOLVED"
 export default function WarehouseExceptionsPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
-  const { orders, warehouseFailedOrders } = useOrders()
+  const { orders, allOrders, warehouseFailedOrders, query, setQuery } =
+    useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
@@ -38,11 +40,37 @@ export default function WarehouseExceptionsPage() {
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
-  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision.
+  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision. Already
+  // derived from the unfiltered list (see useOrders), so stats/tab counts
+  // stay stable regardless of the current search.
   const needsAction = warehouseFailedOrders
 
   // Parcels this warehouse has already resolved as returned.
   const resolved = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id && o.status === "RETURNED",
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Table-facing versions, narrowed by the active search.
+  const visibleNeedsAction = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.status === "FAILED_ATTEMPT" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visibleResolved = useMemo(
     () =>
       currentWarehouse
         ? orders.filter(
@@ -53,7 +81,7 @@ export default function WarehouseExceptionsPage() {
     [orders, currentWarehouse],
   )
 
-  const visible = tab === "NEEDS_ACTION" ? needsAction : resolved
+  const visible = tab === "NEEDS_ACTION" ? visibleNeedsAction : visibleResolved
 
   function openResolve(order: Order) {
     setActiveOrder(order)
@@ -201,16 +229,27 @@ export default function WarehouseExceptionsPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="NEEDS_ACTION">
-            Needs action ({needsAction.length})
-          </TabsTrigger>
-          <TabsTrigger value="RESOLVED">
-            Returned ({resolved.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="NEEDS_ACTION">
+              Needs action ({needsAction.length})
+            </TabsTrigger>
+            <TabsTrigger value="RESOLVED">
+              Returned ({resolved.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

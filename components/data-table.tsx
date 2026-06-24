@@ -11,7 +11,12 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { toCsv, downloadCsv } from "@/lib/csv"
+import { downloadCsv, toCsv } from "@/lib/csv"
+import {
+  DEFAULT_TABLE_ROWS_PER_PAGE,
+  MAX_TABLE_ROWS_PER_PAGE,
+} from "@/lib/constants"
+import { useAuth } from "@/features/account/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -61,7 +66,10 @@ interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
   getRowKey: (row: T, index: number) => string
-  /** Rows per page. Pass 0 to disable pagination. Defaults to 10. */
+  /** Rows per page. Pass 0 to disable pagination. Defaults to the signed-in
+   * account's saved rows-per-page preference (Account settings), or 20 if
+   * unset/unauthenticated. An explicit prop always wins over the account
+   * default. Clamped to 1-250 regardless of source. */
   pageSize?: number
   /** Selectable page sizes shown in the footer. */
   pageSizeOptions?: number[]
@@ -89,11 +97,29 @@ const justifyClass: Record<Align, string> = {
   center: "justify-center",
 }
 
+/** Clamps a possibly-missing/invalid rows-per-page value to [1, 250],
+ * falling back to `fallback` (itself assumed already in range) when the
+ * input is missing, not an integer, or out of bounds. `0` is left as-is
+ * since it's the documented "disable pagination" sentinel, not a clamp
+ * target. */
+function clampPageSize(value: number | undefined | null, fallback: number) {
+  if (value === 0) return 0
+  if (
+    value === undefined ||
+    value === null ||
+    !Number.isInteger(value) ||
+    value < 1
+  ) {
+    return fallback
+  }
+  return Math.min(value, MAX_TABLE_ROWS_PER_PAGE)
+}
+
 export function DataTable<T>({
   columns,
   data,
   getRowKey,
-  pageSize = 10,
+  pageSize,
   pageSizeOptions,
   initialSortId,
   initialSortDir = "asc",
@@ -102,13 +128,40 @@ export function DataTable<T>({
   className,
   csv,
 }: DataTableProps<T>) {
+  const { currentUser } = useAuth()
+
+  // Effective default when the caller doesn't pass an explicit `pageSize`:
+  // the signed-in account's saved preference, clamped to 1-250, falling back
+  // to DEFAULT_TABLE_ROWS_PER_PAGE (20) if unset or out of range.
+  const accountDefault = clampPageSize(
+    currentUser?.tableRowsPerPage,
+    DEFAULT_TABLE_ROWS_PER_PAGE,
+  )
+  const effectivePageSize =
+    pageSize !== undefined
+      ? clampPageSize(pageSize, accountDefault)
+      : accountDefault
+
   const [sortId, setSortId] = React.useState<string | null>(
     initialSortId ?? null,
   )
   const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
-  const [size, setSize] = React.useState(pageSize)
+  const [size, setSize] = React.useState(effectivePageSize)
   const [page, setPage] = React.useState(1)
   const paginated = size > 0
+
+  // The account's preference loads asynchronously (it comes from the same
+  // session bootstrap as `currentUser`), so it's often not ready yet on first
+  // render. Adopt it once it arrives — but only when the caller didn't pass
+  // an explicit `pageSize` and the person hasn't already changed the page
+  // size in this table (via the selector below), so we never clobber either
+  // an explicit prop or a deliberate in-session choice.
+  const userChangedSize = React.useRef(false)
+  React.useEffect(() => {
+    if (pageSize === undefined && !userChangedSize.current) {
+      setSize(effectivePageSize)
+    }
+  }, [effectivePageSize, pageSize])
 
   const filtered = React.useMemo(() => data, [data])
 
@@ -267,8 +320,8 @@ export function DataTable<T>({
 
       {paginated ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground flex items-center gap-3">
-            <span className="tabular-nums">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground tabular-nums">
               {from}–{to} of {sorted.length}
             </span>
             {pageSizeOptions && pageSizeOptions.length > 0 ? (
@@ -277,6 +330,7 @@ export function DataTable<T>({
                 <select
                   value={size}
                   onChange={(e) => {
+                    userChangedSize.current = true
                     setSize(Number(e.target.value))
                     setPage(1)
                   }}
@@ -290,21 +344,6 @@ export function DataTable<T>({
                 </select>
               </label>
             ) : null}
-          </div>
-          <div className="flex items-center justify-center">
-            {csv ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownloadCsv}
-                className="gap-1.5"
-              >
-                <Download className="size-4" />
-                Download CSV
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
             <span className="text-muted-foreground tabular-nums">
               Page {page} of {totalPages}
             </span>
@@ -329,6 +368,16 @@ export function DataTable<T>({
               <ChevronRight className="size-4" />
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownloadCsv}
+            disabled={!csv}
+            className="gap-1.5"
+          >
+            <Download className="size-4" />
+            Download CSV
+          </Button>
         </div>
       ) : null}
     </div>

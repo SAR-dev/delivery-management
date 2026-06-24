@@ -3,10 +3,10 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
-import { inArray, eq } from "drizzle-orm"
+import { and, eq, ilike, inArray, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
@@ -15,11 +15,25 @@ export async function GET() {
     return NextResponse.json([], { status: 200 })
   }
 
+  let where = inArray(profile.role, ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN"])
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  if (search) {
+    const likeQ = `%${search}%`
+    where = and(
+      where,
+      or(
+        ilike(user.name, likeQ),
+        ilike(user.email, likeQ),
+        ilike(profile.phone, likeQ),
+      ),
+    )!
+  }
+
   const rows = await db
     .select()
     .from(profile)
     .innerJoin(user, eq(profile.userId, user.id))
-    .where(inArray(profile.role, ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN"]))
+    .where(where)
 
   const team = rows.map(({ profile: p, user: u }) => ({
     id: u.id,

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "input": {
+    "maxFileSize": 52428800
+  },
+  "output": {
+    "filePath": "REPOMIX.md",
+    "style": "markdown",
+    "headerText": "# Delivery Management Project Rules\n\nIMPORTANT: Read CONTRIBUTING.md before changing code.\n\nArchitecture:\n- app/ contains routes only\n- features/ contains domain logic\n- components/ contains reusable UI only\n- lib/ contains shared utilities\n\nRules:\n- Find existing examples before adding code\n- Mirror existing patterns\n- Use SWR hooks for server data\n- Do not fetch inside components\n- Validate APIs with zod\n- Derive types from database schema\n- Keep route handlers thin\n- Use kebab-case filenames\n- Components use PascalCase\n- Functions/variables use camelCase\n\n",
+    "parsableStyle": false,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "compress": false
+  },
+  "include": [
+    "CONTRIBUTING.md",
+    "app/**",
+    "features/**",
+    "components/**",
+    "lib/**",
+    "config/**",
+    "drizzle/**"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": []
+  },
+  "security": {
+    "enableSecurityCheck": true
+  },
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}

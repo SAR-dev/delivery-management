@@ -4,6 +4,7 @@ import { useState } from "react"
 import {
   Bike,
   CheckCircle2,
+  Search,
   Users,
   Warehouse as WarehouseIcon,
 } from "lucide-react"
@@ -17,12 +18,13 @@ import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
 import { taskTypeLabel } from "@/features/riders/dialogs/task-type"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StatCardList } from "@/components/stat-card-list"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 export default function RidersPage() {
-  const { riders } = useRiders()
+  const { riders, allRiders, query, setQuery } = useRiders()
   const { warehouses } = useWarehouses()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -37,11 +39,12 @@ export default function RidersPage() {
     setEditOpen(true)
   }
 
-  const activeCount = riders.filter((r) => r.isActive).length
-  const deliveryCount = riders.filter(
+  // Stats always reflect the full roster, not the current search.
+  const activeCount = allRiders.filter((r) => r.isActive).length
+  const deliveryCount = allRiders.filter(
     (r) => r.taskType === "DELIVERY" || r.taskType === "BOTH",
   ).length
-  const pickupCount = riders.filter(
+  const pickupCount = allRiders.filter(
     (r) => r.taskType === "PICKUP" || r.taskType === "BOTH",
   ).length
 
@@ -132,7 +135,7 @@ export default function RidersPage() {
       <StatCardList
         columns={4}
         items={[
-          { label: "Total riders", value: riders.length, icon: Users },
+          { label: "Total riders", value: allRiders.length, icon: Users },
           {
             label: "Active",
             value: activeCount,
@@ -153,6 +156,18 @@ export default function RidersPage() {
           },
         ]}
       />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search name, phone, zone"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">

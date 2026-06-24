@@ -7,7 +7,6 @@ import {
   rider,
   warehouse,
 } from "@/lib/db/schema"
-import { parseBody } from "@/lib/validation"
 import {
   orderApproveSchema,
   orderDeliveredSchema,
@@ -15,6 +14,7 @@ import {
   orderFailedSchema,
   orderPickedUpSchema,
   orderReturnSchema,
+  parseBody,
 } from "@/lib/validation"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
@@ -423,31 +423,44 @@ export async function applyOrderTransition(
     body = parsed.data
   }
 
-  const [orderRow] = await db
-    .select()
-    .from(order)
-    .where(eq(order.id, orderId))
-    .limit(1)
-  if (!orderRow) {
-    return NextResponse.json({ error: "Order not found" }, { status: 404 })
-  }
+  // Transaction: lock this order row for the duration of the guard + write so
+  // two concurrent transitions on the same order (e.g. two admins approving,
+  // or a rider double-submitting a delivery outcome) can't both pass the
+  // guard against stale state. `FOR UPDATE` makes a second concurrent
+  // transaction block here until the first commits, then re-reads the
+  // already-updated row — so its own guard correctly sees the new status.
+  return await db.transaction(async (tx) => {
+    const [orderRow] = await tx
+      .select()
+      .from(order)
+      .where(eq(order.id, orderId))
+      .for("update")
+      .limit(1)
+    if (!orderRow) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    }
 
-  const ctx = { order: orderRow, session: me, body } as TransitionContext<never>
+    const ctx = {
+      order: orderRow,
+      session: me,
+      body,
+    } as TransitionContext<never>
 
-  const guardError = await def.guard(ctx)
-  if (guardError) {
-    return NextResponse.json(
-      { error: guardError.error },
-      { status: guardError.status },
-    )
-  }
+    const guardError = await def.guard(ctx)
+    if (guardError) {
+      return NextResponse.json(
+        { error: guardError.error },
+        { status: guardError.status },
+      )
+    }
 
-  const updateValues = await def.buildUpdate(ctx)
-  const [updated] = await db
-    .update(order)
-    .set(updateValues)
-    .where(eq(order.id, orderId))
-    .returning()
+    const updateValues = await def.buildUpdate(ctx)
+    const [updated] = await tx
+      .update(order)
+      .set(updateValues)
+      .where(eq(order.id, orderId))
+      .returning()
 
-  return NextResponse.json(updated)
+    return NextResponse.json(updated)
+  })
 }

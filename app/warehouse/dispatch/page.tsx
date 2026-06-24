@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Truck, PackageOpen, Bike, Send } from "lucide-react"
+import { Bike, PackageOpen, Search, Send, Truck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -16,6 +16,7 @@ import { AddressModal } from "@/features/orders/components/address-modal"
 import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -25,7 +26,7 @@ type FilterTab = "READY" | "DISPATCHED"
 export default function WarehouseDispatchPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
-  const { orders } = useOrders()
+  const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders, warehouseDeliveryRiders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("READY")
@@ -37,8 +38,38 @@ export default function WarehouseDispatchPage() {
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
 
-  // Parcels held in this warehouse, awaiting a delivery rider.
+  // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
+  // counts come from the unfiltered `allOrders`; the table-facing versions
+  // below use the search-narrowed `orders`.
   const ready = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.status === "IN_WAREHOUSE" &&
+              o.warehouseId === currentWarehouse.id,
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  // Parcels this warehouse has already dispatched for delivery.
+  const dispatched = useMemo(
+    () =>
+      currentWarehouse
+        ? allOrders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              o.deliveryRiderId != null &&
+              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
+                o.status,
+              ),
+          )
+        : [],
+    [allOrders, currentWarehouse],
+  )
+
+  const visibleReady = useMemo(
     () =>
       currentWarehouse
         ? orders.filter(
@@ -50,8 +81,7 @@ export default function WarehouseDispatchPage() {
     [orders, currentWarehouse],
   )
 
-  // Parcels this warehouse has already dispatched for delivery.
-  const dispatched = useMemo(
+  const visibleDispatched = useMemo(
     () =>
       currentWarehouse
         ? orders.filter(
@@ -66,7 +96,7 @@ export default function WarehouseDispatchPage() {
     [orders, currentWarehouse],
   )
 
-  const visible = tab === "READY" ? ready : dispatched
+  const visible = tab === "READY" ? visibleReady : visibleDispatched
 
   function openDispatch(order: Order) {
     setActiveOrder(order)
@@ -196,16 +226,27 @@ export default function WarehouseDispatchPage() {
         ]}
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="READY">
-            Ready to dispatch ({ready.length})
-          </TabsTrigger>
-          <TabsTrigger value="DISPATCHED">
-            Dispatched ({dispatched.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="READY">
+              Ready to dispatch ({ready.length})
+            </TabsTrigger>
+            <TabsTrigger value="DISPATCHED">
+              Dispatched ({dispatched.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-0">
