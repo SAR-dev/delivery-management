@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { homeForRole, useAuth } from "@/features/account/hooks/use-auth"
 
 export default function Page() {
   const router = useRouter()
@@ -14,7 +14,7 @@ export default function Page() {
     if (currentUser) {
       router.replace(homeForRole(currentUser.role))
     } else {
-      router.replace("/login")
+      router.replace("/landing")
     }
   }, [isReady, currentUser, router])
 

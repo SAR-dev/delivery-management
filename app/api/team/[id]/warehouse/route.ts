@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { profile, warehouse } from "@/lib/db/schema"
+import { profile, user, warehouse } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { z } from "zod"
@@ -60,6 +61,32 @@ export async function PATCH(
     .set({ warehouseId })
     .where(eq(profile.userId, id))
     .returning()
+
+  const [targetUser] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1)
+
+  let warehouseName: string | null = null
+  if (warehouseId) {
+    const [wh] = await db
+      .select({ name: warehouse.name })
+      .from(warehouse)
+      .where(eq(warehouse.id, warehouseId))
+      .limit(1)
+    warehouseName = wh?.name ?? warehouseId
+  }
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "TEAM_MEMBER_WAREHOUSE_REASSIGNED",
+    entityType: "user",
+    entityId: id,
+    description: warehouseName
+      ? `Assigned ${targetUser?.name ?? id} to warehouse ${warehouseName}`
+      : `Unassigned ${targetUser?.name ?? id} from their warehouse`,
+  })
 
   return NextResponse.json(updated)
 }

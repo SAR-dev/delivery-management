@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
@@ -63,6 +64,14 @@ export async function POST(req: Request) {
       isActive: true,
     })
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_CREATED",
+    entityType: "warehouse",
+    entityId: created.id,
+    description: `Created warehouse ${created.name} (${created.city})`,
+  })
 
   return NextResponse.json(created, { status: 201 })
 }

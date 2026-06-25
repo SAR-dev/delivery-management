@@ -1,8 +1,9 @@
 import type {
-  OrderStatus,
+  EmailLogStatus,
   MerchantStatus,
-  Role,
+  OrderStatus,
   PayoutRequestStatus,
+  Role,
 } from "@/lib/types"
 import { siteConfig } from "@/config/site"
 
@@ -11,6 +12,12 @@ import { siteConfig } from "@/config/site"
 export const BRAND_NAME = siteConfig.name
 export const CURRENCY_SUFFIX = "TK"
 export const MAX_BULK_ORDERS = 50
+
+// DataTable rows-per-page: stored per-account on profile.tableRowsPerPage.
+// Single source of truth for the bounds — used by validation, the API
+// fallback, the seed script, and DataTable's own defensive clamp.
+export const DEFAULT_TABLE_ROWS_PER_PAGE = 20
+export const MAX_TABLE_ROWS_PER_PAGE = 250
 
 export const BADGE_TONES = {
   pending: "bg-chart-3/15 text-chart-3 border-chart-3/25",
@@ -89,4 +96,14 @@ export const ROLE_TONES: Record<Role, BadgeTone> = {
   WAREHOUSE_ADMIN: "warehouse",
   MERCHANT: "neutral",
   RIDER: "neutral",
+}
+
+export const EMAIL_LOG_STATUS_LABELS: Record<EmailLogStatus, string> = {
+  SENT: "Sent",
+  FAILED: "Failed",
+}
+
+export const EMAIL_LOG_STATUS_TONES: Record<EmailLogStatus, BadgeTone> = {
+  SENT: "success",
+  FAILED: "danger",
 }

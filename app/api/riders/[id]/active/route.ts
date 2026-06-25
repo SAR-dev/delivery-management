@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { rider } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -40,6 +41,14 @@ export async function PATCH(
     .set({ isActive: !current.isActive })
     .where(eq(rider.id, id))
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: updated.isActive ? "RIDER_ACTIVATED" : "RIDER_DEACTIVATED",
+    entityType: "rider",
+    entityId: updated.id,
+    description: `${updated.isActive ? "Activated" : "Deactivated"} rider ${updated.name}`,
+  })
 
   return NextResponse.json(updated)
 }

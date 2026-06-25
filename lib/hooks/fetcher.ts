@@ -17,6 +17,8 @@ export const RESOURCE_KEYS = [
   "/api/warehouses",
   "/api/divisions",
   "/api/security-config",
+  "/api/audit-logs",
+  "/api/email-logs",
 ] as const
 
 // Shared fetcher for every resource hook. Throws on non-2xx so SWR surfaces

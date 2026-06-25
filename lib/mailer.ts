@@ -6,11 +6,14 @@
 // Usage:
 //   await sendMail({ to: "x@y.com", subject: "Hi", html: "<b>Hello</b>" })
 //
-// Failed mails (exhausted all retries) are stored in the `failed_mail` table.
+// Every fully-resolved send attempt (delivered, or all retries exhausted) is
+// recorded in the `email_log` table — this is the Admin/Super Admin "Email
+// logs" history. Failed sends are additionally stored in `failed_mail` as
+// before, for any future manual-resend tooling.
 
 import nodemailer, { type SendMailOptions } from "nodemailer"
 import { db } from "@/lib/db"
-import { failedMail } from "@/lib/db/schema"
+import { emailLog, failedMail } from "@/lib/db/schema"
 
 export interface MailPayload {
   to: string | string[]
@@ -39,6 +42,28 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+// Inserts one row into `email_log` for a fully-resolved send attempt
+// (success or exhausted-retries failure). Never throws — logging must not
+// mask the original mail outcome.
+async function logEmail(
+  payload: MailPayload,
+  status: (typeof emailLog.$inferInsert)["status"],
+  attempts: number,
+  error?: string,
+) {
+  try {
+    await db.insert(emailLog).values({
+      to: Array.isArray(payload.to) ? payload.to.join(", ") : payload.to,
+      subject: payload.subject,
+      status,
+      attempts,
+      error: error ?? null,
+    })
+  } catch (dbErr) {
+    console.error("[mailer] Failed to write email_log entry:", dbErr)
+  }
+}
+
 export async function sendMail(
   payload: MailPayload,
   options: SendMailOptions_ = {},
@@ -59,6 +84,7 @@ export async function sendMail(
     try {
       await transporter.sendMail(mailOptions)
       console.log(`[mailer] Email sent to ${payload.to} (attempt ${attempt})`)
+      await logEmail(payload, "SENT", attempt)
       return
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
@@ -91,6 +117,12 @@ export async function sendMail(
     // Don't let a DB failure swallow the original mail error.
     console.error("[mailer] Failed to log failed email to DB:", dbErr)
   }
+  await logEmail(
+    payload,
+    "FAILED",
+    totalAttempts,
+    lastError?.message ?? "Unknown error",
+  )
 
   throw new Error(
     `[mailer] Failed after ${totalAttempts} attempts. Last error: ${lastError?.message}`,

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { rider } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -63,6 +64,15 @@ export async function PATCH(
     })
     .where(eq(rider.id, id))
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "RIDER_UPDATED",
+    entityType: "rider",
+    entityId: updated.id,
+    description: `Updated rider ${updated.name}`,
+    metadata: { name, phone, zone, warehouseId, taskType, isActive },
+  })
 
   return NextResponse.json(updated)
 }

@@ -30,9 +30,10 @@ lib/
   types.ts                           re-exports entity types from schema
   validation.ts                      zod schemas + parseBody
   api-auth.ts                        requireSession()
+  audit.ts                           logAudit() — the only audit_log writer
   nav-config.ts                      sidebar entries per role
   constants.ts, pricing.ts           cross-cutting domain logic
-  mailer.ts, mail-templates.ts       transactional email
+  mailer.ts, mail-templates.ts       transactional email (+ email_log history)
   storage/                           file upload backends (local / R2)
 config/
   site.json, site.ts                 brand name, tagline, icon
@@ -63,6 +64,8 @@ features/
   team/
   account/         hooks/use-auth.tsx (the auth context)
   security/
+  audit-logs/      hooks/use-audit-logs.ts — read-only, Admin/Super Admin only
+  email-logs/      hooks/use-email-logs.ts — read-mostly, Admin/Super Admin only
 ```
 
 `components/` keeps **only generic, feature-agnostic** building blocks
@@ -70,6 +73,15 @@ features/
 `form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
 (`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
 `hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
+
+**One documented exception:** `components/data-table.tsx` imports
+`useAuth()` from `features/account` to default its `pageSize` prop to the
+signed-in account's saved rows-per-page preference
+(`profile.tableRowsPerPage`, see Recipe A's example below). This was a
+deliberate tradeoff — the alternative was threading `pageSize` through all 18+
+page-level call sites — and it's the only place in `components/` allowed to
+reach into `features/`. Don't use this as precedent for other components;
+ask before adding a second one.
 
 ### Only split a component into a folder when there's real content
 
@@ -317,6 +329,57 @@ Rules:
 
 ---
 
+## 3.5. Audit log (`lib/audit.ts`)
+
+Every state-changing mutation made by an Admin or Super Admin (and, where a
+role shares a write path with them — e.g. Warehouse Admin riders, RIDER order
+transitions) should be recorded to the `audit_log` table through the single
+entry point:
+
+```ts
+import { logAudit } from "@/lib/audit"
+
+await logAudit({
+  actor: { userId: me.userId, name: me.name, role: me.role },
+  action: "MERCHANT_APPROVED", // SCREAMING_SNAKE_CASE verb
+  entityType: "merchant", // lowercase, matches the schema table name
+  entityId: updated.id,
+  description: `Approved merchant ${updated.businessName}`, // human-readable, shown directly in the table
+  metadata: { ... }, // optional structured context (old/new values, etc.)
+})
+```
+
+Rules:
+
+- **Call it after the write succeeds**, not before — never log an action that
+  didn't actually happen (e.g. a guard rejected it, or the row wasn't found).
+  In a `db.transaction()` flow, capture the committed row into a plain
+  variable/object _inside_ the transaction callback and check it for
+  non-null _after_ the transaction resolves, then log — don't log from
+  inside the callback itself, since a transaction can still be rolled back
+  by the caller after the callback returns.
+- **`logAudit()` never throws.** A logging failure must not break the request
+  it's describing — it only writes to `console.error`. Don't wrap calls in
+  your own `try/catch`; the helper already swallows errors.
+- **One call per mutation**, placed in the route file (or, for orders, in
+  `applyOrderTransition` itself — that single hook covers all ten
+  transitions, so don't add per-transition calls).
+- `action` is a short machine-readable verb in `SCREAMING_SNAKE_CASE`,
+  generally `<ENTITY>_<VERB>` (`WAREHOUSE_CREATED`, `RIDER_DEACTIVATED`,
+  `PAYOUT_REJECTED`). `entityType` is the lowercase, singular table name
+  (`merchant`, `payout_request`, `order`) — used for search/filtering, not
+  shown directly to the reader.
+- Resources that are purely merchant/rider self-service (e.g.
+  `pickup_location`) are **not** audited — this trail exists to track actions
+  _by_ the privileged roles, not every write in the system.
+
+The trail itself is read-only and visible only to Admin and Super Admin, at
+`/dashboard/audit-logs` (`app/api/audit-logs/route.ts`,
+`features/audit-logs/hooks/use-audit-logs.ts`). It has no create/update/delete
+UI — `logAudit()` is the only writer, by design.
+
+---
+
 ## 4. Storage (`lib/storage/`)
 
 File uploads go through a single entry point — **never import the local or R2
@@ -359,8 +422,11 @@ in `validateEnv()`.
 ## 6. Email (`lib/mailer.ts`)
 
 Transactional email goes through `sendMail()` from `lib/mailer.ts`. It uses
-Gmail SMTP with retry/backoff and logs failed sends to the `failed_mail` table.
-HTML templates live in `lib/mail-templates.ts`.
+Gmail SMTP with retry/backoff. Every fully-resolved send (delivered, or all
+retries exhausted) is recorded to the `email_log` table — this is the
+Admin/Super Admin "Email logs" history at `/dashboard/email-logs`. Failed
+sends are additionally stored in `failed_mail`, kept for any future
+manual-resend tooling. HTML templates live in `lib/mail-templates.ts`.
 
 ```ts
 import { sendMail } from "@/lib/mailer"
@@ -372,7 +438,13 @@ await sendMail({
 })
 ```
 
-Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`.
+Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`,
+and never insert into `email_log` / `failed_mail` from anywhere else —
+`sendMail()` is the only writer. The one allowed exception is
+`app/api/email-logs/[id]/route.ts`, which lets an Admin/Super Admin manually
+flip a `FAILED` row to `SENT` after confirming delivery or resending by hand —
+that mutation calls `logAudit()` (see [§3.5](#35-audit-log-libaudits)) so the
+override itself is traceable.
 
 ---
 
@@ -414,6 +486,22 @@ Example: the `rider.taskType` column added recently.
 > If the column is `NOT NULL` and existing rows would violate it, either give it
 > a `.default(...)` or backfill before pushing (the push will otherwise fail).
 
+**Variant — a field on `profile` the user edits about themselves** (not a
+resource entity): example, `profile.tableRowsPerPage`. The shape differs from
+the above in three ways:
+
+- There's no per-resource hook to extend — the field is read/written through
+  `features/account/hooks/use-auth.tsx` and `app/api/users/me/route.ts`
+  instead, alongside the existing name/avatar fields.
+- `app/api/users/me/route.ts`'s `PATCH` writes to **two tables**
+  (`user` for name/image, `profile` for everything else). Once a second field
+  lives on `profile`, that handler is a genuine multi-table write — wrap it in
+  `db.transaction()` per [§2's transaction subsection](#transaction-boundary--row-lock),
+  even though today's UI only ever sends one field group per request.
+- Skip the seed step if the column has a sane `.default(...)` — Drizzle
+  applies it on insert when the seed script doesn't set the field explicitly,
+  so there's nothing to backfill in `lib/db/seed.ts`.
+
 ### Recipe B — Add a brand-new resource (full CRUD)
 
 Example structure to mirror: **divisions** (simple) or **merchants** (rich).
@@ -430,6 +518,9 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
      role-scoped — **enforce it server-side; Neon has no RLS.**
+   - If this is a resource Admin/Super Admin manage (not pure
+     merchant/rider self-service), call `logAudit()` after each write
+     succeeds — see [§3.5](#35-audit-log-libaudits).
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
@@ -457,7 +548,13 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    `app/dashboard/orders/page.tsx`) above the table — don't keep a local
    `useState` for it. `DataTable`'s own footer already places pagination on
    the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page.
+   passed); don't rebuild that layout per page. Don't pass a `pageSize` prop
+   unless this table genuinely needs a different size than the rest of the
+   app — it already defaults to the signed-in account's saved preference
+   (Account settings → Tables, 1-250, default 20). An explicit `pageSize` is
+   for deliberately small, fixed widgets (see the dashboard summary lists in
+   `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
+   setting.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.
@@ -558,7 +655,11 @@ machine in `features/orders/transitions.ts`.
 Never duplicate the auth/parse/guard/update plumbing inline — the shared
 runner already handles the transaction boundary and row lock (see
 [§2](#transaction-boundary--row-lock)), so a new transition only needs to
-define its `guard`/`buildUpdate`, never its own `db.transaction()` call.
+define its `guard`/`buildUpdate`, never its own `db.transaction()` call. It's
+also already audited: `applyOrderTransition` calls `logAudit()` once, after
+the transaction commits, for every transition — add the new name's
+human-readable label to `TRANSITION_LABELS` in `transitions.ts` and you're
+done; don't add a second `logAudit()` call in the route wrapper.
 
 ---
 

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { order, payoutRequest } from "@/lib/db/schema"
 import { parseBody, payoutRejectSchema } from "@/lib/validation"
@@ -54,6 +55,14 @@ export async function PATCH(
       .returning()
 
     return rejected
+  })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "PAYOUT_REJECTED",
+    entityType: "payout_request",
+    entityId: updated.id,
+    description: `Rejected payout request ${updated.code}: ${reason.trim()}`,
   })
 
   return NextResponse.json(updated)

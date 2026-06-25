@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -24,5 +25,14 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_REACTIVATED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Reactivated merchant ${updated.businessName}`,
+  })
+
   return NextResponse.json(updated)
 }

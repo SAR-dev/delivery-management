@@ -54,6 +54,16 @@ export const pageContent = {
       description:
         "Manage the rider roster. Every rider belongs to a warehouse; their task type controls whether they pick up, deliver, or both.",
     },
+    auditLogs: {
+      title: "Audit logs",
+      description:
+        "A read-only trail of state-changing actions across the platform — who did what, and when.",
+    },
+    emailLogs: {
+      title: "Email logs",
+      description:
+        "Every transactional email the platform has attempted to send, including delivery failures.",
+    },
   },
   warehouse: {
     riders: {

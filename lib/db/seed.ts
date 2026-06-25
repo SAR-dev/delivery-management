@@ -20,18 +20,21 @@ import "dotenv/config"
 import { auth } from "@/lib/auth"
 import { db, pool } from "@/lib/db"
 import {
-  user,
+  auditLog,
   division,
-  warehouse,
-  rider,
+  emailLog,
   merchant,
-  pickupLocation,
-  securityConfig,
-  profile,
   order,
   payoutRequest,
+  pickupLocation,
+  profile,
+  rider,
+  securityConfig,
+  user,
+  warehouse,
 } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
+import { SEED_CREDENTIALS } from "./seed-credentials"
 
 // ---------------------------------------------------------------------------
 // Division IDs — stable so seeded entities can reference them by name.
@@ -46,7 +49,6 @@ const DIVISION_IDS = {
   Rangpur: "division_rangpur",
   Mymensingh: "division_mymensingh",
 } as const
-import { SEED_CREDENTIALS } from "./seed-credentials"
 
 // ---------------------------------------------------------------------------
 // Flags
@@ -135,7 +137,7 @@ async function cleanDatabase() {
   // TRUNCATE with CASCADE lets Postgres resolve all FK dependencies in one shot,
   // so we don't have to manually maintain deletion order.
   await db.execute(
-    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division" CASCADE`,
+    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division", "audit_log", "email_log" CASCADE`,
   )
 
   log("Clean complete.\n")
@@ -1338,6 +1340,140 @@ async function seedPayoutLinkedOrders() {
 }
 
 // ---------------------------------------------------------------------------
+// Audit logs — a handful of representative entries so the Audit Logs page
+// (Admin / Super Admin) isn't empty on first run. Timestamps are fixed
+// (not "now") so a re-seed produces a stable, readable timeline.
+// ---------------------------------------------------------------------------
+
+async function seedAuditLogs() {
+  log("Seeding audit logs…")
+
+  const rows = [
+    {
+      id: "auditlog_seed_0001",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "SECURITY_CONFIG_UPDATED",
+      entityType: "security_config",
+      entityId: "default",
+      description: "Updated security money rules",
+      createdAt: "2025-01-10T09:00:00Z",
+    },
+    {
+      id: "auditlog_seed_0002",
+      actorId: "u5f1ybhii5mzu2ejkcckusxn",
+      actorName: "Tanvir Hossain",
+      actorRole: "ADMIN" as const,
+      action: "MERCHANT_APPROVED",
+      entityType: "merchant",
+      entityId: "merchant_threadnstyle",
+      description: "Approved merchant Thread & Style",
+      createdAt: "2025-01-12T10:15:00Z",
+    },
+    {
+      id: "auditlog_seed_0003",
+      actorId: "u5f1ybhii5mzu2ejkcckusxn",
+      actorName: "Tanvir Hossain",
+      actorRole: "ADMIN" as const,
+      action: "ORDER_APPROVE",
+      entityType: "order",
+      entityId: "order_pf100274",
+      description: "Approved order PF-100274",
+      createdAt: "2025-01-14T07:20:00Z",
+    },
+    {
+      id: "auditlog_seed_0004",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "PAYOUT_APPROVED",
+      entityType: "payout_request",
+      entityId: "jybrz4o9bx5nefstz1drr1ex",
+      description: "Approved payout request PR-1001",
+      createdAt: "2025-01-15T12:00:00Z",
+    },
+    {
+      id: "auditlog_seed_0005",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "TEAM_MEMBER_CREATED",
+      entityType: "user",
+      entityId: "u5f1ybhii5mzu2ejkcckusxn",
+      description:
+        "Created ADMIN account for Tanvir Hossain (tanvir@parcelflow.io)",
+      createdAt: "2025-01-08T08:00:00Z",
+    },
+  ]
+
+  for (const row of rows) {
+    const exists = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.id, row.id))
+    if (exists.length > 0) {
+      log(`  skip audit log ${row.id}`)
+      continue
+    }
+    await db.insert(auditLog).values(row)
+    log(`  created audit log ${row.action}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email logs — a handful of representative sent/failed entries so the Email
+// Logs page (Admin / Super Admin) isn't empty on first run.
+// ---------------------------------------------------------------------------
+
+async function seedEmailLogs() {
+  log("Seeding email logs…")
+
+  const rows = [
+    {
+      id: "emaillog_seed_0001",
+      to: "owner@threadnstyle.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "SENT" as const,
+      attempts: 1,
+      error: null,
+      createdAt: "2025-01-12T10:15:05Z",
+    },
+    {
+      id: "emaillog_seed_0002",
+      to: "owner@urbanthreads.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "SENT" as const,
+      attempts: 2,
+      error: null,
+      createdAt: "2025-01-13T11:05:00Z",
+    },
+    {
+      id: "emaillog_seed_0003",
+      to: "owner@gadgethub.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "FAILED" as const,
+      attempts: 4,
+      error: "Connection timeout while contacting mail server",
+      createdAt: "2025-01-16T09:40:00Z",
+    },
+  ]
+
+  for (const row of rows) {
+    const exists = await db
+      .select()
+      .from(emailLog)
+      .where(eq(emailLog.id, row.id))
+    if (exists.length > 0) {
+      log(`  skip email log ${row.id}`)
+      continue
+    }
+    await db.insert(emailLog).values(row)
+    log(`  created email log to ${row.to} (${row.status})`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1356,6 +1492,8 @@ async function main() {
     await seedPickupLocations()
     await seedSecurityConfig()
     await seedUsers() // must come after warehouses (warehouseId FK in profile)
+    await seedAuditLogs() // references seeded user ids, but no FK constraint
+    await seedEmailLogs()
 
     if (!MIN_MODE) {
       await seedOrders() // must come after riders + merchants + pickup locations

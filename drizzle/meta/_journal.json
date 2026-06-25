@@ -57,6 +57,20 @@
       "when": 1782214516326,
       "tag": "0007_jazzy_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782296155471,
+      "tag": "0008_add_table_rows_per_page",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782356699411,
+      "tag": "0009_glamorous_redwing",
+      "breakpoints": true
     }
   ]
 }

@@ -61,10 +61,13 @@ Rules:
 
 # Directory Structure
 ```
+app/api/audit-logs/route.ts
 app/api/auth/[...all]/route.ts
 app/api/divisions/[id]/route.ts
 app/api/divisions/public/route.ts
 app/api/divisions/route.ts
+app/api/email-logs/[id]/route.ts
+app/api/email-logs/route.ts
 app/api/merchants/[id]/approve/route.ts
 app/api/merchants/[id]/pricing/route.ts
 app/api/merchants/[id]/reactivate/route.ts
@@ -104,7 +107,9 @@ app/api/users/me/route.ts
 app/api/warehouses/[id]/route.ts
 app/api/warehouses/route.ts
 app/dashboard/account/page.tsx
+app/dashboard/audit-logs/page.tsx
 app/dashboard/divisions/page.tsx
+app/dashboard/email-logs/page.tsx
 app/dashboard/layout.tsx
 app/dashboard/merchants/page.tsx
 app/dashboard/orders/[id]/page.tsx
@@ -187,6 +192,8 @@ drizzle/0004_add_pickup_proof_refs.sql
 drizzle/0005_conscious_lifeguard.sql
 drizzle/0006_fuzzy_naoko.sql
 drizzle/0007_jazzy_king_bedlam.sql
+drizzle/0008_add_table_rows_per_page.sql
+drizzle/0009_glamorous_redwing.sql
 drizzle/meta/_journal.json
 drizzle/meta/0000_snapshot.json
 drizzle/meta/0001_snapshot.json
@@ -196,9 +203,13 @@ drizzle/meta/0004_snapshot.json
 drizzle/meta/0005_snapshot.json
 drizzle/meta/0006_snapshot.json
 drizzle/meta/0007_snapshot.json
+drizzle/meta/0008_snapshot.json
+drizzle/meta/0009_snapshot.json
 features/account/components/account-settings.tsx
 features/account/hooks/use-auth.tsx
+features/audit-logs/hooks/use-audit-logs.ts
 features/divisions/hooks/use-divisions.ts
+features/email-logs/hooks/use-email-logs.ts
 features/merchants/components/merchant-status-badge.tsx
 features/merchants/dialogs/pricing-dialog.tsx
 features/merchants/hooks/use-merchants.ts
@@ -233,6 +244,7 @@ features/team/dialogs/create-account-dialog.tsx
 features/team/hooks/use-team.ts
 features/warehouses/hooks/use-warehouses.ts
 lib/api-auth.ts
+lib/audit.ts
 lib/auth-client.ts
 lib/auth.ts
 lib/constants.ts
@@ -261,6 +273,482 @@ lib/validation.ts
 
 # Files
 
+## File: app/api/audit-logs/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { db } from "@/lib/db"
+import { auditLog } from "@/lib/db/schema"
+import { desc, ilike, or } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+// Read-only. Visible to Admin and Super Admin only — this is an internal
+// trail of who-did-what, not a resource either role mutates through the API.
+// Mirrors /api/team: other roles get an empty list (not 403) so the global
+// useDataError aggregator — which subscribes for every signed-in user,
+// regardless of role — doesn't surface a false "failed to load" banner.
+export async function GET(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+    return NextResponse.json([], { status: 200 })
+  }
+
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  const where = search
+    ? (() => {
+        const likeQ = `%${search}%`
+        return or(
+          ilike(auditLog.actorName, likeQ),
+          ilike(auditLog.action, likeQ),
+          ilike(auditLog.entityType, likeQ),
+          ilike(auditLog.description, likeQ),
+        )
+      })()
+    : undefined
+
+  const rows = where
+    ? await db
+        .select()
+        .from(auditLog)
+        .where(where)
+        .orderBy(desc(auditLog.createdAt))
+    : await db.select().from(auditLog).orderBy(desc(auditLog.createdAt))
+
+  return NextResponse.json(rows)
+}
+````
+
+## File: app/api/email-logs/[id]/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
+import { db } from "@/lib/db"
+import { emailLog } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+// Admin / Super Admin manually marks a FAILED email log entry as SENT — for
+// example after confirming the email actually arrived, or after resending it
+// by hand outside the app. This is the only mutation allowed on email_log;
+// everything else about a row is written automatically by lib/mailer.ts.
+export async function PATCH(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  const [current] = await db
+    .select()
+    .from(emailLog)
+    .where(eq(emailLog.id, id))
+    .limit(1)
+
+  if (!current)
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (current.status !== "FAILED") {
+    return NextResponse.json(
+      { error: "Only FAILED entries can be marked as sent." },
+      { status: 400 },
+    )
+  }
+
+  const [updated] = await db
+    .update(emailLog)
+    .set({
+      status: "SENT",
+      markedSentBy: me.name,
+      markedSentAt: new Date().toISOString(),
+    })
+    .where(eq(emailLog.id, id))
+    .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "EMAIL_LOG_MARKED_SENT",
+    entityType: "email_log",
+    entityId: updated.id,
+    description: `Marked email to ${updated.to} ("${updated.subject}") as sent`,
+  })
+
+  return NextResponse.json(updated)
+}
+````
+
+## File: app/api/email-logs/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { db } from "@/lib/db"
+import { emailLog } from "@/lib/db/schema"
+import { desc, ilike, or } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+// Read-only. Visible to Admin and Super Admin only. Mirrors /api/team:
+// other roles get an empty list (not 403) so the global useDataError
+// aggregator doesn't surface a false "failed to load" banner.
+export async function GET(req: Request) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
+    return NextResponse.json([], { status: 200 })
+  }
+
+  const search = new URL(req.url).searchParams.get("q")?.trim()
+  const where = search
+    ? (() => {
+        const likeQ = `%${search}%`
+        return or(ilike(emailLog.to, likeQ), ilike(emailLog.subject, likeQ))
+      })()
+    : undefined
+
+  const rows = where
+    ? await db
+        .select()
+        .from(emailLog)
+        .where(where)
+        .orderBy(desc(emailLog.createdAt))
+    : await db.select().from(emailLog).orderBy(desc(emailLog.createdAt))
+
+  return NextResponse.json(rows)
+}
+````
+
+## File: app/dashboard/audit-logs/page.tsx
+````typescript
+"use client"
+
+import { Search } from "lucide-react"
+import { useAuditLogs } from "@/features/audit-logs/hooks/use-audit-logs"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { RoleBadge } from "@/components/role-badge"
+import type { AuditLog } from "@/lib/types"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+function formatTimestamp(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+export default function AuditLogsPage() {
+  const { auditLogs, query, setQuery, isLoading } = useAuditLogs()
+
+  const columns: DataTableColumn<AuditLog>[] = [
+    {
+      id: "createdAt",
+      header: "When",
+      sortable: true,
+      sortValue: (l) => l.createdAt,
+      cell: (l) => (
+        <span className="text-muted-foreground text-sm whitespace-nowrap">
+          {formatTimestamp(l.createdAt)}
+        </span>
+      ),
+    },
+    {
+      id: "actor",
+      header: "Actor",
+      sortable: true,
+      sortValue: (l) => l.actorName,
+      cell: (l) => (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{l.actorName}</span>
+          <RoleBadge role={l.actorRole} />
+        </div>
+      ),
+    },
+    {
+      id: "action",
+      header: "Action",
+      sortable: true,
+      sortValue: (l) => l.action,
+      cell: (l) => (
+        <code className="bg-muted rounded px-1.5 py-0.5 text-xs">
+          {l.action}
+        </code>
+      ),
+    },
+    {
+      id: "entity",
+      header: "Entity",
+      sortable: true,
+      sortValue: (l) => l.entityType,
+      headClassName: "hidden sm:table-cell",
+      cellClassName: "hidden sm:table-cell",
+      cell: (l) => (
+        <span className="text-muted-foreground text-sm">{l.entityType}</span>
+      ),
+    },
+    {
+      id: "description",
+      header: "Description",
+      cell: (l) => <span className="text-sm">{l.description}</span>,
+    },
+  ]
+
+  return (
+    <>
+      <PageHeader
+        title={pageContent.dashboard.auditLogs.title}
+        description={pageContent.dashboard.auditLogs.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search actor, action, entity, description"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={auditLogs}
+            getRowKey={(l) => l.id}
+            initialSortId="createdAt"
+            initialSortDir="desc"
+            emptyMessage={isLoading ? "Loading…" : "No audit log entries yet."}
+            csv={{
+              parser: (l) => [
+                formatTimestamp(l.createdAt),
+                l.actorName,
+                l.actorRole,
+                l.action,
+                l.entityType,
+                l.entityId ?? "",
+                l.description,
+              ],
+              headers: [
+                "When",
+                "Actor",
+                "Role",
+                "Action",
+                "Entity type",
+                "Entity ID",
+                "Description",
+              ],
+              filename: "audit-logs",
+            }}
+          />
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+````
+
+## File: app/dashboard/email-logs/page.tsx
+````typescript
+"use client"
+
+import { useState } from "react"
+import { toast } from "sonner"
+import { CheckCheck, Loader2, Search } from "lucide-react"
+import { useEmailLogs } from "@/features/email-logs/hooks/use-email-logs"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { StatusBadge } from "@/components/status-badge"
+import {
+  EMAIL_LOG_STATUS_LABELS,
+  EMAIL_LOG_STATUS_TONES,
+} from "@/lib/constants"
+import type { EmailLog } from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+function formatTimestamp(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+export default function EmailLogsPage() {
+  const { emailLogs, query, setQuery, isLoading, markAsSent } = useEmailLogs()
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function handleMarkAsSent(log: EmailLog) {
+    setBusy(log.id)
+    try {
+      const result = await markAsSent(log.id)
+      if (result.ok) {
+        toast.success(`Marked email to ${log.to} as sent.`)
+      } else {
+        toast.error(result.error ?? "Unable to mark this email as sent.")
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const columns: DataTableColumn<EmailLog>[] = [
+    {
+      id: "createdAt",
+      header: "When",
+      sortable: true,
+      sortValue: (l) => l.createdAt,
+      cell: (l) => (
+        <span className="text-muted-foreground text-sm whitespace-nowrap">
+          {formatTimestamp(l.createdAt)}
+        </span>
+      ),
+    },
+    {
+      id: "to",
+      header: "To",
+      sortable: true,
+      sortValue: (l) => l.to,
+      cell: (l) => <span className="text-sm">{l.to}</span>,
+    },
+    {
+      id: "subject",
+      header: "Subject",
+      sortable: true,
+      sortValue: (l) => l.subject,
+      cell: (l) => <span className="text-sm">{l.subject}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (l) => l.status,
+      cell: (l) => (
+        <div className="flex flex-col gap-1">
+          <StatusBadge
+            label={EMAIL_LOG_STATUS_LABELS[l.status]}
+            tone={EMAIL_LOG_STATUS_TONES[l.status]}
+          />
+          {l.markedSentBy ? (
+            <span className="text-muted-foreground text-xs">
+              Marked sent by {l.markedSentBy}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "attempts",
+      header: "Attempts",
+      align: "right",
+      sortable: true,
+      sortValue: (l) => l.attempts,
+      headClassName: "hidden sm:table-cell",
+      cellClassName: "hidden text-right sm:table-cell",
+      cell: (l) => (
+        <span className="text-muted-foreground text-sm">{l.attempts}</span>
+      ),
+    },
+    {
+      id: "error",
+      header: "Error",
+      cell: (l) => (
+        <span className="text-muted-foreground text-xs">{l.error ?? "—"}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (l) =>
+        l.status === "FAILED" ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleMarkAsSent(l)}
+            disabled={busy === l.id}
+          >
+            {busy === l.id ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <CheckCheck className="size-4" />
+            )}
+            Mark as sent
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <>
+      <PageHeader
+        title={pageContent.dashboard.emailLogs.title}
+        description={pageContent.dashboard.emailLogs.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search recipient or subject"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={emailLogs}
+            getRowKey={(l) => l.id}
+            initialSortId="createdAt"
+            initialSortDir="desc"
+            emptyMessage={isLoading ? "Loading…" : "No email log entries yet."}
+            csv={{
+              parser: (l) => [
+                formatTimestamp(l.createdAt),
+                l.to,
+                l.subject,
+                l.status,
+                l.attempts,
+                l.error ?? "",
+                l.markedSentBy ?? "",
+              ],
+              headers: [
+                "When",
+                "To",
+                "Subject",
+                "Status",
+                "Attempts",
+                "Error",
+                "Marked sent by",
+              ],
+              filename: "email-logs",
+            }}
+          />
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+````
+
 ## File: components/theme-provider.tsx
 ````typescript
 "use client"
@@ -273,6 +761,3083 @@ export function ThemeProvider({
   ...props
 }: ComponentProps<typeof NextThemesProvider>) {
   return <NextThemesProvider {...props}>{children}</NextThemesProvider>
+}
+````
+
+## File: drizzle/0008_add_table_rows_per_page.sql
+````sql
+ALTER TABLE "profile" ADD COLUMN "tableRowsPerPage" integer DEFAULT 20 NOT NULL;
+````
+
+## File: drizzle/0009_glamorous_redwing.sql
+````sql
+CREATE TABLE "audit_log" (
+	"id" text PRIMARY KEY NOT NULL,
+	"actorId" text,
+	"actorName" text NOT NULL,
+	"actorRole" text NOT NULL,
+	"action" text NOT NULL,
+	"entityType" text NOT NULL,
+	"entityId" text,
+	"description" text NOT NULL,
+	"metadata" jsonb,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "email_log" (
+	"id" text PRIMARY KEY NOT NULL,
+	"to" text NOT NULL,
+	"subject" text NOT NULL,
+	"status" text NOT NULL,
+	"attempts" integer NOT NULL,
+	"error" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"markedSentBy" text,
+	"markedSentAt" timestamp with time zone
+);
+````
+
+## File: drizzle/meta/0008_snapshot.json
+````json
+{
+  "id": "6e93b581-5f23-4163-89e7-dbddd19cbffc",
+  "prevId": "92e161d4-9ac6-4e4d-abd5-a9e4fbc4a656",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "accountId": {
+          "name": "accountId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "providerId": {
+          "name": "providerId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accessToken": {
+          "name": "accessToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refreshToken": {
+          "name": "refreshToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idToken": {
+          "name": "idToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accessTokenExpiresAt": {
+          "name": "accessTokenExpiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refreshTokenExpiresAt": {
+          "name": "refreshTokenExpiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "account_userId_user_id_fk": {
+          "name": "account_userId_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.division": {
+      "name": "division",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "division_name_unique": {
+          "name": "division_name_unique",
+          "nullsNotDistinct": false,
+          "columns": ["name"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.failed_mail": {
+      "name": "failed_mail",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "html": {
+          "name": "html",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failedAt": {
+          "name": "failedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.merchant": {
+      "name": "merchant",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "businessName": {
+          "name": "businessName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ownerName": {
+          "name": "ownerName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "baseRate": {
+          "name": "baseRate",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "extraRatePerKg": {
+          "name": "extraRatePerKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maxWeightKg": {
+          "name": "maxWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
+        },
+        "freeWeightKg": {
+          "name": "freeWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "approvedBy": {
+          "name": "approvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approvedAt": {
+          "name": "approvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.order": {
+      "name": "order",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pickupLocationId": {
+          "name": "pickupLocationId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipientName": {
+          "name": "recipientName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipientPhone": {
+          "name": "recipientPhone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryAddress": {
+          "name": "deliveryAddress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryCity": {
+          "name": "deliveryCity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryDivisionId": {
+          "name": "deliveryDivisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryMapLink": {
+          "name": "deliveryMapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryImageLinks": {
+          "name": "deliveryImageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parcelWeightKg": {
+          "name": "parcelWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryType": {
+          "name": "deliveryType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'STANDARD'"
+        },
+        "productCost": {
+          "name": "productCost",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryCharge": {
+          "name": "deliveryCharge",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "securityMoney": {
+          "name": "securityMoney",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "totalCollectible": {
+          "name": "totalCollectible",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "approvedBy": {
+          "name": "approvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approvedAt": {
+          "name": "approvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupRiderId": {
+          "name": "pickupRiderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assignedAt": {
+          "name": "assignedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickedUpAt": {
+          "name": "pickedUpAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupProofRefs": {
+          "name": "pickupProofRefs",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receivedAtWarehouseAt": {
+          "name": "receivedAtWarehouseAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receivedByWarehouse": {
+          "name": "receivedByWarehouse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryRiderId": {
+          "name": "deliveryRiderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispatchedAt": {
+          "name": "dispatchedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispatchedBy": {
+          "name": "dispatchedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outForDeliveryAt": {
+          "name": "outForDeliveryAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveredAt": {
+          "name": "deliveredAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryProofRef": {
+          "name": "deliveryProofRef",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amountCollected": {
+          "name": "amountCollected",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failedAttemptAt": {
+          "name": "failedAttemptAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failureNote": {
+          "name": "failureNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryAttempts": {
+          "name": "deliveryAttempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failedResolvedAt": {
+          "name": "failedResolvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failedResolvedBy": {
+          "name": "failedResolvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "returnedAt": {
+          "name": "returnedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "returnReason": {
+          "name": "returnReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchantNote": {
+          "name": "merchantNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receiverNote": {
+          "name": "receiverNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codSettledAt": {
+          "name": "codSettledAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codSettledBy": {
+          "name": "codSettledBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payoutRequestId": {
+          "name": "payoutRequestId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_merchantId_merchant_id_fk": {
+          "name": "order_merchantId_merchant_id_fk",
+          "tableFrom": "order",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_pickupLocationId_pickup_location_id_fk": {
+          "name": "order_pickupLocationId_pickup_location_id_fk",
+          "tableFrom": "order",
+          "tableTo": "pickup_location",
+          "columnsFrom": ["pickupLocationId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_pickupRiderId_rider_id_fk": {
+          "name": "order_pickupRiderId_rider_id_fk",
+          "tableFrom": "order",
+          "tableTo": "rider",
+          "columnsFrom": ["pickupRiderId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_warehouseId_warehouse_id_fk": {
+          "name": "order_warehouseId_warehouse_id_fk",
+          "tableFrom": "order",
+          "tableTo": "warehouse",
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_deliveryRiderId_rider_id_fk": {
+          "name": "order_deliveryRiderId_rider_id_fk",
+          "tableFrom": "order",
+          "tableTo": "rider",
+          "columnsFrom": ["deliveryRiderId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_payoutRequestId_payout_request_id_fk": {
+          "name": "order_payoutRequestId_payout_request_id_fk",
+          "tableFrom": "order",
+          "tableTo": "payout_request",
+          "columnsFrom": ["payoutRequestId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "order_code_unique": {
+          "name": "order_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payout_request": {
+      "name": "payout_request",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "orderIds": {
+          "name": "orderIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "payoutMethod": {
+          "name": "payoutMethod",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payoutDetails": {
+          "name": "payoutDetails",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requestedAt": {
+          "name": "requestedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reviewedBy": {
+          "name": "reviewedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewedAt": {
+          "name": "reviewedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejectReason": {
+          "name": "rejectReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paidAt": {
+          "name": "paidAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payout_request_merchantId_merchant_id_fk": {
+          "name": "payout_request_merchantId_merchant_id_fk",
+          "tableFrom": "payout_request",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payout_request_code_unique": {
+          "name": "payout_request_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pickup_location": {
+      "name": "pickup_location",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mapLink": {
+          "name": "mapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "imageLinks": {
+          "name": "imageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "pickup_location_merchantId_merchant_id_fk": {
+          "name": "pickup_location_merchantId_merchant_id_fk",
+          "tableFrom": "pickup_location",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.profile": {
+      "name": "profile",
+      "schema": "",
+      "columns": {
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "canManagePricing": {
+          "name": "canManagePricing",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "tableRowsPerPage": {
+          "name": "tableRowsPerPage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "riderId": {
+          "name": "riderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "profile_userId_user_id_fk": {
+          "name": "profile_userId_user_id_fk",
+          "tableFrom": "profile",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rider": {
+      "name": "rider",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "zone": {
+          "name": "zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "taskType": {
+          "name": "taskType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DELIVERY'"
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rider_warehouseId_warehouse_id_fk": {
+          "name": "rider_warehouseId_warehouse_id_fk",
+          "tableFrom": "rider",
+          "tableTo": "warehouse",
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.security_config": {
+      "name": "security_config",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "lowValueThreshold": {
+          "name": "lowValueThreshold",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1000
+        },
+        "lowValueFlatFee": {
+          "name": "lowValueFlatFee",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "highValuePercentage": {
+          "name": "highValuePercentage",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedBy": {
+          "name": "updatedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.session": {
+      "name": "session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ipAddress": {
+          "name": "ipAddress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userAgent": {
+          "name": "userAgent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_userId_user_id_fk": {
+          "name": "session_userId_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user": {
+      "name": "user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emailVerified": {
+          "name": "emailVerified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banned": {
+          "name": "banned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banReason": {
+          "name": "banReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banExpires": {
+          "name": "banExpires",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "nullsNotDistinct": false,
+          "columns": ["email"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.verification": {
+      "name": "verification",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.warehouse": {
+      "name": "warehouse",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "managedBy": {
+          "name": "managedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
+````
+
+## File: drizzle/meta/0009_snapshot.json
+````json
+{
+  "id": "4d37869f-c73a-45d1-98f6-fe92cf2f2479",
+  "prevId": "6e93b581-5f23-4163-89e7-dbddd19cbffc",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "accountId": {
+          "name": "accountId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "providerId": {
+          "name": "providerId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accessToken": {
+          "name": "accessToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refreshToken": {
+          "name": "refreshToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idToken": {
+          "name": "idToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accessTokenExpiresAt": {
+          "name": "accessTokenExpiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refreshTokenExpiresAt": {
+          "name": "refreshTokenExpiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "account_userId_user_id_fk": {
+          "name": "account_userId_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_log": {
+      "name": "audit_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "actorId": {
+          "name": "actorId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actorName": {
+          "name": "actorName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actorRole": {
+          "name": "actorRole",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entityType": {
+          "name": "entityType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entityId": {
+          "name": "entityId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.division": {
+      "name": "division",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "division_name_unique": {
+          "name": "division_name_unique",
+          "nullsNotDistinct": false,
+          "columns": ["name"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_log": {
+      "name": "email_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "markedSentBy": {
+          "name": "markedSentBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "markedSentAt": {
+          "name": "markedSentAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.failed_mail": {
+      "name": "failed_mail",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "html": {
+          "name": "html",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failedAt": {
+          "name": "failedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.merchant": {
+      "name": "merchant",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "businessName": {
+          "name": "businessName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ownerName": {
+          "name": "ownerName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "baseRate": {
+          "name": "baseRate",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "extraRatePerKg": {
+          "name": "extraRatePerKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maxWeightKg": {
+          "name": "maxWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
+        },
+        "freeWeightKg": {
+          "name": "freeWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "approvedBy": {
+          "name": "approvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approvedAt": {
+          "name": "approvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.order": {
+      "name": "order",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pickupLocationId": {
+          "name": "pickupLocationId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipientName": {
+          "name": "recipientName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipientPhone": {
+          "name": "recipientPhone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryAddress": {
+          "name": "deliveryAddress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryCity": {
+          "name": "deliveryCity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryDivisionId": {
+          "name": "deliveryDivisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryMapLink": {
+          "name": "deliveryMapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryImageLinks": {
+          "name": "deliveryImageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parcelWeightKg": {
+          "name": "parcelWeightKg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryType": {
+          "name": "deliveryType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'STANDARD'"
+        },
+        "productCost": {
+          "name": "productCost",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deliveryCharge": {
+          "name": "deliveryCharge",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "securityMoney": {
+          "name": "securityMoney",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "totalCollectible": {
+          "name": "totalCollectible",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "approvedBy": {
+          "name": "approvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approvedAt": {
+          "name": "approvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupRiderId": {
+          "name": "pickupRiderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assignedAt": {
+          "name": "assignedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickedUpAt": {
+          "name": "pickedUpAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupProofRefs": {
+          "name": "pickupProofRefs",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receivedAtWarehouseAt": {
+          "name": "receivedAtWarehouseAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receivedByWarehouse": {
+          "name": "receivedByWarehouse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryRiderId": {
+          "name": "deliveryRiderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispatchedAt": {
+          "name": "dispatchedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispatchedBy": {
+          "name": "dispatchedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outForDeliveryAt": {
+          "name": "outForDeliveryAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveredAt": {
+          "name": "deliveredAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryProofRef": {
+          "name": "deliveryProofRef",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amountCollected": {
+          "name": "amountCollected",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failedAttemptAt": {
+          "name": "failedAttemptAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failureNote": {
+          "name": "failureNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryAttempts": {
+          "name": "deliveryAttempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failedResolvedAt": {
+          "name": "failedResolvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failedResolvedBy": {
+          "name": "failedResolvedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "returnedAt": {
+          "name": "returnedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "returnReason": {
+          "name": "returnReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchantNote": {
+          "name": "merchantNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receiverNote": {
+          "name": "receiverNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codSettledAt": {
+          "name": "codSettledAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codSettledBy": {
+          "name": "codSettledBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payoutRequestId": {
+          "name": "payoutRequestId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_merchantId_merchant_id_fk": {
+          "name": "order_merchantId_merchant_id_fk",
+          "tableFrom": "order",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_pickupLocationId_pickup_location_id_fk": {
+          "name": "order_pickupLocationId_pickup_location_id_fk",
+          "tableFrom": "order",
+          "tableTo": "pickup_location",
+          "columnsFrom": ["pickupLocationId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_pickupRiderId_rider_id_fk": {
+          "name": "order_pickupRiderId_rider_id_fk",
+          "tableFrom": "order",
+          "tableTo": "rider",
+          "columnsFrom": ["pickupRiderId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_warehouseId_warehouse_id_fk": {
+          "name": "order_warehouseId_warehouse_id_fk",
+          "tableFrom": "order",
+          "tableTo": "warehouse",
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_deliveryRiderId_rider_id_fk": {
+          "name": "order_deliveryRiderId_rider_id_fk",
+          "tableFrom": "order",
+          "tableTo": "rider",
+          "columnsFrom": ["deliveryRiderId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "order_payoutRequestId_payout_request_id_fk": {
+          "name": "order_payoutRequestId_payout_request_id_fk",
+          "tableFrom": "order",
+          "tableTo": "payout_request",
+          "columnsFrom": ["payoutRequestId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "order_code_unique": {
+          "name": "order_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payout_request": {
+      "name": "payout_request",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "orderIds": {
+          "name": "orderIds",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "payoutMethod": {
+          "name": "payoutMethod",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payoutDetails": {
+          "name": "payoutDetails",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requestedAt": {
+          "name": "requestedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reviewedBy": {
+          "name": "reviewedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewedAt": {
+          "name": "reviewedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejectReason": {
+          "name": "rejectReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paidAt": {
+          "name": "paidAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payout_request_merchantId_merchant_id_fk": {
+          "name": "payout_request_merchantId_merchant_id_fk",
+          "tableFrom": "payout_request",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payout_request_code_unique": {
+          "name": "payout_request_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pickup_location": {
+      "name": "pickup_location",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mapLink": {
+          "name": "mapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "imageLinks": {
+          "name": "imageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "pickup_location_merchantId_merchant_id_fk": {
+          "name": "pickup_location_merchantId_merchant_id_fk",
+          "tableFrom": "pickup_location",
+          "tableTo": "merchant",
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.profile": {
+      "name": "profile",
+      "schema": "",
+      "columns": {
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "canManagePricing": {
+          "name": "canManagePricing",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "tableRowsPerPage": {
+          "name": "tableRowsPerPage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchantId": {
+          "name": "merchantId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "riderId": {
+          "name": "riderId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "profile_userId_user_id_fk": {
+          "name": "profile_userId_user_id_fk",
+          "tableFrom": "profile",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rider": {
+      "name": "rider",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "zone": {
+          "name": "zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "taskType": {
+          "name": "taskType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DELIVERY'"
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rider_warehouseId_warehouse_id_fk": {
+          "name": "rider_warehouseId_warehouse_id_fk",
+          "tableFrom": "rider",
+          "tableTo": "warehouse",
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.security_config": {
+      "name": "security_config",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "lowValueThreshold": {
+          "name": "lowValueThreshold",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1000
+        },
+        "lowValueFlatFee": {
+          "name": "lowValueFlatFee",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "highValuePercentage": {
+          "name": "highValuePercentage",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedBy": {
+          "name": "updatedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.session": {
+      "name": "session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ipAddress": {
+          "name": "ipAddress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userAgent": {
+          "name": "userAgent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_userId_user_id_fk": {
+          "name": "session_userId_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user": {
+      "name": "user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emailVerified": {
+          "name": "emailVerified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banned": {
+          "name": "banned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banReason": {
+          "name": "banReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banExpires": {
+          "name": "banExpires",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "nullsNotDistinct": false,
+          "columns": ["email"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.verification": {
+      "name": "verification",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.warehouse": {
+      "name": "warehouse",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "managedBy": {
+          "name": "managedBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
+````
+
+## File: features/audit-logs/hooks/use-audit-logs.ts
+````typescript
+"use client"
+
+import { useEffect, useState } from "react"
+import useSWR from "swr"
+import type { AuditLog } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/audit-logs"
+
+// Audit log resource. Read-only — there is no create/update/delete, only the
+// list + search, so this hook is simpler than the full CRUD resources.
+export function useAuditLogs() {
+  const { currentUser } = useAuth()
+  const { data, error, isLoading, mutate } = useSWR<AuditLog[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<AuditLog[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const auditLogs = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allAuditLogs = data ?? []
+
+  return {
+    auditLogs,
+    allAuditLogs,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+  }
+}
+````
+
+## File: features/email-logs/hooks/use-email-logs.ts
+````typescript
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import useSWR from "swr"
+import type { EmailLog } from "@/lib/types"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+
+const KEY = "/api/email-logs"
+
+type Result = { ok: true } | { ok: false; error?: string }
+
+// Email log resource. Read-only except for markAsSent, which lets an Admin /
+// Super Admin manually flip a FAILED entry to SENT.
+export function useEmailLogs() {
+  const { currentUser } = useAuth()
+  const { data, error, isLoading, mutate } = useSWR<EmailLog[]>(
+    currentUser ? KEY : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const trimmedQuery = debouncedQuery.trim()
+  const searchKey =
+    currentUser && trimmedQuery
+      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
+      : null
+  const { data: searchData, isLoading: isSearchLoading } = useSWR<EmailLog[]>(
+    searchKey,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const emailLogs = trimmedQuery ? (searchData ?? []) : (data ?? [])
+  const allEmailLogs = data ?? []
+
+  const markAsSent = useCallback(
+    async (id: string): Promise<Result> => {
+      const res = await fetch(`${KEY}/${id}`, { method: "PATCH" })
+      const resData = await res.json()
+      if (!res.ok) return { ok: false, error: resData.error }
+      await mutate(
+        (prev) => (prev ?? []).map((l) => (l.id === id ? resData : l)),
+        { revalidate: false },
+      )
+      return { ok: true }
+    },
+    [mutate],
+  )
+
+  return {
+    emailLogs,
+    allEmailLogs,
+    query,
+    setQuery,
+    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    error,
+    mutate,
+    markAsSent,
+  }
+}
+````
+
+## File: lib/audit.ts
+````typescript
+import { db } from "@/lib/db"
+import { auditLog } from "@/lib/db/schema"
+import type { Role } from "@/lib/types"
+
+// Centralized audit-log entry point. This is the only place that should
+// insert into `audit_log` — call this from a route/transition right after a
+// write succeeds, the same way `lib/storage` centralizes uploads and
+// `lib/mailer` centralizes sending mail.
+//
+// Usage:
+//   await logAudit({
+//     actor: me,
+//     action: "MERCHANT_APPROVED",
+//     entityType: "merchant",
+//     entityId: updated.id,
+//     description: `Approved merchant ${updated.businessName}`,
+//   })
+
+export interface AuditActor {
+  userId: string
+  name: string
+  role: Role
+}
+
+export interface LogAuditInput {
+  actor: AuditActor
+  action: string
+  entityType: string
+  entityId?: string | null
+  description: string
+  metadata?: Record<string, unknown> | null
+}
+
+/**
+ * Writes one audit-log row. Never throws — a logging failure must not break
+ * the request it's describing, so any DB error is swallowed after being
+ * logged to the console (mirrors the fire-and-forget posture of sendMail's
+ * own failed_mail fallback insert).
+ */
+export async function logAudit(input: LogAuditInput): Promise<void> {
+  try {
+    await db.insert(auditLog).values({
+      actorId: input.actor.userId,
+      actorName: input.actor.name,
+      actorRole: input.actor.role,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      description: input.description,
+      metadata: input.metadata ?? null,
+    })
+  } catch (err) {
+    console.error("[audit] Failed to write audit log entry:", err)
+  }
 }
 ````
 
@@ -556,6 +4121,7 @@ export const { GET, POST } = toNextJsHandler(auth.handler)
 ## File: app/api/divisions/[id]/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import {
   division,
@@ -611,6 +4177,16 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_UPDATED",
+    entityType: "division",
+    entityId: updated.id,
+    description: `Updated division ${updated.name}`,
+    metadata: updates,
+  })
+
   return NextResponse.json(updated)
 }
 
@@ -659,7 +4235,22 @@ export async function DELETE(
     )
   }
 
+  const [existing] = await db
+    .select({ name: division.name })
+    .from(division)
+    .where(eq(division.id, id))
+    .limit(1)
+
   await db.delete(division).where(eq(division.id, id))
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_DELETED",
+    entityType: "division",
+    entityId: id,
+    description: `Deleted division ${existing?.name ?? id}`,
+  })
+
   return NextResponse.json({ ok: true })
 }
 ````
@@ -681,751 +4272,6 @@ export async function GET() {
     .orderBy(asc(division.name))
   return NextResponse.json(rows)
 }
-````
-
-## File: app/api/orders/[id]/__tests__/transitions.spec.ts
-````typescript
-/**
- * Spec-capture tests for the 10 order-transition routes.
- *
- * These tests document the CURRENT, observed behavior of each transition
- * endpoint (auth gate, status guard, ownership/business rules, and the exact
- * fields written on success) so that the upcoming refactor — extracting a
- * shared state machine in lib/orders/transitions.ts — can be verified as
- * behavior-preserving. They intentionally assert on real responses produced
- * by the real validation/business logic; only the Drizzle `db` layer and the
- * session lookup are mocked.
- */
-import { describe, it, expect, beforeEach, vi } from "vitest"
-
-// --- Controllable mock of the Drizzle data layer ----------------------------
-// Routes do: `db.select().from(x).where(eq(...)).limit(1)` (awaited, FIFO) and
-// `db.update(x).set(vals).where(eq(...)).returning()` (awaited).
-const dbState = {
-  selectQueue: [] as unknown[][],
-  updateResult: [] as unknown[],
-  updatePayloads: [] as Record<string, unknown>[],
-}
-
-vi.mock("@/lib/db", () => {
-  const makeSelectChain = () => {
-    const chain: Record<string, unknown> = {
-      from: () => chain,
-      where: () => chain,
-      limit: () => chain,
-      // `.for("update")` (row locking inside a transaction) is a passthrough
-      // here — the mock has no real lock semantics, it just needs to not
-      // break the chain so `applyOrderTransition`'s `SELECT ... FOR UPDATE`
-      // call shape resolves from the same `selectQueue` as a plain select.
-      for: () => chain,
-      then: (
-        onFulfilled: (v: unknown) => unknown,
-        onRejected?: (e: unknown) => unknown,
-      ) =>
-        Promise.resolve(dbState.selectQueue.shift() ?? []).then(
-          onFulfilled,
-          onRejected,
-        ),
-    }
-    return chain
-  }
-  const makeUpdateChain = () => {
-    const chain: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        dbState.updatePayloads.push(vals)
-        return chain
-      },
-      where: () => chain,
-      returning: () => Promise.resolve(dbState.updateResult),
-    }
-    return chain
-  }
-  interface MockDb {
-    select: () => ReturnType<typeof makeSelectChain>
-    update: () => ReturnType<typeof makeUpdateChain>
-    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => Promise<T>
-  }
-  const db: MockDb = {
-    select: () => makeSelectChain(),
-    update: () => makeUpdateChain(),
-    // `applyOrderTransition` runs its fetch+guard+update inside
-    // `db.transaction(async (tx) => ...)`. The mock `tx` is just another
-    // handle onto the same `select`/`update` chains and the same shared
-    // `dbState`, so every existing assertion on `selectQueue`/
-    // `updatePayloads` still applies — the transaction wrapper doesn't
-    // change which calls happen, only that they're grouped.
-    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => fn(db),
-  }
-  return { db, pool: {} }
-})
-
-const sessionState: { value: Record<string, unknown> | null } = { value: null }
-vi.mock("@/lib/api-auth", () => ({
-  requireSession: () => Promise.resolve(sessionState.value),
-}))
-
-// Imports must come after the vi.mock calls (which are hoisted regardless).
-import { PATCH as approve } from "../approve/route"
-import { PATCH as dispatch } from "../dispatch/route"
-import { PATCH as pickedUp } from "../picked-up/route"
-import { PATCH as receive } from "../receive/route"
-import { PATCH as outForDelivery } from "../out-for-delivery/route"
-import { PATCH as delivered } from "../delivered/route"
-import { PATCH as failed } from "../failed/route"
-import { PATCH as reattempt } from "../reattempt/route"
-import { PATCH as returnRoute } from "../return/route"
-import { PATCH as settleCod } from "../settle-cod/route"
-
-type Handler = (
-  req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) => Promise<Response>
-
-const ORDER_ID = "order_1"
-
-function makeReq(body?: unknown): Request {
-  return new Request("http://test.local/api", {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-}
-
-async function call(handler: Handler, body?: unknown) {
-  const res = await handler(makeReq(body), {
-    params: Promise.resolve({ id: ORDER_ID }),
-  })
-  let json: unknown
-  try {
-    json = await res.clone().json()
-  } catch {
-    json = null
-  }
-  return { status: res.status, json, payload: dbState.updatePayloads.at(-1) }
-}
-
-// Convenience session factories
-const superAdmin = { role: "SUPER_ADMIN", name: "Super" }
-const admin = { role: "ADMIN", name: "Admin Amy" }
-const warehouseAdmin = (warehouseId = "wh_1") => ({
-  role: "WAREHOUSE_ADMIN",
-  name: "WH Walt",
-  warehouseId,
-})
-const riderSession = (riderId = "rider_1") => ({
-  role: "RIDER",
-  name: "Rider Rick",
-  riderId,
-})
-
-// A representative order row with every column the routes may read.
-function makeOrder(overrides: Record<string, unknown> = {}) {
-  return {
-    id: ORDER_ID,
-    code: "ORD123",
-    status: "PENDING",
-    merchantId: "merch_1",
-    pickupLocationId: "pl_1",
-    warehouseId: null,
-    pickupRiderId: null,
-    deliveryRiderId: null,
-    parcelWeightKg: 2,
-    deliveryAttempts: 0,
-    totalCollectible: 500,
-    codSettledAt: null,
-    ...overrides,
-  }
-}
-
-beforeEach(() => {
-  dbState.selectQueue = []
-  dbState.updateResult = []
-  dbState.updatePayloads = []
-  sessionState.value = null
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/approve", () => {
-  it("401 when unauthenticated", async () => {
-    const { status } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(401)
-  })
-
-  it("403 for non-admin roles", async () => {
-    sessionState.value = riderSession()
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(403)
-    expect(json).toEqual({ error: "Forbidden" })
-  })
-
-  it("400 on invalid body (missing riderId)", async () => {
-    sessionState.value = admin
-    const { status } = await call(approve, {})
-    expect(status).toBe(400)
-  })
-
-  it("404 when order not found", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [[]] // order lookup -> empty
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(404)
-    expect(json).toEqual({ error: "Order not found" })
-  })
-
-  it("400 when order not PENDING", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [[makeOrder({ status: "APPROVED" })]]
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "Only PENDING orders can be approved" })
-  })
-
-  it("400 when rider missing/inactive", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [[makeOrder()], [{ id: "r1", isActive: false }]]
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "Select an active pickup rider." })
-  })
-
-  it("400 when rider is a warehouse (delivery) rider", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [
-      [makeOrder()],
-      [{ id: "r1", isActive: true, warehouseId: "wh_1" }],
-    ]
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error:
-        "Select a pickup rider — this rider is a warehouse delivery rider.",
-    })
-  })
-
-  it("400 when parcel weight exceeds merchant max", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [
-      [makeOrder({ parcelWeightKg: 10 })],
-      [{ id: "r1", isActive: true, warehouseId: null }],
-      [{ maxWeightKg: 5 }],
-    ]
-    const { status, json } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Parcel weight exceeds the 5 KG limit and cannot be approved.",
-    })
-  })
-
-  it("approves: sets APPROVED + approver + pickup rider + timestamps", async () => {
-    sessionState.value = admin
-    dbState.selectQueue = [
-      [makeOrder({ parcelWeightKg: 2 })],
-      [{ id: "r1", isActive: true, warehouseId: null }],
-      [{ maxWeightKg: 5 }],
-    ]
-    dbState.updateResult = [makeOrder({ status: "APPROVED" })]
-    const { status, payload } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "APPROVED",
-      approvedBy: "Admin Amy",
-      pickupRiderId: "r1",
-    })
-    expect(payload?.approvedAt).toBe(payload?.assignedAt)
-    expect(typeof payload?.approvedAt).toBe("string")
-  })
-
-  it("allows SUPER_ADMIN too", async () => {
-    sessionState.value = superAdmin
-    dbState.selectQueue = [
-      [makeOrder()],
-      [{ id: "r1", isActive: true, warehouseId: null }],
-      [{ maxWeightKg: 5 }],
-    ]
-    dbState.updateResult = [makeOrder({ status: "APPROVED" })]
-    const { status } = await call(approve, { riderId: "r1" })
-    expect(status).toBe(200)
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/dispatch", () => {
-  it("403 unless WAREHOUSE_ADMIN with warehouseId", async () => {
-    sessionState.value = admin
-    const { status } = await call(dispatch, { riderId: "r1" })
-    expect(status).toBe(403)
-  })
-
-  it("400 when order not IN_WAREHOUSE", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "PICKED_UP", warehouseId: "wh_1" })],
-    ]
-    const { status, json } = await call(dispatch, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only IN_WAREHOUSE parcels can be dispatched.",
-    })
-  })
-
-  it("400 when parcel held at a different warehouse", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_2" })],
-    ]
-    const { status, json } = await call(dispatch, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "This parcel is held at a different warehouse.",
-    })
-  })
-
-  it("400 when delivery rider not based at this warehouse", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_1" })],
-      [{ id: "r1", isActive: true, warehouseId: "wh_2" }],
-    ]
-    const { status, json } = await call(dispatch, { riderId: "r1" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Select a delivery rider based at this warehouse.",
-    })
-  })
-
-  it("dispatches: sets IN_TRANSIT + delivery rider + dispatch meta", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_1" })],
-      [{ id: "r1", isActive: true, warehouseId: "wh_1" }],
-    ]
-    dbState.updateResult = [makeOrder({ status: "IN_TRANSIT" })]
-    const { status, payload } = await call(dispatch, { riderId: "r1" })
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "IN_TRANSIT",
-      deliveryRiderId: "r1",
-      dispatchedBy: "WH Walt",
-    })
-    expect(typeof payload?.dispatchedAt).toBe("string")
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/picked-up", () => {
-  it("403 unless RIDER with riderId", async () => {
-    sessionState.value = admin
-    const { status } = await call(pickedUp, { proofRefs: ["/uploads/a.png"] })
-    expect(status).toBe(403)
-  })
-
-  it("403 when pickup not assigned to this rider", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ pickupRiderId: "rider_2", status: "APPROVED" })],
-    ]
-    const { status, json } = await call(pickedUp, {
-      proofRefs: ["/uploads/a.png"],
-    })
-    expect(status).toBe(403)
-    expect(json).toEqual({ error: "This pickup is not assigned to you." })
-  })
-
-  it("400 when order not APPROVED", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ pickupRiderId: "rider_1", status: "PENDING" })],
-    ]
-    const { status, json } = await call(pickedUp, {
-      proofRefs: ["/uploads/a.png"],
-    })
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "Only APPROVED orders can be picked up." })
-  })
-
-  it("routes to an active hub in the pickup division", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ pickupRiderId: "rider_1", status: "APPROVED" })],
-      [{ divisionId: "div_1" }], // pickup location
-      [{ id: "wh_9" }], // active hub in division
-    ]
-    dbState.updateResult = [makeOrder({ status: "PICKED_UP" })]
-    const { status, payload } = await call(pickedUp, {
-      proofRefs: ["/uploads/a.png"],
-    })
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "PICKED_UP",
-      warehouseId: "wh_9",
-      pickupProofRefs: ["/uploads/a.png"],
-    })
-    expect(typeof payload?.pickedUpAt).toBe("string")
-  })
-
-  it("leaves warehouseId null when division has no active hub", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ pickupRiderId: "rider_1", status: "APPROVED" })],
-      [{ divisionId: "div_1" }],
-      [], // no hub
-    ]
-    dbState.updateResult = [makeOrder({ status: "PICKED_UP" })]
-    const { status, payload } = await call(pickedUp, {
-      proofRefs: ["/uploads/a.png"],
-    })
-    expect(status).toBe(200)
-    expect(payload?.warehouseId).toBeNull()
-  })
-
-  it("400 when proof photos missing", async () => {
-    sessionState.value = riderSession("rider_1")
-    const { status } = await call(pickedUp, { proofRefs: [] })
-    expect(status).toBe(400)
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/receive", () => {
-  it("403 unless WAREHOUSE_ADMIN", async () => {
-    sessionState.value = riderSession()
-    const { status } = await call(receive)
-    expect(status).toBe(403)
-  })
-
-  it("400 when order not PICKED_UP", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [[makeOrder({ status: "IN_WAREHOUSE" })]]
-    const { status, json } = await call(receive)
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "Only PICKED_UP parcels can be received." })
-  })
-
-  it("receives into the admin's warehouse", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [[makeOrder({ status: "PICKED_UP" })]]
-    dbState.updateResult = [makeOrder({ status: "IN_WAREHOUSE" })]
-    const { status, payload } = await call(receive)
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "IN_WAREHOUSE",
-      warehouseId: "wh_1",
-      receivedByWarehouse: "WH Walt",
-    })
-    expect(typeof payload?.receivedAtWarehouseAt).toBe("string")
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/out-for-delivery", () => {
-  it("403 unless RIDER", async () => {
-    sessionState.value = warehouseAdmin()
-    const { status } = await call(outForDelivery)
-    expect(status).toBe(403)
-  })
-
-  it("403 when not assigned to this rider", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_2", status: "IN_TRANSIT" })],
-    ]
-    const { status, json } = await call(outForDelivery)
-    expect(status).toBe(403)
-    expect(json).toEqual({ error: "This delivery is not assigned to you." })
-  })
-
-  it("400 when not IN_TRANSIT", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_WAREHOUSE" })],
-    ]
-    const { status, json } = await call(outForDelivery)
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only IN_TRANSIT parcels can go out for delivery.",
-    })
-  })
-
-  it("goes out for delivery and increments attempts", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [
-        makeOrder({
-          deliveryRiderId: "rider_1",
-          status: "IN_TRANSIT",
-          deliveryAttempts: 1,
-        }),
-      ],
-    ]
-    dbState.updateResult = [makeOrder({ status: "OUT_FOR_DELIVERY" })]
-    const { status, payload } = await call(outForDelivery)
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "OUT_FOR_DELIVERY",
-      deliveryAttempts: 2,
-    })
-    expect(typeof payload?.outForDeliveryAt).toBe("string")
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/delivered", () => {
-  it("403 when not assigned to this rider", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_2", status: "OUT_FOR_DELIVERY" })],
-    ]
-    const { status, json } = await call(delivered, {})
-    expect(status).toBe(403)
-    expect(json).toEqual({ error: "This delivery is not assigned to you." })
-  })
-
-  it("400 when not OUT_FOR_DELIVERY", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_TRANSIT" })],
-    ]
-    const { status, json } = await call(delivered, {})
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only OUT_FOR_DELIVERY parcels can be marked delivered.",
-    })
-  })
-
-  it("defaults proof ref from order code and collects total", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [
-        makeOrder({
-          deliveryRiderId: "rider_1",
-          status: "OUT_FOR_DELIVERY",
-          code: "ORD123",
-          totalCollectible: 750,
-        }),
-      ],
-    ]
-    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
-    const { status, payload } = await call(delivered, {})
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "DELIVERED",
-      deliveryProofRef: "proof_ord123.jpg",
-      amountCollected: 750,
-    })
-    expect(typeof payload?.deliveredAt).toBe("string")
-  })
-
-  it("uses provided proof ref when present", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_1", status: "OUT_FOR_DELIVERY" })],
-    ]
-    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
-    const { payload } = await call(delivered, {
-      proofRef: "/uploads/proof.png",
-    })
-    expect(payload?.deliveryProofRef).toBe("/uploads/proof.png")
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/failed", () => {
-  it("400 when reason note missing", async () => {
-    sessionState.value = riderSession("rider_1")
-    const { status } = await call(failed, {})
-    expect(status).toBe(400)
-  })
-
-  it("400 when not OUT_FOR_DELIVERY", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_TRANSIT" })],
-    ]
-    const { status, json } = await call(failed, { note: "No answer" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only OUT_FOR_DELIVERY parcels can be marked failed.",
-    })
-  })
-
-  it("records FAILED_ATTEMPT with trimmed note", async () => {
-    sessionState.value = riderSession("rider_1")
-    dbState.selectQueue = [
-      [makeOrder({ deliveryRiderId: "rider_1", status: "OUT_FOR_DELIVERY" })],
-    ]
-    dbState.updateResult = [makeOrder({ status: "FAILED_ATTEMPT" })]
-    const { status, payload } = await call(failed, {
-      note: "  customer absent  ",
-    })
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "FAILED_ATTEMPT",
-      failureNote: "customer absent",
-    })
-    expect(typeof payload?.failedAttemptAt).toBe("string")
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/reattempt", () => {
-  it("403 unless WAREHOUSE_ADMIN", async () => {
-    sessionState.value = riderSession()
-    const { status } = await call(reattempt)
-    expect(status).toBe(403)
-  })
-
-  it("400 when not FAILED_ATTEMPT", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "OUT_FOR_DELIVERY", warehouseId: "wh_1" })],
-    ]
-    const { status, json } = await call(reattempt)
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only FAILED_ATTEMPT parcels can be reattempted.",
-    })
-  })
-
-  it("400 when held at a different warehouse", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "FAILED_ATTEMPT", warehouseId: "wh_2" })],
-    ]
-    const { status, json } = await call(reattempt)
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "This parcel is held at a different warehouse.",
-    })
-  })
-
-  it("resets failure fields and returns to OUT_FOR_DELIVERY, incrementing attempts", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [
-        makeOrder({
-          status: "FAILED_ATTEMPT",
-          warehouseId: "wh_1",
-          deliveryAttempts: 1,
-        }),
-      ],
-    ]
-    dbState.updateResult = [makeOrder({ status: "OUT_FOR_DELIVERY" })]
-    const { status, payload } = await call(reattempt)
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "OUT_FOR_DELIVERY",
-      failureNote: null,
-      failedAttemptAt: null,
-      failedResolvedBy: "WH Walt",
-      deliveryAttempts: 2,
-    })
-    expect(payload?.failedResolvedAt).toBe(payload?.outForDeliveryAt)
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/return", () => {
-  it("400 when reason missing", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    const { status } = await call(returnRoute, {})
-    expect(status).toBe(400)
-  })
-
-  it("400 when not FAILED_ATTEMPT", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "DELIVERED", warehouseId: "wh_1" })],
-    ]
-    const { status, json } = await call(returnRoute, { reason: "damaged" })
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "Only FAILED_ATTEMPT parcels can be returned.",
-    })
-  })
-
-  it("marks RETURNED with trimmed reason and resolver meta", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "FAILED_ATTEMPT", warehouseId: "wh_1" })],
-    ]
-    dbState.updateResult = [makeOrder({ status: "RETURNED" })]
-    const { status, payload } = await call(returnRoute, {
-      reason: "  unreachable  ",
-    })
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({
-      status: "RETURNED",
-      returnReason: "unreachable",
-      failedResolvedBy: "WH Walt",
-    })
-    expect(payload?.failedResolvedAt).toBe(payload?.returnedAt)
-  })
-})
-
-// ---------------------------------------------------------------------------
-describe("PATCH /orders/:id/settle-cod", () => {
-  it("403 unless WAREHOUSE_ADMIN", async () => {
-    sessionState.value = admin
-    const { status } = await call(settleCod)
-    expect(status).toBe(403)
-  })
-
-  it("400 when not DELIVERED", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "IN_TRANSIT", warehouseId: "wh_1" })],
-    ]
-    const { status, json } = await call(settleCod)
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "Only DELIVERED parcels can be settled." })
-  })
-
-  it("400 when parcel belongs to a different warehouse", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [makeOrder({ status: "DELIVERED", warehouseId: "wh_2" })],
-    ]
-    const { status, json } = await call(settleCod)
-    expect(status).toBe(400)
-    expect(json).toEqual({
-      error: "This parcel belongs to a different warehouse.",
-    })
-  })
-
-  it("400 when already settled", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [
-        makeOrder({
-          status: "DELIVERED",
-          warehouseId: "wh_1",
-          codSettledAt: "2024-01-01T00:00:00.000Z",
-        }),
-      ],
-    ]
-    const { status, json } = await call(settleCod)
-    expect(status).toBe(400)
-    expect(json).toEqual({ error: "This parcel's COD is already settled." })
-  })
-
-  it("settles COD with timestamp and settler name", async () => {
-    sessionState.value = warehouseAdmin("wh_1")
-    dbState.selectQueue = [
-      [
-        makeOrder({
-          status: "DELIVERED",
-          warehouseId: "wh_1",
-          codSettledAt: null,
-        }),
-      ],
-    ]
-    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
-    const { status, payload } = await call(settleCod)
-    expect(status).toBe(200)
-    expect(payload).toMatchObject({ codSettledBy: "WH Walt" })
-    expect(typeof payload?.codSettledAt).toBe("string")
-  })
-})
 ````
 
 ## File: app/api/orders/[id]/receiver-note/route.ts
@@ -1590,6 +4436,7 @@ export async function POST(req: Request) {
 ## File: app/api/riders/[id]/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { rider } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -1655,6 +4502,15 @@ export async function PATCH(
     .where(eq(rider.id, id))
     .returning()
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "RIDER_UPDATED",
+    entityType: "rider",
+    entityId: updated.id,
+    description: `Updated rider ${updated.name}`,
+    metadata: { name, phone, zone, warehouseId, taskType, isActive },
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -1662,8 +4518,9 @@ export async function PATCH(
 ## File: app/api/team/[id]/warehouse/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { profile, warehouse } from "@/lib/db/schema"
+import { profile, user, warehouse } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import { z } from "zod"
@@ -1724,6 +4581,32 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .returning()
 
+  const [targetUser] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1)
+
+  let warehouseName: string | null = null
+  if (warehouseId) {
+    const [wh] = await db
+      .select({ name: warehouse.name })
+      .from(warehouse)
+      .where(eq(warehouse.id, warehouseId))
+      .limit(1)
+    warehouseName = wh?.name ?? warehouseId
+  }
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "TEAM_MEMBER_WAREHOUSE_REASSIGNED",
+    entityType: "user",
+    entityId: id,
+    description: warehouseName
+      ? `Assigned ${targetUser?.name ?? id} to warehouse ${warehouseName}`
+      : `Unassigned ${targetUser?.name ?? id} from their warehouse`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -1731,6 +4614,7 @@ export async function PATCH(
 ## File: app/api/warehouses/[id]/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { order, profile, rider, warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseUpdateSchema } from "@/lib/validation"
@@ -1805,6 +4689,16 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_UPDATED",
+    entityType: "warehouse",
+    entityId: updated.id,
+    description: `Updated warehouse ${updated.name}`,
+    metadata: updates,
+  })
+
   return NextResponse.json(updated)
 }
 
@@ -1848,7 +4742,22 @@ export async function DELETE(
     )
   }
 
+  const [existing] = await db
+    .select({ name: warehouse.name })
+    .from(warehouse)
+    .where(eq(warehouse.id, id))
+    .limit(1)
+
   await db.delete(warehouse).where(eq(warehouse.id, id))
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_DELETED",
+    entityType: "warehouse",
+    entityId: id,
+    description: `Deleted warehouse ${existing?.name ?? id}`,
+  })
+
   return NextResponse.json({ ok: true })
 }
 ````
@@ -4044,6 +6953,16 @@ export const pageContent = {
       title: "Riders",
       description:
         "Manage the rider roster. Every rider belongs to a warehouse; their task type controls whether they pick up, deliver, or both.",
+    },
+    auditLogs: {
+      title: "Audit logs",
+      description:
+        "A read-only trail of state-changing actions across the platform — who did what, and when.",
+    },
+    emailLogs: {
+      title: "Email logs",
+      description:
+        "Every transactional email the platform has attempted to send, including delivery failures.",
     },
   },
   warehouse: {
@@ -6811,10 +9730,14 @@ ALTER TABLE "order" ADD COLUMN "receiverNote" text;
 "use client"
 
 import { useState } from "react"
-import { Loader2, Lock, UserRound } from "lucide-react"
+import { Loader2, Lock, Table2, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { initials } from "@/lib/utils"
+import {
+  DEFAULT_TABLE_ROWS_PER_PAGE,
+  MAX_TABLE_ROWS_PER_PAGE,
+} from "@/lib/constants"
 import { PageHeader } from "@/components/page-header"
 import { ImageUpload } from "@/components/image-upload"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -6831,8 +9754,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export function AccountSettings() {
-  const { currentUser, updateProfileName, updateProfileImage, changePassword } =
-    useAuth()
+  const {
+    currentUser,
+    updateProfileName,
+    updateProfileImage,
+    changePassword,
+    updateTableRowsPerPage,
+  } = useAuth()
 
   const [name, setName] = useState(currentUser?.name ?? "")
   const [savingName, setSavingName] = useState(false)
@@ -6856,6 +9784,37 @@ export function AccountSettings() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [savingPassword, setSavingPassword] = useState(false)
+
+  const [rowsPerPage, setRowsPerPage] = useState(
+    String(currentUser?.tableRowsPerPage ?? DEFAULT_TABLE_ROWS_PER_PAGE),
+  )
+  const [savingRowsPerPage, setSavingRowsPerPage] = useState(false)
+
+  const rowsPerPageNum = Number.parseInt(rowsPerPage, 10)
+  const rowsPerPageInvalid =
+    !Number.isInteger(rowsPerPageNum) ||
+    rowsPerPageNum < 1 ||
+    rowsPerPageNum > MAX_TABLE_ROWS_PER_PAGE
+  const rowsPerPageUnchanged =
+    !rowsPerPageInvalid &&
+    rowsPerPageNum ===
+      (currentUser?.tableRowsPerPage ?? DEFAULT_TABLE_ROWS_PER_PAGE)
+
+  async function handleRowsPerPageSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (rowsPerPageInvalid || rowsPerPageUnchanged) return
+    setSavingRowsPerPage(true)
+    try {
+      const result = await updateTableRowsPerPage(rowsPerPageNum)
+      if (result.ok) {
+        toast.success("Rows per page updated.")
+      } else {
+        toast.error(result.error ?? "Could not update rows per page.")
+      }
+    } finally {
+      setSavingRowsPerPage(false)
+    }
+  }
 
   const trimmedName = name.trim()
   const nameUnchanged = trimmedName === (currentUser?.name ?? "")
@@ -6997,6 +9956,58 @@ export function AccountSettings() {
           </CardContent>
         </Card>
 
+        {/* Table rows per page */}
+        <Card>
+          <form onSubmit={handleRowsPerPageSubmit} className="contents">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Table2 className="size-4" />
+                Tables
+              </CardTitle>
+              <CardDescription>
+                How many rows show per page on tables across the platform.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Label htmlFor="account-rows-per-page">Rows per page</Label>
+              <Input
+                id="account-rows-per-page"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_TABLE_ROWS_PER_PAGE}
+                value={rowsPerPage}
+                onChange={(e) => setRowsPerPage(e.target.value)}
+                className="max-w-32"
+                aria-invalid={rowsPerPageInvalid}
+              />
+              <p className="text-muted-foreground text-xs">
+                Between 1 and {MAX_TABLE_ROWS_PER_PAGE}. Default is{" "}
+                {DEFAULT_TABLE_ROWS_PER_PAGE}.
+              </p>
+            </CardContent>
+            <CardFooter className="justify-end">
+              <Button
+                type="submit"
+                disabled={
+                  savingRowsPerPage ||
+                  rowsPerPageInvalid ||
+                  rowsPerPageUnchanged
+                }
+              >
+                {savingRowsPerPage ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving
+                  </>
+                ) : (
+                  "Save changes"
+                )}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+
         {/* Password */}
         <Card className="lg:col-span-2">
           <form onSubmit={handlePasswordSubmit} className="contents">
@@ -7083,15 +10094,15 @@ export function AccountSettings() {
 
 import {
   createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
   type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from "react"
 import { useRouter } from "next/navigation"
 import { useSWRConfig } from "swr"
-import type { User, Role } from "@/lib/types"
+import type { Role, User } from "@/lib/types"
 import { authClient } from "@/lib/auth-client"
 
 // Where each role lands after login.
@@ -7121,6 +10132,10 @@ interface AuthContextValue {
   changePassword: (
     currentPassword: string,
     newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+  // Update the signed-in user's default DataTable rows-per-page (1-250).
+  updateTableRowsPerPage: (
+    value: number,
   ) => Promise<{ ok: boolean; error?: string }>
 }
 
@@ -7251,6 +10266,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateTableRowsPerPage = useCallback<
+    AuthContextValue["updateTableRowsPerPage"]
+  >(async (value) => {
+    const res = await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tableRowsPerPage: value }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data?.error ?? "Could not update your rows-per-page setting.",
+      }
+    }
+    setCurrentUser(data)
+    return { ok: true }
+  }, [])
+
   return (
     <AuthContext.Provider
       value={{
@@ -7261,6 +10295,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateProfileName,
         updateProfileImage,
         changePassword,
+        updateTableRowsPerPage,
       }}
     >
       {children}
@@ -10650,6 +13685,8 @@ export const RESOURCE_KEYS = [
   "/api/warehouses",
   "/api/divisions",
   "/api/security-config",
+  "/api/audit-logs",
+  "/api/email-logs",
 ] as const
 
 // Shared fetcher for every resource hook. Throws on non-2xx so SWR surfaces
@@ -10999,6 +14036,7 @@ export async function saveR2File(
 ## File: app/api/divisions/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division } from "@/lib/db/schema"
 import { divisionCreateSchema, parseBody } from "@/lib/validation"
@@ -11049,6 +14087,14 @@ export async function POST(req: Request) {
     .values({ name, isActive: true })
     .returning()
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_CREATED",
+    entityType: "division",
+    entityId: created.id,
+    description: `Created division ${created.name}`,
+  })
+
   return NextResponse.json(created, { status: 201 })
 }
 ````
@@ -11056,6 +14102,7 @@ export async function POST(req: Request) {
 ## File: app/api/merchants/[id]/pricing/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { merchantPricingSchema, parseBody } from "@/lib/validation"
@@ -11086,6 +14133,16 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_PRICING_UPDATED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Updated pricing for merchant ${updated.businessName}`,
+    metadata: { baseRate, extraRatePerKg, freeWeightKg, maxWeightKg },
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -11093,6 +14150,7 @@ export async function PATCH(
 ## File: app/api/merchants/[id]/reactivate/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -11118,6 +14176,15 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_REACTIVATED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Reactivated merchant ${updated.businessName}`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -11125,6 +14192,7 @@ export async function PATCH(
 ## File: app/api/merchants/[id]/suspend/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -11150,118 +14218,767 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_SUSPENDED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Suspended merchant ${updated.businessName}`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
 
-## File: app/api/payouts/[id]/approve/route.ts
+## File: app/api/orders/[id]/__tests__/transitions.spec.ts
 ````typescript
-import { requireSession } from "@/lib/api-auth"
-import { db } from "@/lib/db"
-import { payoutRequest } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
-import { NextResponse } from "next/server"
+/**
+ * Spec-capture tests for the 10 order-transition routes.
+ *
+ * These tests document the CURRENT, observed behavior of each transition
+ * endpoint (auth gate, status guard, ownership/business rules, and the exact
+ * fields written on success) so that the upcoming refactor — extracting a
+ * shared state machine in lib/orders/transitions.ts — can be verified as
+ * behavior-preserving. They intentionally assert on real responses produced
+ * by the real validation/business logic; only the Drizzle `db` layer and the
+ * session lookup are mocked.
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest"
+// Imports must come after the vi.mock calls (which are hoisted regardless).
+import { PATCH as approve } from "../approve/route"
+import { PATCH as dispatch } from "../dispatch/route"
+import { PATCH as pickedUp } from "../picked-up/route"
+import { PATCH as receive } from "../receive/route"
+import { PATCH as outForDelivery } from "../out-for-delivery/route"
+import { PATCH as delivered } from "../delivered/route"
+import { PATCH as failed } from "../failed/route"
+import { PATCH as reattempt } from "../reattempt/route"
+import { PATCH as returnRoute } from "../return/route"
+import { PATCH as settleCod } from "../settle-cod/route"
 
-export async function PATCH(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
+// --- Controllable mock of the Drizzle data layer ----------------------------
+// Routes do: `db.select().from(x).where(eq(...)).limit(1)` (awaited, FIFO) and
+// `db.update(x).set(vals).where(eq(...)).returning()` (awaited).
+const dbState = {
+  selectQueue: [] as unknown[][],
+  updateResult: [] as unknown[],
+  updatePayloads: [] as Record<string, unknown>[],
+}
 
-  const { id } = await params
-
-  // Transaction: lock the request row for the guard + write so two
-  // concurrent approve/reject calls on the same request can't both pass the
-  // "still PENDING" check against stale state.
-  return await db.transaction(async (tx) => {
-    const [current] = await tx
-      .select({ status: payoutRequest.status })
-      .from(payoutRequest)
-      .where(eq(payoutRequest.id, id))
-      .for("update")
-      .limit(1)
-
-    if (!current)
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    if (current.status !== "PENDING") {
-      return NextResponse.json(
-        { error: "Only PENDING requests can be approved." },
-        { status: 400 },
-      )
+vi.mock("@/lib/db", () => {
+  const makeSelectChain = () => {
+    const chain: Record<string, unknown> = {
+      from: () => chain,
+      where: () => chain,
+      limit: () => chain,
+      // `.for("update")` (row locking inside a transaction) is a passthrough
+      // here — the mock has no real lock semantics, it just needs to not
+      // break the chain so `applyOrderTransition`'s `SELECT ... FOR UPDATE`
+      // call shape resolves from the same `selectQueue` as a plain select.
+      for: () => chain,
+      then: (
+        onFulfilled: (v: unknown) => unknown,
+        onRejected?: (e: unknown) => unknown,
+      ) =>
+        Promise.resolve(dbState.selectQueue.shift() ?? []).then(
+          onFulfilled,
+          onRejected,
+        ),
     }
+    return chain
+  }
+  const makeUpdateChain = () => {
+    const chain: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        dbState.updatePayloads.push(vals)
+        return chain
+      },
+      where: () => chain,
+      returning: () => Promise.resolve(dbState.updateResult),
+    }
+    return chain
+  }
+  interface MockDb {
+    select: () => ReturnType<typeof makeSelectChain>
+    update: () => ReturnType<typeof makeUpdateChain>
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => Promise<T>
+  }
+  const db: MockDb = {
+    select: () => makeSelectChain(),
+    update: () => makeUpdateChain(),
+    // `applyOrderTransition` runs its fetch+guard+update inside
+    // `db.transaction(async (tx) => ...)`. The mock `tx` is just another
+    // handle onto the same `select`/`update` chains and the same shared
+    // `dbState`, so every existing assertion on `selectQueue`/
+    // `updatePayloads` still applies — the transaction wrapper doesn't
+    // change which calls happen, only that they're grouped.
+    transaction: <T>(fn: (tx: MockDb) => Promise<T>) => fn(db),
+  }
+  return { db, pool: {} }
+})
 
-    const [updated] = await tx
-      .update(payoutRequest)
-      .set({
-        status: "APPROVED",
-        reviewedBy: me.name,
-        reviewedAt: new Date().toISOString(),
-      })
-      .where(eq(payoutRequest.id, id))
-      .returning()
+const sessionState: { value: Record<string, unknown> | null } = { value: null }
+vi.mock("@/lib/api-auth", () => ({
+  requireSession: () => Promise.resolve(sessionState.value),
+}))
 
-    return NextResponse.json(updated)
+type Handler = (
+  req: Request,
+  ctx: { params: Promise<{ id: string }> },
+) => Promise<Response>
+
+const ORDER_ID = "order_1"
+
+function makeReq(body?: unknown): Request {
+  return new Request("http://test.local/api", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
-````
 
-## File: app/api/payouts/[id]/paid/route.ts
-````typescript
-import { requireSession } from "@/lib/api-auth"
-import { db } from "@/lib/db"
-import { payoutRequest } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
-import { NextResponse } from "next/server"
-
-export async function PATCH(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-
-  const { id } = await params
-
-  // Transaction: lock the request row for the guard + write so a concurrent
-  // call can't slip in between the "still APPROVED" check and the write.
-  return await db.transaction(async (tx) => {
-    const [current] = await tx
-      .select({ status: payoutRequest.status })
-      .from(payoutRequest)
-      .where(eq(payoutRequest.id, id))
-      .for("update")
-      .limit(1)
-
-    if (!current)
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    if (current.status !== "APPROVED") {
-      return NextResponse.json(
-        { error: "Only APPROVED requests can be marked paid." },
-        { status: 400 },
-      )
-    }
-
-    const [updated] = await tx
-      .update(payoutRequest)
-      .set({ status: "PAID", paidAt: new Date().toISOString() })
-      .where(eq(payoutRequest.id, id))
-      .returning()
-
-    return NextResponse.json(updated)
+async function call(handler: Handler, body?: unknown) {
+  const res = await handler(makeReq(body), {
+    params: Promise.resolve({ id: ORDER_ID }),
   })
+  let json: unknown
+  try {
+    json = await res.clone().json()
+  } catch {
+    json = null
+  }
+  return { status: res.status, json, payload: dbState.updatePayloads.at(-1) }
 }
+
+// Convenience session factories
+const superAdmin = { role: "SUPER_ADMIN", name: "Super" }
+const admin = { role: "ADMIN", name: "Admin Amy" }
+const warehouseAdmin = (warehouseId = "wh_1") => ({
+  role: "WAREHOUSE_ADMIN",
+  name: "WH Walt",
+  warehouseId,
+})
+const riderSession = (riderId = "rider_1") => ({
+  role: "RIDER",
+  name: "Rider Rick",
+  riderId,
+})
+
+// A representative order row with every column the routes may read.
+function makeOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ORDER_ID,
+    code: "ORD123",
+    status: "PENDING",
+    merchantId: "merch_1",
+    pickupLocationId: "pl_1",
+    warehouseId: null,
+    pickupRiderId: null,
+    deliveryRiderId: null,
+    parcelWeightKg: 2,
+    deliveryAttempts: 0,
+    totalCollectible: 500,
+    codSettledAt: null,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  dbState.selectQueue = []
+  dbState.updateResult = []
+  dbState.updatePayloads = []
+  sessionState.value = null
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/approve", () => {
+  it("401 when unauthenticated", async () => {
+    const { status } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(401)
+  })
+
+  it("403 for non-admin roles", async () => {
+    sessionState.value = riderSession()
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(403)
+    expect(json).toEqual({ error: "Forbidden" })
+  })
+
+  it("400 on invalid body (missing riderId)", async () => {
+    sessionState.value = admin
+    const { status } = await call(approve, {})
+    expect(status).toBe(400)
+  })
+
+  it("404 when order not found", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [[]] // order lookup -> empty
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(404)
+    expect(json).toEqual({ error: "Order not found" })
+  })
+
+  it("400 when order not PENDING", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [[makeOrder({ status: "APPROVED" })]]
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "Only PENDING orders can be approved" })
+  })
+
+  it("400 when rider missing/inactive", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [[makeOrder()], [{ id: "r1", isActive: false }]]
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "Select an active pickup rider." })
+  })
+
+  it("400 when rider is a warehouse (delivery) rider", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [
+      [makeOrder()],
+      [{ id: "r1", isActive: true, taskType: "DELIVERY" }],
+    ]
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error:
+        "Select a pickup rider — this rider is a warehouse delivery rider.",
+    })
+  })
+
+  it("400 when parcel weight exceeds merchant max", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [
+      [makeOrder({ parcelWeightKg: 10 })],
+      [{ id: "r1", isActive: true, taskType: "PICKUP" }],
+      [{ maxWeightKg: 5 }],
+    ]
+    const { status, json } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Parcel weight exceeds the 5 KG limit and cannot be approved.",
+    })
+  })
+
+  it("approves: sets APPROVED + approver + pickup rider + timestamps", async () => {
+    sessionState.value = admin
+    dbState.selectQueue = [
+      [makeOrder({ parcelWeightKg: 2 })],
+      [{ id: "r1", isActive: true, taskType: "PICKUP" }],
+      [{ maxWeightKg: 5 }],
+    ]
+    dbState.updateResult = [makeOrder({ status: "APPROVED" })]
+    const { status, payload } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "APPROVED",
+      approvedBy: "Admin Amy",
+      pickupRiderId: "r1",
+    })
+    expect(payload?.approvedAt).toBe(payload?.assignedAt)
+    expect(typeof payload?.approvedAt).toBe("string")
+  })
+
+  it("allows SUPER_ADMIN too", async () => {
+    sessionState.value = superAdmin
+    dbState.selectQueue = [
+      [makeOrder()],
+      [{ id: "r1", isActive: true, taskType: "BOTH" }],
+      [{ maxWeightKg: 5 }],
+    ]
+    dbState.updateResult = [makeOrder({ status: "APPROVED" })]
+    const { status } = await call(approve, { riderId: "r1" })
+    expect(status).toBe(200)
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/dispatch", () => {
+  it("403 unless WAREHOUSE_ADMIN with warehouseId", async () => {
+    sessionState.value = admin
+    const { status } = await call(dispatch, { riderId: "r1" })
+    expect(status).toBe(403)
+  })
+
+  it("400 when order not IN_WAREHOUSE", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "PICKED_UP", warehouseId: "wh_1" })],
+    ]
+    const { status, json } = await call(dispatch, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only IN_WAREHOUSE parcels can be dispatched.",
+    })
+  })
+
+  it("400 when parcel held at a different warehouse", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_2" })],
+    ]
+    const { status, json } = await call(dispatch, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "This parcel is held at a different warehouse.",
+    })
+  })
+
+  it("400 when delivery rider not based at this warehouse", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_1" })],
+      [{ id: "r1", isActive: true, warehouseId: "wh_2" }],
+    ]
+    const { status, json } = await call(dispatch, { riderId: "r1" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Select a delivery rider based at this warehouse.",
+    })
+  })
+
+  it("dispatches: sets IN_TRANSIT + delivery rider + dispatch meta", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "IN_WAREHOUSE", warehouseId: "wh_1" })],
+      [{ id: "r1", isActive: true, warehouseId: "wh_1" }],
+    ]
+    dbState.updateResult = [makeOrder({ status: "IN_TRANSIT" })]
+    const { status, payload } = await call(dispatch, { riderId: "r1" })
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "IN_TRANSIT",
+      deliveryRiderId: "r1",
+      dispatchedBy: "WH Walt",
+    })
+    expect(typeof payload?.dispatchedAt).toBe("string")
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/picked-up", () => {
+  it("403 unless RIDER with riderId", async () => {
+    sessionState.value = admin
+    const { status } = await call(pickedUp, { proofRefs: ["/uploads/a.png"] })
+    expect(status).toBe(403)
+  })
+
+  it("403 when pickup not assigned to this rider", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ pickupRiderId: "rider_2", status: "APPROVED" })],
+    ]
+    const { status, json } = await call(pickedUp, {
+      proofRefs: ["/uploads/a.png"],
+    })
+    expect(status).toBe(403)
+    expect(json).toEqual({ error: "This pickup is not assigned to you." })
+  })
+
+  it("400 when order not APPROVED", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ pickupRiderId: "rider_1", status: "PENDING" })],
+    ]
+    const { status, json } = await call(pickedUp, {
+      proofRefs: ["/uploads/a.png"],
+    })
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "Only APPROVED orders can be picked up." })
+  })
+
+  it("routes to an active hub in the pickup division", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ pickupRiderId: "rider_1", status: "APPROVED" })],
+      [{ divisionId: "div_1" }], // pickup location
+      [{ id: "wh_9" }], // active hub in division
+    ]
+    dbState.updateResult = [makeOrder({ status: "PICKED_UP" })]
+    const { status, payload } = await call(pickedUp, {
+      proofRefs: ["/uploads/a.png"],
+    })
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "PICKED_UP",
+      warehouseId: "wh_9",
+      pickupProofRefs: ["/uploads/a.png"],
+    })
+    expect(typeof payload?.pickedUpAt).toBe("string")
+  })
+
+  it("leaves warehouseId null when division has no active hub", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ pickupRiderId: "rider_1", status: "APPROVED" })],
+      [{ divisionId: "div_1" }],
+      [], // no hub
+    ]
+    dbState.updateResult = [makeOrder({ status: "PICKED_UP" })]
+    const { status, payload } = await call(pickedUp, {
+      proofRefs: ["/uploads/a.png"],
+    })
+    expect(status).toBe(200)
+    expect(payload?.warehouseId).toBeNull()
+  })
+
+  it("400 when proof photos missing", async () => {
+    sessionState.value = riderSession("rider_1")
+    const { status } = await call(pickedUp, { proofRefs: [] })
+    expect(status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/receive", () => {
+  it("403 unless WAREHOUSE_ADMIN", async () => {
+    sessionState.value = riderSession()
+    const { status } = await call(receive)
+    expect(status).toBe(403)
+  })
+
+  it("400 when order not PICKED_UP", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [[makeOrder({ status: "IN_WAREHOUSE" })]]
+    const { status, json } = await call(receive)
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "Only PICKED_UP parcels can be received." })
+  })
+
+  it("receives into the admin's warehouse", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [[makeOrder({ status: "PICKED_UP" })]]
+    dbState.updateResult = [makeOrder({ status: "IN_WAREHOUSE" })]
+    const { status, payload } = await call(receive)
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "IN_WAREHOUSE",
+      warehouseId: "wh_1",
+      receivedByWarehouse: "WH Walt",
+    })
+    expect(typeof payload?.receivedAtWarehouseAt).toBe("string")
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/out-for-delivery", () => {
+  it("403 unless RIDER", async () => {
+    sessionState.value = warehouseAdmin()
+    const { status } = await call(outForDelivery)
+    expect(status).toBe(403)
+  })
+
+  it("403 when not assigned to this rider", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_2", status: "IN_TRANSIT" })],
+    ]
+    const { status, json } = await call(outForDelivery)
+    expect(status).toBe(403)
+    expect(json).toEqual({ error: "This delivery is not assigned to you." })
+  })
+
+  it("400 when not IN_TRANSIT", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_WAREHOUSE" })],
+    ]
+    const { status, json } = await call(outForDelivery)
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only IN_TRANSIT parcels can go out for delivery.",
+    })
+  })
+
+  it("goes out for delivery and increments attempts", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [
+        makeOrder({
+          deliveryRiderId: "rider_1",
+          status: "IN_TRANSIT",
+          deliveryAttempts: 1,
+        }),
+      ],
+    ]
+    dbState.updateResult = [makeOrder({ status: "OUT_FOR_DELIVERY" })]
+    const { status, payload } = await call(outForDelivery)
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "OUT_FOR_DELIVERY",
+      deliveryAttempts: 2,
+    })
+    expect(typeof payload?.outForDeliveryAt).toBe("string")
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/delivered", () => {
+  it("403 when not assigned to this rider", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_2", status: "OUT_FOR_DELIVERY" })],
+    ]
+    const { status, json } = await call(delivered, {})
+    expect(status).toBe(403)
+    expect(json).toEqual({ error: "This delivery is not assigned to you." })
+  })
+
+  it("400 when not OUT_FOR_DELIVERY", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_TRANSIT" })],
+    ]
+    const { status, json } = await call(delivered, {})
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only OUT_FOR_DELIVERY parcels can be marked delivered.",
+    })
+  })
+
+  it("defaults proof ref from order code and collects total", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [
+        makeOrder({
+          deliveryRiderId: "rider_1",
+          status: "OUT_FOR_DELIVERY",
+          code: "ORD123",
+          totalCollectible: 750,
+        }),
+      ],
+    ]
+    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
+    const { status, payload } = await call(delivered, {})
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "DELIVERED",
+      deliveryProofRef: "proof_ord123.jpg",
+      amountCollected: 750,
+    })
+    expect(typeof payload?.deliveredAt).toBe("string")
+  })
+
+  it("uses provided proof ref when present", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_1", status: "OUT_FOR_DELIVERY" })],
+    ]
+    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
+    const { payload } = await call(delivered, {
+      proofRef: "/uploads/proof.png",
+    })
+    expect(payload?.deliveryProofRef).toBe("/uploads/proof.png")
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/failed", () => {
+  it("400 when reason note missing", async () => {
+    sessionState.value = riderSession("rider_1")
+    const { status } = await call(failed, {})
+    expect(status).toBe(400)
+  })
+
+  it("400 when not OUT_FOR_DELIVERY", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_1", status: "IN_TRANSIT" })],
+    ]
+    const { status, json } = await call(failed, { note: "No answer" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only OUT_FOR_DELIVERY parcels can be marked failed.",
+    })
+  })
+
+  it("records FAILED_ATTEMPT with trimmed note", async () => {
+    sessionState.value = riderSession("rider_1")
+    dbState.selectQueue = [
+      [makeOrder({ deliveryRiderId: "rider_1", status: "OUT_FOR_DELIVERY" })],
+    ]
+    dbState.updateResult = [makeOrder({ status: "FAILED_ATTEMPT" })]
+    const { status, payload } = await call(failed, {
+      note: "  customer absent  ",
+    })
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "FAILED_ATTEMPT",
+      failureNote: "customer absent",
+    })
+    expect(typeof payload?.failedAttemptAt).toBe("string")
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/reattempt", () => {
+  it("403 unless WAREHOUSE_ADMIN", async () => {
+    sessionState.value = riderSession()
+    const { status } = await call(reattempt)
+    expect(status).toBe(403)
+  })
+
+  it("400 when not FAILED_ATTEMPT", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "OUT_FOR_DELIVERY", warehouseId: "wh_1" })],
+    ]
+    const { status, json } = await call(reattempt)
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only FAILED_ATTEMPT parcels can be reattempted.",
+    })
+  })
+
+  it("400 when held at a different warehouse", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "FAILED_ATTEMPT", warehouseId: "wh_2" })],
+    ]
+    const { status, json } = await call(reattempt)
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "This parcel is held at a different warehouse.",
+    })
+  })
+
+  it("resets failure fields and returns to OUT_FOR_DELIVERY, incrementing attempts", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [
+        makeOrder({
+          status: "FAILED_ATTEMPT",
+          warehouseId: "wh_1",
+          deliveryAttempts: 1,
+        }),
+      ],
+    ]
+    dbState.updateResult = [makeOrder({ status: "OUT_FOR_DELIVERY" })]
+    const { status, payload } = await call(reattempt)
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "OUT_FOR_DELIVERY",
+      failureNote: null,
+      failedAttemptAt: null,
+      failedResolvedBy: "WH Walt",
+      deliveryAttempts: 2,
+    })
+    expect(payload?.failedResolvedAt).toBe(payload?.outForDeliveryAt)
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/return", () => {
+  it("400 when reason missing", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    const { status } = await call(returnRoute, {})
+    expect(status).toBe(400)
+  })
+
+  it("400 when not FAILED_ATTEMPT", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "DELIVERED", warehouseId: "wh_1" })],
+    ]
+    const { status, json } = await call(returnRoute, { reason: "damaged" })
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "Only FAILED_ATTEMPT parcels can be returned.",
+    })
+  })
+
+  it("marks RETURNED with trimmed reason and resolver meta", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "FAILED_ATTEMPT", warehouseId: "wh_1" })],
+    ]
+    dbState.updateResult = [makeOrder({ status: "RETURNED" })]
+    const { status, payload } = await call(returnRoute, {
+      reason: "  unreachable  ",
+    })
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({
+      status: "RETURNED",
+      returnReason: "unreachable",
+      failedResolvedBy: "WH Walt",
+    })
+    expect(payload?.failedResolvedAt).toBe(payload?.returnedAt)
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe("PATCH /orders/:id/settle-cod", () => {
+  it("403 unless WAREHOUSE_ADMIN", async () => {
+    sessionState.value = admin
+    const { status } = await call(settleCod)
+    expect(status).toBe(403)
+  })
+
+  it("400 when not DELIVERED", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "IN_TRANSIT", warehouseId: "wh_1" })],
+    ]
+    const { status, json } = await call(settleCod)
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "Only DELIVERED parcels can be settled." })
+  })
+
+  it("400 when parcel belongs to a different warehouse", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [makeOrder({ status: "DELIVERED", warehouseId: "wh_2" })],
+    ]
+    const { status, json } = await call(settleCod)
+    expect(status).toBe(400)
+    expect(json).toEqual({
+      error: "This parcel belongs to a different warehouse.",
+    })
+  })
+
+  it("400 when already settled", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [
+        makeOrder({
+          status: "DELIVERED",
+          warehouseId: "wh_1",
+          codSettledAt: "2024-01-01T00:00:00.000Z",
+        }),
+      ],
+    ]
+    const { status, json } = await call(settleCod)
+    expect(status).toBe(400)
+    expect(json).toEqual({ error: "This parcel's COD is already settled." })
+  })
+
+  it("settles COD with timestamp and settler name", async () => {
+    sessionState.value = warehouseAdmin("wh_1")
+    dbState.selectQueue = [
+      [
+        makeOrder({
+          status: "DELIVERED",
+          warehouseId: "wh_1",
+          codSettledAt: null,
+        }),
+      ],
+    ]
+    dbState.updateResult = [makeOrder({ status: "DELIVERED" })]
+    const { status, payload } = await call(settleCod)
+    expect(status).toBe(200)
+    expect(payload).toMatchObject({ codSettledBy: "WH Walt" })
+    expect(typeof payload?.codSettledAt).toBe("string")
+  })
+})
 ````
 
 ## File: app/api/payouts/[id]/reject/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { order, payoutRequest } from "@/lib/db/schema"
 import { parseBody, payoutRejectSchema } from "@/lib/validation"
@@ -11319,6 +15036,14 @@ export async function PATCH(
     return rejected
   })
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "PAYOUT_REJECTED",
+    entityType: "payout_request",
+    entityId: updated.id,
+    description: `Rejected payout request ${updated.code}: ${reason.trim()}`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -11326,6 +15051,7 @@ export async function PATCH(
 ## File: app/api/security-config/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { securityConfig } from "@/lib/db/schema"
 import { parseBody, securityConfigSchema } from "@/lib/validation"
@@ -11370,6 +15096,15 @@ export async function PATCH(req: Request) {
     .where(eq(securityConfig.id, "default"))
     .returning()
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "SECURITY_CONFIG_UPDATED",
+    entityType: "security_config",
+    entityId: "default",
+    description: "Updated security money rules",
+    metadata: { lowValueThreshold, lowValueFlatFee, highValuePercentage },
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -11377,8 +15112,9 @@ export async function PATCH(req: Request) {
 ## File: app/api/team/[id]/pricing/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { profile } from "@/lib/db/schema"
+import { profile, user } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -11414,6 +15150,20 @@ export async function PATCH(
     .set({ canManagePricing: !current.canManagePricing })
     .where(eq(profile.userId, id))
     .returning()
+
+  const [targetUser] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1)
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "TEAM_MEMBER_PRICING_PERMISSION_CHANGED",
+    entityType: "user",
+    entityId: id,
+    description: `${updated.canManagePricing ? "Granted" : "Revoked"} pricing permission for ${targetUser?.name ?? id}`,
+  })
 
   return NextResponse.json(updated)
 }
@@ -14711,11 +18461,14 @@ export function useWarehouses() {
 // Usage:
 //   await sendMail({ to: "x@y.com", subject: "Hi", html: "<b>Hello</b>" })
 //
-// Failed mails (exhausted all retries) are stored in the `failed_mail` table.
+// Every fully-resolved send attempt (delivered, or all retries exhausted) is
+// recorded in the `email_log` table — this is the Admin/Super Admin "Email
+// logs" history. Failed sends are additionally stored in `failed_mail` as
+// before, for any future manual-resend tooling.
 
 import nodemailer, { type SendMailOptions } from "nodemailer"
 import { db } from "@/lib/db"
-import { failedMail } from "@/lib/db/schema"
+import { failedMail, emailLog } from "@/lib/db/schema"
 
 export interface MailPayload {
   to: string | string[]
@@ -14744,6 +18497,28 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+// Inserts one row into `email_log` for a fully-resolved send attempt
+// (success or exhausted-retries failure). Never throws — logging must not
+// mask the original mail outcome.
+async function logEmail(
+  payload: MailPayload,
+  status: (typeof emailLog.$inferInsert)["status"],
+  attempts: number,
+  error?: string,
+) {
+  try {
+    await db.insert(emailLog).values({
+      to: Array.isArray(payload.to) ? payload.to.join(", ") : payload.to,
+      subject: payload.subject,
+      status,
+      attempts,
+      error: error ?? null,
+    })
+  } catch (dbErr) {
+    console.error("[mailer] Failed to write email_log entry:", dbErr)
+  }
+}
+
 export async function sendMail(
   payload: MailPayload,
   options: SendMailOptions_ = {},
@@ -14764,6 +18539,7 @@ export async function sendMail(
     try {
       await transporter.sendMail(mailOptions)
       console.log(`[mailer] Email sent to ${payload.to} (attempt ${attempt})`)
+      await logEmail(payload, "SENT", attempt)
       return
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
@@ -14796,6 +18572,12 @@ export async function sendMail(
     // Don't let a DB failure swallow the original mail error.
     console.error("[mailer] Failed to log failed email to DB:", dbErr)
   }
+  await logEmail(
+    payload,
+    "FAILED",
+    totalAttempts,
+    lastError?.message ?? "Unknown error",
+  )
 
   throw new Error(
     `[mailer] Failed after ${totalAttempts} attempts. Last error: ${lastError?.message}`,
@@ -14952,9 +18734,149 @@ export async function PATCH(
 }
 ````
 
+## File: app/api/payouts/[id]/approve/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
+import { db } from "@/lib/db"
+import { payoutRequest } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+export async function PATCH(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  // Transaction: lock the request row for the guard + write so two
+  // concurrent approve/reject calls on the same request can't both pass the
+  // "still PENDING" check against stale state.
+  const committed: { row: typeof payoutRequest.$inferSelect | null } = {
+    row: null,
+  }
+  const response = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
+
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Only PENDING requests can be approved." },
+        { status: 400 },
+      )
+    }
+
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({
+        status: "APPROVED",
+        reviewedBy: me.name,
+        reviewedAt: new Date().toISOString(),
+      })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    committed.row = updated
+    return NextResponse.json(updated)
+  })
+
+  if (committed.row) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: "PAYOUT_APPROVED",
+      entityType: "payout_request",
+      entityId: committed.row.id,
+      description: `Approved payout request ${committed.row.code}`,
+    })
+  }
+
+  return response
+}
+````
+
+## File: app/api/payouts/[id]/paid/route.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
+import { db } from "@/lib/db"
+import { payoutRequest } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
+import { NextResponse } from "next/server"
+
+export async function PATCH(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (me.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  // Transaction: lock the request row for the guard + write so a concurrent
+  // call can't slip in between the "still APPROVED" check and the write.
+  const committed: { row: typeof payoutRequest.$inferSelect | null } = {
+    row: null,
+  }
+  const response = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
+
+    if (!current)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (current.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Only APPROVED requests can be marked paid." },
+        { status: 400 },
+      )
+    }
+
+    const [updated] = await tx
+      .update(payoutRequest)
+      .set({ status: "PAID", paidAt: new Date().toISOString() })
+      .where(eq(payoutRequest.id, id))
+      .returning()
+
+    committed.row = updated
+    return NextResponse.json(updated)
+  })
+
+  if (committed.row) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: "PAYOUT_PAID",
+      entityType: "payout_request",
+      entityId: committed.row.id,
+      description: `Marked payout request ${committed.row.code} as paid`,
+    })
+  }
+
+  return response
+}
+````
+
 ## File: app/api/riders/[id]/active/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { rider } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -14997,6 +18919,14 @@ export async function PATCH(
     .where(eq(rider.id, id))
     .returning()
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: updated.isActive ? "RIDER_ACTIVATED" : "RIDER_DEACTIVATED",
+    entityType: "rider",
+    entityId: updated.id,
+    description: `${updated.isActive ? "Activated" : "Deactivated"} rider ${updated.name}`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -15037,6 +18967,7 @@ function serializeUser(
     phone: row.phone,
     isActive: row.isActive,
     canManagePricing: row.canManagePricing,
+    tableRowsPerPage: row.tableRowsPerPage,
     warehouseId: row.warehouseId,
     merchantId: row.merchantId,
     riderId: row.riderId,
@@ -15062,7 +18993,8 @@ export async function GET() {
   return NextResponse.json(serializeUser(session.user, row))
 }
 
-// Update the signed-in user's own profile (currently just their display name).
+// Update the signed-in user's own profile: display name, avatar (both on the
+// `user` row), and/or table rows-per-page preference (on `profile`).
 export async function PATCH(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) {
@@ -15071,32 +19003,51 @@ export async function PATCH(req: Request) {
 
   const parsed = await parseBody(req, profileUpdateSchema)
   if (parsed.error) return parsed.error
+  const { name, image, tableRowsPerPage } = parsed.data
 
-  const updates: { name?: string; image?: string | null; updatedAt: string } = {
-    updatedAt: new Date().toISOString(),
+  // Transaction: the name/image write (user table) and the rows-per-page
+  // write (profile table) are two tables backing one logical "update my
+  // account" action — keep them atomic even though today's UI only ever
+  // sends one group at a time.
+  const result = await db.transaction(async (tx) => {
+    let updatedUser: Parameters<typeof serializeUser>[0] = session.user
+    if (name !== undefined || image !== undefined) {
+      const userUpdates: {
+        name?: string
+        image?: string | null
+        updatedAt: string
+      } = { updatedAt: new Date().toISOString() }
+      if (name !== undefined) userUpdates.name = name
+      if (image !== undefined) userUpdates.image = image
+      const [row] = await tx
+        .update(user)
+        .set(userUpdates)
+        .where(eq(user.id, session.user.id))
+        .returning()
+      updatedUser = { ...session.user, ...row }
+    }
+
+    if (tableRowsPerPage !== undefined) {
+      await tx
+        .update(profile)
+        .set({ tableRowsPerPage })
+        .where(eq(profile.userId, session.user.id))
+    }
+
+    const [profileRow] = await tx
+      .select()
+      .from(profile)
+      .where(eq(profile.userId, session.user.id))
+      .limit(1)
+
+    return { updatedUser, profileRow }
+  })
+
+  if (!result.profileRow) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
-  if (parsed.data.name !== undefined) updates.name = parsed.data.name
-  if (parsed.data.image !== undefined) updates.image = parsed.data.image
 
-  const [updatedUser] = await db
-    .update(user)
-    .set(updates)
-    .where(eq(user.id, session.user.id))
-    .returning()
-
-  const [row] = await db
-    .select()
-    .from(profile)
-    .where(eq(profile.userId, session.user.id))
-    .limit(1)
-
-  if (!row) {
-    return NextResponse.json(null, { status: 404 })
-  }
-
-  return NextResponse.json(
-    serializeUser({ ...session.user, ...updatedUser }, row),
-  )
+  return NextResponse.json(serializeUser(result.updatedUser, result.profileRow))
 }
 ````
 
@@ -18397,476 +22348,6 @@ export const SiteIcon = ParcelIcon
 }
 ````
 
-## File: features/orders/transitions.ts
-````typescript
-import { requireSession } from "@/lib/api-auth"
-import { db } from "@/lib/db"
-import {
-  merchant,
-  order,
-  pickupLocation,
-  rider,
-  warehouse,
-} from "@/lib/db/schema"
-import { parseBody } from "@/lib/validation"
-import {
-  orderApproveSchema,
-  orderDeliveredSchema,
-  orderDispatchSchema,
-  orderFailedSchema,
-  orderPickedUpSchema,
-  orderReturnSchema,
-} from "@/lib/validation"
-import { and, eq } from "drizzle-orm"
-import { NextResponse } from "next/server"
-import type { z } from "zod"
-
-// ---------------------------------------------------------------------------
-// Declarative order state machine.
-//
-// Every order-lifecycle PATCH route used to repeat the same skeleton:
-//   requireSession → role/ownership gate → fetch order → status guard →
-//   business rules → db.update(...).set(...) → return the row.
-//
-// This module captures each transition declaratively so the 10 route files
-// become thin wrappers. Behavior is intentionally identical to the original
-// routes — including the exact order in which checks run and the exact error
-// messages/status codes — so Phase 0's spec tests pass unmodified.
-// ---------------------------------------------------------------------------
-
-type Session = NonNullable<Awaited<ReturnType<typeof requireSession>>>
-type OrderRow = typeof order.$inferSelect
-
-// A short-circuit error (mapped to a NextResponse) or null to continue.
-type GuardError = { error: string; status: number } | null
-
-interface TransitionContext<Body> {
-  order: OrderRow
-  session: Session
-  body: Body
-}
-
-interface TransitionDef<Schema extends z.ZodType | undefined = undefined> {
-  // Role/precondition gate. Returns true when the session may attempt this
-  // transition at all (mirrors each route's `me.role !== ...` check).
-  authorize: (session: Session) => boolean
-  // Optional Zod schema; when present the body is parsed BEFORE the order is
-  // fetched, exactly as the original routes did (invalid body → 400, not 404).
-  schema?: Schema
-  // Ownership + status + business-rule checks, run in the original per-route
-  // order. Returns an error to short-circuit, or null to proceed.
-  guard: (
-    ctx: TransitionContext<
-      Schema extends z.ZodType ? z.infer<Schema> : undefined
-    >,
-  ) => Promise<GuardError> | GuardError
-  // Computes the `db.update(order).set(...)` payload for a valid transition.
-  buildUpdate: (
-    ctx: TransitionContext<
-      Schema extends z.ZodType ? z.infer<Schema> : undefined
-    >,
-  ) => Promise<Record<string, unknown>> | Record<string, unknown>
-}
-
-function defineTransition<Schema extends z.ZodType | undefined>(
-  def: TransitionDef<Schema>,
-): TransitionDef<Schema> {
-  return def
-}
-
-export const ORDER_TRANSITIONS = {
-  // -------------------------------------------------------------------------
-  approve: defineTransition({
-    authorize: (me) => me.role === "SUPER_ADMIN" || me.role === "ADMIN",
-    schema: orderApproveSchema,
-    guard: async ({ order: o, body }) => {
-      if (o.status !== "PENDING") {
-        return { error: "Only PENDING orders can be approved", status: 400 }
-      }
-      const [riderRow] = await db
-        .select()
-        .from(rider)
-        .where(eq(rider.id, body.riderId))
-        .limit(1)
-      if (!riderRow || !riderRow.isActive) {
-        return { error: "Select an active pickup rider.", status: 400 }
-      }
-      if (riderRow.taskType === "DELIVERY") {
-        return {
-          error:
-            "Select a pickup rider — this rider is a warehouse delivery rider.",
-          status: 400,
-        }
-      }
-      // Weight compliance against the merchant's current pricing settings.
-      const [merchantRow] = await db
-        .select({ maxWeightKg: merchant.maxWeightKg })
-        .from(merchant)
-        .where(eq(merchant.id, o.merchantId))
-        .limit(1)
-      if (merchantRow && o.parcelWeightKg > merchantRow.maxWeightKg) {
-        return {
-          error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit and cannot be approved.`,
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ session, body }) => {
-      const now = new Date().toISOString()
-      return {
-        status: "APPROVED",
-        approvedBy: session.name,
-        approvedAt: now,
-        pickupRiderId: body.riderId,
-        assignedAt: now,
-      }
-    },
-  }),
-
-  // -------------------------------------------------------------------------
-  dispatch: defineTransition({
-    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
-    schema: orderDispatchSchema,
-    guard: async ({ order: o, session, body }) => {
-      if (o.status !== "IN_WAREHOUSE") {
-        return {
-          error: "Only IN_WAREHOUSE parcels can be dispatched.",
-          status: 400,
-        }
-      }
-      if (o.warehouseId !== session.warehouseId) {
-        return {
-          error: "This parcel is held at a different warehouse.",
-          status: 400,
-        }
-      }
-      const [riderRow] = await db
-        .select()
-        .from(rider)
-        .where(eq(rider.id, body.riderId))
-        .limit(1)
-      if (!riderRow || !riderRow.isActive) {
-        return { error: "Select an active delivery rider.", status: 400 }
-      }
-      if (riderRow.warehouseId !== session.warehouseId) {
-        return {
-          error: "Select a delivery rider based at this warehouse.",
-          status: 400,
-        }
-      }
-      if (riderRow.taskType === "PICKUP") {
-        return {
-          error: "Select a delivery rider — this rider is a pickup rider.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ session, body }) => ({
-      status: "IN_TRANSIT",
-      deliveryRiderId: body.riderId,
-      dispatchedAt: new Date().toISOString(),
-      dispatchedBy: session.name,
-    }),
-  }),
-
-  // -------------------------------------------------------------------------
-  "picked-up": defineTransition({
-    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
-    schema: orderPickedUpSchema,
-    guard: ({ order: o, session }) => {
-      if (o.pickupRiderId !== session.riderId) {
-        return { error: "This pickup is not assigned to you.", status: 403 }
-      }
-      if (o.status !== "APPROVED") {
-        return { error: "Only APPROVED orders can be picked up.", status: 400 }
-      }
-      return null
-    },
-    buildUpdate: async ({ order: o, body }) => {
-      // Route the parcel to an active hub in the SAME division it was picked
-      // up from. If the division has no active hub, leave warehouseId null so
-      // the order stays in the shared incoming queue and never disappears.
-      let destinationWarehouseId: string | null = null
-      const [pickup] = await db
-        .select({ divisionId: pickupLocation.divisionId })
-        .from(pickupLocation)
-        .where(eq(pickupLocation.id, o.pickupLocationId))
-        .limit(1)
-      if (pickup?.divisionId) {
-        const [hub] = await db
-          .select({ id: warehouse.id })
-          .from(warehouse)
-          .where(
-            and(
-              eq(warehouse.isActive, true),
-              eq(warehouse.divisionId, pickup.divisionId),
-            ),
-          )
-          .limit(1)
-        destinationWarehouseId = hub?.id ?? null
-      }
-      return {
-        status: "PICKED_UP",
-        pickedUpAt: new Date().toISOString(),
-        warehouseId: destinationWarehouseId,
-        pickupProofRefs: body.proofRefs,
-      }
-    },
-  }),
-
-  // -------------------------------------------------------------------------
-  receive: defineTransition({
-    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
-    guard: ({ order: o }) => {
-      if (o.status !== "PICKED_UP") {
-        return {
-          error: "Only PICKED_UP parcels can be received.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ session }) => ({
-      status: "IN_WAREHOUSE",
-      warehouseId: session.warehouseId,
-      receivedAtWarehouseAt: new Date().toISOString(),
-      receivedByWarehouse: session.name,
-    }),
-  }),
-
-  // -------------------------------------------------------------------------
-  "out-for-delivery": defineTransition({
-    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
-    guard: ({ order: o, session }) => {
-      if (o.deliveryRiderId !== session.riderId) {
-        return { error: "This delivery is not assigned to you.", status: 403 }
-      }
-      if (o.status !== "IN_TRANSIT") {
-        return {
-          error: "Only IN_TRANSIT parcels can go out for delivery.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ order: o }) => ({
-      status: "OUT_FOR_DELIVERY",
-      outForDeliveryAt: new Date().toISOString(),
-      deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
-    }),
-  }),
-
-  // -------------------------------------------------------------------------
-  delivered: defineTransition({
-    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
-    schema: orderDeliveredSchema,
-    guard: ({ order: o, session }) => {
-      if (o.deliveryRiderId !== session.riderId) {
-        return { error: "This delivery is not assigned to you.", status: 403 }
-      }
-      if (o.status !== "OUT_FOR_DELIVERY") {
-        return {
-          error: "Only OUT_FOR_DELIVERY parcels can be marked delivered.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ order: o, body }) => ({
-      status: "DELIVERED",
-      deliveredAt: new Date().toISOString(),
-      deliveryProofRef: body.proofRef ?? `proof_${o.code.toLowerCase()}.jpg`,
-      amountCollected: o.totalCollectible,
-    }),
-  }),
-
-  // -------------------------------------------------------------------------
-  failed: defineTransition({
-    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
-    schema: orderFailedSchema,
-    guard: ({ order: o, session }) => {
-      if (o.deliveryRiderId !== session.riderId) {
-        return { error: "This delivery is not assigned to you.", status: 403 }
-      }
-      if (o.status !== "OUT_FOR_DELIVERY") {
-        return {
-          error: "Only OUT_FOR_DELIVERY parcels can be marked failed.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ body }) => ({
-      status: "FAILED_ATTEMPT",
-      failedAttemptAt: new Date().toISOString(),
-      failureNote: body.note.trim(),
-    }),
-  }),
-
-  // -------------------------------------------------------------------------
-  reattempt: defineTransition({
-    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
-    guard: ({ order: o, session }) => {
-      if (o.status !== "FAILED_ATTEMPT") {
-        return {
-          error: "Only FAILED_ATTEMPT parcels can be reattempted.",
-          status: 400,
-        }
-      }
-      if (o.warehouseId !== session.warehouseId) {
-        return {
-          error: "This parcel is held at a different warehouse.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ order: o, session }) => {
-      const now = new Date().toISOString()
-      return {
-        status: "OUT_FOR_DELIVERY",
-        failureNote: null,
-        failedAttemptAt: null,
-        failedResolvedAt: now,
-        failedResolvedBy: session.name,
-        outForDeliveryAt: now,
-        deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
-      }
-    },
-  }),
-
-  // -------------------------------------------------------------------------
-  return: defineTransition({
-    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
-    schema: orderReturnSchema,
-    guard: ({ order: o, session }) => {
-      if (o.status !== "FAILED_ATTEMPT") {
-        return {
-          error: "Only FAILED_ATTEMPT parcels can be returned.",
-          status: 400,
-        }
-      }
-      if (o.warehouseId !== session.warehouseId) {
-        return {
-          error: "This parcel is held at a different warehouse.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ session, body }) => {
-      const now = new Date().toISOString()
-      return {
-        status: "RETURNED",
-        failedResolvedAt: now,
-        failedResolvedBy: session.name,
-        returnedAt: now,
-        returnReason: body.reason.trim(),
-      }
-    },
-  }),
-
-  // -------------------------------------------------------------------------
-  "settle-cod": defineTransition({
-    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
-    guard: ({ order: o, session }) => {
-      if (o.status !== "DELIVERED") {
-        return { error: "Only DELIVERED parcels can be settled.", status: 400 }
-      }
-      if (o.warehouseId !== session.warehouseId) {
-        return {
-          error: "This parcel belongs to a different warehouse.",
-          status: 400,
-        }
-      }
-      if (o.codSettledAt) {
-        return {
-          error: "This parcel's COD is already settled.",
-          status: 400,
-        }
-      }
-      return null
-    },
-    buildUpdate: ({ session }) => ({
-      codSettledAt: new Date().toISOString(),
-      codSettledBy: session.name,
-    }),
-  }),
-} as const
-
-export type TransitionName = keyof typeof ORDER_TRANSITIONS
-
-// ---------------------------------------------------------------------------
-// Shared runner. Every transition route delegates to this. The control flow
-// mirrors the original routes exactly:
-//   session → role gate → (parse body) → fetch order → guard → update.
-// ---------------------------------------------------------------------------
-export async function applyOrderTransition(
-  name: TransitionName,
-  orderId: string,
-  req: Request,
-): Promise<NextResponse> {
-  const def = ORDER_TRANSITIONS[name] as TransitionDef<z.ZodType | undefined>
-
-  const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (!def.authorize(me)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-
-  // Body is parsed before the order is fetched (invalid body → 400, not 404).
-  let body: unknown = undefined
-  if (def.schema) {
-    const parsed = await parseBody(req, def.schema)
-    if (parsed.error) return parsed.error
-    body = parsed.data
-  }
-
-  // Transaction: lock this order row for the duration of the guard + write so
-  // two concurrent transitions on the same order (e.g. two admins approving,
-  // or a rider double-submitting a delivery outcome) can't both pass the
-  // guard against stale state. `FOR UPDATE` makes a second concurrent
-  // transaction block here until the first commits, then re-reads the
-  // already-updated row — so its own guard correctly sees the new status.
-  return await db.transaction(async (tx) => {
-    const [orderRow] = await tx
-      .select()
-      .from(order)
-      .where(eq(order.id, orderId))
-      .for("update")
-      .limit(1)
-    if (!orderRow) {
-      return NextResponse.json({ error: "Order not found" }, { status: 404 })
-    }
-
-    const ctx = {
-      order: orderRow,
-      session: me,
-      body,
-    } as TransitionContext<never>
-
-    const guardError = await def.guard(ctx)
-    if (guardError) {
-      return NextResponse.json(
-        { error: guardError.error },
-        { status: guardError.status },
-      )
-    }
-
-    const updateValues = await def.buildUpdate(ctx)
-    const [updated] = await tx
-      .update(order)
-      .set(updateValues)
-      .where(eq(order.id, orderId))
-      .returning()
-
-    return NextResponse.json(updated)
-  })
-}
-````
-
 ## File: features/pickup-locations/components/pickup-locations-manager.tsx
 ````typescript
 "use client"
@@ -19340,10 +22821,11 @@ export function PickupLocationsManager({
 ## File: lib/constants.ts
 ````typescript
 import type {
-  OrderStatus,
   MerchantStatus,
-  Role,
+  OrderStatus,
   PayoutRequestStatus,
+  Role,
+  EmailLogStatus,
 } from "@/lib/types"
 import { siteConfig } from "@/config/site"
 
@@ -19352,6 +22834,12 @@ import { siteConfig } from "@/config/site"
 export const BRAND_NAME = siteConfig.name
 export const CURRENCY_SUFFIX = "TK"
 export const MAX_BULK_ORDERS = 50
+
+// DataTable rows-per-page: stored per-account on profile.tableRowsPerPage.
+// Single source of truth for the bounds — used by validation, the API
+// fallback, the seed script, and DataTable's own defensive clamp.
+export const DEFAULT_TABLE_ROWS_PER_PAGE = 20
+export const MAX_TABLE_ROWS_PER_PAGE = 250
 
 export const BADGE_TONES = {
   pending: "bg-chart-3/15 text-chart-3 border-chart-3/25",
@@ -19430,6 +22918,16 @@ export const ROLE_TONES: Record<Role, BadgeTone> = {
   WAREHOUSE_ADMIN: "warehouse",
   MERCHANT: "neutral",
   RIDER: "neutral",
+}
+
+export const EMAIL_LOG_STATUS_LABELS: Record<EmailLogStatus, string> = {
+  SENT: "Sent",
+  FAILED: "Failed",
+}
+
+export const EMAIL_LOG_STATUS_TONES: Record<EmailLogStatus, BadgeTone> = {
+  SENT: "success",
+  FAILED: "danger",
 }
 ````
 
@@ -19690,6 +23188,7 @@ export async function uploadImage(
 ## File: app/api/merchants/[id]/approve/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { sendMail } from "@/lib/mailer"
@@ -19733,6 +23232,14 @@ export async function PATCH(
     })
     .where(eq(merchant.id, id))
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_APPROVED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Approved merchant ${updated.businessName}`,
+  })
 
   sendMail(
     {
@@ -19977,6 +23484,7 @@ export async function POST(req: Request) {
 ````typescript
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, rider } from "@/lib/db/schema"
 import { and, eq, ilike, or } from "drizzle-orm"
@@ -20064,6 +23572,14 @@ export async function POST(req: Request) {
     riderId: createdRider.id,
   })
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "RIDER_CREATED",
+    entityType: "rider",
+    entityId: createdRider.id,
+    description: `Created rider ${createdRider.name} (${createdRider.zone})`,
+  })
+
   return NextResponse.json(createdRider, { status: 201 })
 }
 ````
@@ -20071,8 +23587,9 @@ export async function POST(req: Request) {
 ## File: app/api/team/[id]/active/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { profile } from "@/lib/db/schema"
+import { profile, user } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -20103,6 +23620,22 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .returning()
 
+  const [targetUser] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1)
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: updated.isActive
+      ? "TEAM_MEMBER_ACTIVATED"
+      : "TEAM_MEMBER_DEACTIVATED",
+    entityType: "user",
+    entityId: id,
+    description: `${updated.isActive ? "Activated" : "Deactivated"} account for ${targetUser?.name ?? id}`,
+  })
+
   return NextResponse.json(updated)
 }
 ````
@@ -20114,7 +23647,7 @@ export async function PATCH(
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Plus, Pencil, Search, Trash2, MapPin } from "lucide-react"
+import { MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -20693,9 +24226,10 @@ lib/
   types.ts                           re-exports entity types from schema
   validation.ts                      zod schemas + parseBody
   api-auth.ts                        requireSession()
+  audit.ts                           logAudit() — the only audit_log writer
   nav-config.ts                      sidebar entries per role
   constants.ts, pricing.ts           cross-cutting domain logic
-  mailer.ts, mail-templates.ts       transactional email
+  mailer.ts, mail-templates.ts       transactional email (+ email_log history)
   storage/                           file upload backends (local / R2)
 config/
   site.json, site.ts                 brand name, tagline, icon
@@ -20726,6 +24260,8 @@ features/
   team/
   account/         hooks/use-auth.tsx (the auth context)
   security/
+  audit-logs/      hooks/use-audit-logs.ts — read-only, Admin/Super Admin only
+  email-logs/      hooks/use-email-logs.ts — read-mostly, Admin/Super Admin only
 ```
 
 `components/` keeps **only generic, feature-agnostic** building blocks
@@ -20733,6 +24269,15 @@ features/
 `form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
 (`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
 `hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
+
+**One documented exception:** `components/data-table.tsx` imports
+`useAuth()` from `features/account` to default its `pageSize` prop to the
+signed-in account's saved rows-per-page preference
+(`profile.tableRowsPerPage`, see Recipe A's example below). This was a
+deliberate tradeoff — the alternative was threading `pageSize` through all 18+
+page-level call sites — and it's the only place in `components/` allowed to
+reach into `features/`. Don't use this as precedent for other components;
+ask before adding a second one.
 
 ### Only split a component into a folder when there's real content
 
@@ -20980,6 +24525,57 @@ Rules:
 
 ---
 
+## 3.5. Audit log (`lib/audit.ts`)
+
+Every state-changing mutation made by an Admin or Super Admin (and, where a
+role shares a write path with them — e.g. Warehouse Admin riders, RIDER order
+transitions) should be recorded to the `audit_log` table through the single
+entry point:
+
+```ts
+import { logAudit } from "@/lib/audit"
+
+await logAudit({
+  actor: { userId: me.userId, name: me.name, role: me.role },
+  action: "MERCHANT_APPROVED", // SCREAMING_SNAKE_CASE verb
+  entityType: "merchant", // lowercase, matches the schema table name
+  entityId: updated.id,
+  description: `Approved merchant ${updated.businessName}`, // human-readable, shown directly in the table
+  metadata: { ... }, // optional structured context (old/new values, etc.)
+})
+```
+
+Rules:
+
+- **Call it after the write succeeds**, not before — never log an action that
+  didn't actually happen (e.g. a guard rejected it, or the row wasn't found).
+  In a `db.transaction()` flow, capture the committed row into a plain
+  variable/object _inside_ the transaction callback and check it for
+  non-null _after_ the transaction resolves, then log — don't log from
+  inside the callback itself, since a transaction can still be rolled back
+  by the caller after the callback returns.
+- **`logAudit()` never throws.** A logging failure must not break the request
+  it's describing — it only writes to `console.error`. Don't wrap calls in
+  your own `try/catch`; the helper already swallows errors.
+- **One call per mutation**, placed in the route file (or, for orders, in
+  `applyOrderTransition` itself — that single hook covers all ten
+  transitions, so don't add per-transition calls).
+- `action` is a short machine-readable verb in `SCREAMING_SNAKE_CASE`,
+  generally `<ENTITY>_<VERB>` (`WAREHOUSE_CREATED`, `RIDER_DEACTIVATED`,
+  `PAYOUT_REJECTED`). `entityType` is the lowercase, singular table name
+  (`merchant`, `payout_request`, `order`) — used for search/filtering, not
+  shown directly to the reader.
+- Resources that are purely merchant/rider self-service (e.g.
+  `pickup_location`) are **not** audited — this trail exists to track actions
+  _by_ the privileged roles, not every write in the system.
+
+The trail itself is read-only and visible only to Admin and Super Admin, at
+`/dashboard/audit-logs` (`app/api/audit-logs/route.ts`,
+`features/audit-logs/hooks/use-audit-logs.ts`). It has no create/update/delete
+UI — `logAudit()` is the only writer, by design.
+
+---
+
 ## 4. Storage (`lib/storage/`)
 
 File uploads go through a single entry point — **never import the local or R2
@@ -21022,8 +24618,11 @@ in `validateEnv()`.
 ## 6. Email (`lib/mailer.ts`)
 
 Transactional email goes through `sendMail()` from `lib/mailer.ts`. It uses
-Gmail SMTP with retry/backoff and logs failed sends to the `failed_mail` table.
-HTML templates live in `lib/mail-templates.ts`.
+Gmail SMTP with retry/backoff. Every fully-resolved send (delivered, or all
+retries exhausted) is recorded to the `email_log` table — this is the
+Admin/Super Admin "Email logs" history at `/dashboard/email-logs`. Failed
+sends are additionally stored in `failed_mail`, kept for any future
+manual-resend tooling. HTML templates live in `lib/mail-templates.ts`.
 
 ```ts
 import { sendMail } from "@/lib/mailer"
@@ -21035,7 +24634,13 @@ await sendMail({
 })
 ```
 
-Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`.
+Never call nodemailer (or any SMTP client) directly outside `lib/mailer.ts`,
+and never insert into `email_log` / `failed_mail` from anywhere else —
+`sendMail()` is the only writer. The one allowed exception is
+`app/api/email-logs/[id]/route.ts`, which lets an Admin/Super Admin manually
+flip a `FAILED` row to `SENT` after confirming delivery or resending by hand —
+that mutation calls `logAudit()` (see [§3.5](#35-audit-log-libaudits)) so the
+override itself is traceable.
 
 ---
 
@@ -21077,6 +24682,22 @@ Example: the `rider.taskType` column added recently.
 > If the column is `NOT NULL` and existing rows would violate it, either give it
 > a `.default(...)` or backfill before pushing (the push will otherwise fail).
 
+**Variant — a field on `profile` the user edits about themselves** (not a
+resource entity): example, `profile.tableRowsPerPage`. The shape differs from
+the above in three ways:
+
+- There's no per-resource hook to extend — the field is read/written through
+  `features/account/hooks/use-auth.tsx` and `app/api/users/me/route.ts`
+  instead, alongside the existing name/avatar fields.
+- `app/api/users/me/route.ts`'s `PATCH` writes to **two tables**
+  (`user` for name/image, `profile` for everything else). Once a second field
+  lives on `profile`, that handler is a genuine multi-table write — wrap it in
+  `db.transaction()` per [§2's transaction subsection](#transaction-boundary--row-lock),
+  even though today's UI only ever sends one field group per request.
+- Skip the seed step if the column has a sane `.default(...)` — Drizzle
+  applies it on insert when the seed script doesn't set the field explicitly,
+  so there's nothing to backfill in `lib/db/seed.ts`.
+
 ### Recipe B — Add a brand-new resource (full CRUD)
 
 Example structure to mirror: **divisions** (simple) or **merchants** (rich).
@@ -21093,6 +24714,9 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
      role-scoped — **enforce it server-side; Neon has no RLS.**
+   - If this is a resource Admin/Super Admin manage (not pure
+     merchant/rider self-service), call `logAudit()` after each write
+     succeeds — see [§3.5](#35-audit-log-libaudits).
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
@@ -21120,7 +24744,13 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    `app/dashboard/orders/page.tsx`) above the table — don't keep a local
    `useState` for it. `DataTable`'s own footer already places pagination on
    the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page.
+   passed); don't rebuild that layout per page. Don't pass a `pageSize` prop
+   unless this table genuinely needs a different size than the rest of the
+   app — it already defaults to the signed-in account's saved preference
+   (Account settings → Tables, 1-250, default 20). An explicit `pageSize` is
+   for deliberately small, fixed widgets (see the dashboard summary lists in
+   `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
+   setting.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.
@@ -21221,7 +24851,11 @@ machine in `features/orders/transitions.ts`.
 Never duplicate the auth/parse/guard/update plumbing inline — the shared
 runner already handles the transaction boundary and row lock (see
 [§2](#transaction-boundary--row-lock)), so a new transition only needs to
-define its `guard`/`buildUpdate`, never its own `db.transaction()` call.
+define its `guard`/`buildUpdate`, never its own `db.transaction()` call. It's
+also already audited: `applyOrderTransition` calls `logAudit()` once, after
+the transaction commits, for every transition — add the new name's
+human-readable label to `TRANSITION_LABELS` in `transitions.ts` and you're
+done; don't add a second `logAudit()` call in the route wrapper.
 
 ---
 
@@ -22854,6 +26488,508 @@ export function useOrders() {
 }
 ````
 
+## File: features/orders/transitions.ts
+````typescript
+import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
+import { db } from "@/lib/db"
+import {
+  merchant,
+  order,
+  pickupLocation,
+  rider,
+  warehouse,
+} from "@/lib/db/schema"
+import {
+  orderApproveSchema,
+  orderDeliveredSchema,
+  orderDispatchSchema,
+  orderFailedSchema,
+  orderPickedUpSchema,
+  orderReturnSchema,
+  parseBody,
+} from "@/lib/validation"
+import { and, eq } from "drizzle-orm"
+import { NextResponse } from "next/server"
+import type { z } from "zod"
+
+// ---------------------------------------------------------------------------
+// Declarative order state machine.
+//
+// Every order-lifecycle PATCH route used to repeat the same skeleton:
+//   requireSession → role/ownership gate → fetch order → status guard →
+//   business rules → db.update(...).set(...) → return the row.
+//
+// This module captures each transition declaratively so the 10 route files
+// become thin wrappers. Behavior is intentionally identical to the original
+// routes — including the exact order in which checks run and the exact error
+// messages/status codes — so Phase 0's spec tests pass unmodified.
+// ---------------------------------------------------------------------------
+
+type Session = NonNullable<Awaited<ReturnType<typeof requireSession>>>
+type OrderRow = typeof order.$inferSelect
+
+// A short-circuit error (mapped to a NextResponse) or null to continue.
+type GuardError = { error: string; status: number } | null
+
+interface TransitionContext<Body> {
+  order: OrderRow
+  session: Session
+  body: Body
+}
+
+interface TransitionDef<Schema extends z.ZodType | undefined = undefined> {
+  // Role/precondition gate. Returns true when the session may attempt this
+  // transition at all (mirrors each route's `me.role !== ...` check).
+  authorize: (session: Session) => boolean
+  // Optional Zod schema; when present the body is parsed BEFORE the order is
+  // fetched, exactly as the original routes did (invalid body → 400, not 404).
+  schema?: Schema
+  // Ownership + status + business-rule checks, run in the original per-route
+  // order. Returns an error to short-circuit, or null to proceed.
+  guard: (
+    ctx: TransitionContext<
+      Schema extends z.ZodType ? z.infer<Schema> : undefined
+    >,
+  ) => Promise<GuardError> | GuardError
+  // Computes the `db.update(order).set(...)` payload for a valid transition.
+  buildUpdate: (
+    ctx: TransitionContext<
+      Schema extends z.ZodType ? z.infer<Schema> : undefined
+    >,
+  ) => Promise<Record<string, unknown>> | Record<string, unknown>
+}
+
+function defineTransition<Schema extends z.ZodType | undefined>(
+  def: TransitionDef<Schema>,
+): TransitionDef<Schema> {
+  return def
+}
+
+export const ORDER_TRANSITIONS = {
+  // -------------------------------------------------------------------------
+  approve: defineTransition({
+    authorize: (me) => me.role === "SUPER_ADMIN" || me.role === "ADMIN",
+    schema: orderApproveSchema,
+    guard: async ({ order: o, body }) => {
+      if (o.status !== "PENDING") {
+        return { error: "Only PENDING orders can be approved", status: 400 }
+      }
+      const [riderRow] = await db
+        .select()
+        .from(rider)
+        .where(eq(rider.id, body.riderId))
+        .limit(1)
+      if (!riderRow || !riderRow.isActive) {
+        return { error: "Select an active pickup rider.", status: 400 }
+      }
+      if (riderRow.taskType === "DELIVERY") {
+        return {
+          error:
+            "Select a pickup rider — this rider is a warehouse delivery rider.",
+          status: 400,
+        }
+      }
+      // Weight compliance against the merchant's current pricing settings.
+      const [merchantRow] = await db
+        .select({ maxWeightKg: merchant.maxWeightKg })
+        .from(merchant)
+        .where(eq(merchant.id, o.merchantId))
+        .limit(1)
+      if (merchantRow && o.parcelWeightKg > merchantRow.maxWeightKg) {
+        return {
+          error: `Parcel weight exceeds the ${merchantRow.maxWeightKg} KG limit and cannot be approved.`,
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session, body }) => {
+      const now = new Date().toISOString()
+      return {
+        status: "APPROVED",
+        approvedBy: session.name,
+        approvedAt: now,
+        pickupRiderId: body.riderId,
+        assignedAt: now,
+      }
+    },
+  }),
+
+  // -------------------------------------------------------------------------
+  dispatch: defineTransition({
+    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
+    schema: orderDispatchSchema,
+    guard: async ({ order: o, session, body }) => {
+      if (o.status !== "IN_WAREHOUSE") {
+        return {
+          error: "Only IN_WAREHOUSE parcels can be dispatched.",
+          status: 400,
+        }
+      }
+      if (o.warehouseId !== session.warehouseId) {
+        return {
+          error: "This parcel is held at a different warehouse.",
+          status: 400,
+        }
+      }
+      const [riderRow] = await db
+        .select()
+        .from(rider)
+        .where(eq(rider.id, body.riderId))
+        .limit(1)
+      if (!riderRow || !riderRow.isActive) {
+        return { error: "Select an active delivery rider.", status: 400 }
+      }
+      if (riderRow.warehouseId !== session.warehouseId) {
+        return {
+          error: "Select a delivery rider based at this warehouse.",
+          status: 400,
+        }
+      }
+      if (riderRow.taskType === "PICKUP") {
+        return {
+          error: "Select a delivery rider — this rider is a pickup rider.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session, body }) => ({
+      status: "IN_TRANSIT",
+      deliveryRiderId: body.riderId,
+      dispatchedAt: new Date().toISOString(),
+      dispatchedBy: session.name,
+    }),
+  }),
+
+  // -------------------------------------------------------------------------
+  "picked-up": defineTransition({
+    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
+    schema: orderPickedUpSchema,
+    guard: ({ order: o, session }) => {
+      if (o.pickupRiderId !== session.riderId) {
+        return { error: "This pickup is not assigned to you.", status: 403 }
+      }
+      if (o.status !== "APPROVED") {
+        return { error: "Only APPROVED orders can be picked up.", status: 400 }
+      }
+      return null
+    },
+    buildUpdate: async ({ order: o, body }) => {
+      // Route the parcel to an active hub in the SAME division it was picked
+      // up from. If the division has no active hub, leave warehouseId null so
+      // the order stays in the shared incoming queue and never disappears.
+      let destinationWarehouseId: string | null = null
+      const [pickup] = await db
+        .select({ divisionId: pickupLocation.divisionId })
+        .from(pickupLocation)
+        .where(eq(pickupLocation.id, o.pickupLocationId))
+        .limit(1)
+      if (pickup?.divisionId) {
+        const [hub] = await db
+          .select({ id: warehouse.id })
+          .from(warehouse)
+          .where(
+            and(
+              eq(warehouse.isActive, true),
+              eq(warehouse.divisionId, pickup.divisionId),
+            ),
+          )
+          .limit(1)
+        destinationWarehouseId = hub?.id ?? null
+      }
+      return {
+        status: "PICKED_UP",
+        pickedUpAt: new Date().toISOString(),
+        warehouseId: destinationWarehouseId,
+        pickupProofRefs: body.proofRefs,
+      }
+    },
+  }),
+
+  // -------------------------------------------------------------------------
+  receive: defineTransition({
+    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
+    guard: ({ order: o }) => {
+      if (o.status !== "PICKED_UP") {
+        return {
+          error: "Only PICKED_UP parcels can be received.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session }) => ({
+      status: "IN_WAREHOUSE",
+      warehouseId: session.warehouseId,
+      receivedAtWarehouseAt: new Date().toISOString(),
+      receivedByWarehouse: session.name,
+    }),
+  }),
+
+  // -------------------------------------------------------------------------
+  "out-for-delivery": defineTransition({
+    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
+    guard: ({ order: o, session }) => {
+      if (o.deliveryRiderId !== session.riderId) {
+        return { error: "This delivery is not assigned to you.", status: 403 }
+      }
+      if (o.status !== "IN_TRANSIT") {
+        return {
+          error: "Only IN_TRANSIT parcels can go out for delivery.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ order: o }) => ({
+      status: "OUT_FOR_DELIVERY",
+      outForDeliveryAt: new Date().toISOString(),
+      deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
+    }),
+  }),
+
+  // -------------------------------------------------------------------------
+  delivered: defineTransition({
+    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
+    schema: orderDeliveredSchema,
+    guard: ({ order: o, session }) => {
+      if (o.deliveryRiderId !== session.riderId) {
+        return { error: "This delivery is not assigned to you.", status: 403 }
+      }
+      if (o.status !== "OUT_FOR_DELIVERY") {
+        return {
+          error: "Only OUT_FOR_DELIVERY parcels can be marked delivered.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ order: o, body }) => ({
+      status: "DELIVERED",
+      deliveredAt: new Date().toISOString(),
+      deliveryProofRef: body.proofRef ?? `proof_${o.code.toLowerCase()}.jpg`,
+      amountCollected: o.totalCollectible,
+    }),
+  }),
+
+  // -------------------------------------------------------------------------
+  failed: defineTransition({
+    authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
+    schema: orderFailedSchema,
+    guard: ({ order: o, session }) => {
+      if (o.deliveryRiderId !== session.riderId) {
+        return { error: "This delivery is not assigned to you.", status: 403 }
+      }
+      if (o.status !== "OUT_FOR_DELIVERY") {
+        return {
+          error: "Only OUT_FOR_DELIVERY parcels can be marked failed.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ body }) => ({
+      status: "FAILED_ATTEMPT",
+      failedAttemptAt: new Date().toISOString(),
+      failureNote: body.note.trim(),
+    }),
+  }),
+
+  // -------------------------------------------------------------------------
+  reattempt: defineTransition({
+    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
+    guard: ({ order: o, session }) => {
+      if (o.status !== "FAILED_ATTEMPT") {
+        return {
+          error: "Only FAILED_ATTEMPT parcels can be reattempted.",
+          status: 400,
+        }
+      }
+      if (o.warehouseId !== session.warehouseId) {
+        return {
+          error: "This parcel is held at a different warehouse.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ order: o, session }) => {
+      const now = new Date().toISOString()
+      return {
+        status: "OUT_FOR_DELIVERY",
+        failureNote: null,
+        failedAttemptAt: null,
+        failedResolvedAt: now,
+        failedResolvedBy: session.name,
+        outForDeliveryAt: now,
+        deliveryAttempts: (o.deliveryAttempts ?? 0) + 1,
+      }
+    },
+  }),
+
+  // -------------------------------------------------------------------------
+  return: defineTransition({
+    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
+    schema: orderReturnSchema,
+    guard: ({ order: o, session }) => {
+      if (o.status !== "FAILED_ATTEMPT") {
+        return {
+          error: "Only FAILED_ATTEMPT parcels can be returned.",
+          status: 400,
+        }
+      }
+      if (o.warehouseId !== session.warehouseId) {
+        return {
+          error: "This parcel is held at a different warehouse.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session, body }) => {
+      const now = new Date().toISOString()
+      return {
+        status: "RETURNED",
+        failedResolvedAt: now,
+        failedResolvedBy: session.name,
+        returnedAt: now,
+        returnReason: body.reason.trim(),
+      }
+    },
+  }),
+
+  // -------------------------------------------------------------------------
+  "settle-cod": defineTransition({
+    authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
+    guard: ({ order: o, session }) => {
+      if (o.status !== "DELIVERED") {
+        return { error: "Only DELIVERED parcels can be settled.", status: 400 }
+      }
+      if (o.warehouseId !== session.warehouseId) {
+        return {
+          error: "This parcel belongs to a different warehouse.",
+          status: 400,
+        }
+      }
+      if (o.codSettledAt) {
+        return {
+          error: "This parcel's COD is already settled.",
+          status: 400,
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session }) => ({
+      codSettledAt: new Date().toISOString(),
+      codSettledBy: session.name,
+    }),
+  }),
+} as const
+
+export type TransitionName = keyof typeof ORDER_TRANSITIONS
+
+// ---------------------------------------------------------------------------
+// Shared runner. Every transition route delegates to this. The control flow
+// mirrors the original routes exactly:
+//   session → role gate → (parse body) → fetch order → guard → update.
+// ---------------------------------------------------------------------------
+// Human-readable past-tense label for each transition, used to build the
+// audit log description (e.g. "Approved order ORD-0042").
+const TRANSITION_LABELS: Record<TransitionName, string> = {
+  approve: "Approved",
+  dispatch: "Dispatched",
+  "picked-up": "Marked picked up",
+  "out-for-delivery": "Marked out for delivery",
+  delivered: "Marked delivered",
+  failed: "Marked failed delivery attempt",
+  return: "Returned",
+  reattempt: "Scheduled reattempt for",
+  receive: "Received",
+  "settle-cod": "Settled COD for",
+}
+
+export async function applyOrderTransition(
+  name: TransitionName,
+  orderId: string,
+  req: Request,
+): Promise<NextResponse> {
+  const def = ORDER_TRANSITIONS[name] as TransitionDef<z.ZodType | undefined>
+
+  const me = await requireSession()
+  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!def.authorize(me)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  // Body is parsed before the order is fetched (invalid body → 400, not 404).
+  let body: unknown = undefined
+  if (def.schema) {
+    const parsed = await parseBody(req, def.schema)
+    if (parsed.error) return parsed.error
+    body = parsed.data
+  }
+
+  // Transaction: lock this order row for the duration of the guard + write so
+  // two concurrent transitions on the same order (e.g. two admins approving,
+  // or a rider double-submitting a delivery outcome) can't both pass the
+  // guard against stale state. `FOR UPDATE` makes a second concurrent
+  // transaction block here until the first commits, then re-reads the
+  // already-updated row — so its own guard correctly sees the new status.
+  const committed: { order: OrderRow | null } = { order: null }
+  const response = await db.transaction(async (tx) => {
+    const [orderRow] = await tx
+      .select()
+      .from(order)
+      .where(eq(order.id, orderId))
+      .for("update")
+      .limit(1)
+    if (!orderRow) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    }
+
+    const ctx = {
+      order: orderRow,
+      session: me,
+      body,
+    } as TransitionContext<never>
+
+    const guardError = await def.guard(ctx)
+    if (guardError) {
+      return NextResponse.json(
+        { error: guardError.error },
+        { status: guardError.status },
+      )
+    }
+
+    const updateValues = await def.buildUpdate(ctx)
+    const [updated] = await tx
+      .update(order)
+      .set(updateValues)
+      .where(eq(order.id, orderId))
+      .returning()
+
+    committed.order = updated
+    return NextResponse.json(updated)
+  })
+
+  // Fire the audit log only once the transaction has committed and actually
+  // produced an updated order (guard/not-found short-circuits leave this null).
+  if (committed.order) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: `ORDER_${name.toUpperCase().replace(/-/g, "_")}`,
+      entityType: "order",
+      entityId: committed.order.id,
+      description: `${TRANSITION_LABELS[name]} order ${committed.order.code}`,
+    })
+  }
+
+  return response
+}
+````
+
 ## File: app/api/merchants/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
@@ -22984,6 +27120,7 @@ export async function POST(req: Request) {
 ````typescript
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
@@ -23097,6 +27234,14 @@ export async function POST(req: Request) {
     .where(eq(profile.userId, created.user.id))
     .limit(1)
 
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "TEAM_MEMBER_CREATED",
+    entityType: "user",
+    entityId: created.user.id,
+    description: `Created ${newRole} account for ${created.user.name} (${created.user.email})`,
+  })
+
   return NextResponse.json(
     {
       id: created.user.id,
@@ -23121,6 +27266,7 @@ export async function POST(req: Request) {
 ## File: app/api/warehouses/route.ts
 ````typescript
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
@@ -23185,6 +27331,14 @@ export async function POST(req: Request) {
       isActive: true,
     })
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_CREATED",
+    entityType: "warehouse",
+    entityId: created.id,
+    description: `Created warehouse ${created.name} (${created.city})`,
+  })
 
   return NextResponse.json(created, { status: 201 })
 }
@@ -26830,41 +30984,6 @@ export default function RiderDeliveryQueuePage() {
 }
 ````
 
-## File: lib/auth.ts
-````typescript
-import { betterAuth } from "better-auth"
-import { admin } from "better-auth/plugins"
-import { pool } from "@/lib/db"
-
-export const auth = betterAuth({
-  database: pool,
-  plugins: [admin()],
-  baseURL:
-    process.env.BETTER_AUTH_DEV_URL ??
-    process.env.BETTER_AUTH_PRD_URL ??
-    undefined,
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
-  },
-  trustedOrigins: [
-    ...(process.env.NEXT_PUBLIC_ENV === "development"
-      ? ["http://localhost:3000"]
-      : []),
-    ...(process.env.BETTER_AUTH_DEV_URL
-      ? [process.env.BETTER_AUTH_DEV_URL]
-      : []),
-    ...(process.env.BETTER_AUTH_PRD_URL
-      ? [process.env.BETTER_AUTH_PRD_URL]
-      : []),
-  ],
-  session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
-  },
-})
-````
-
 ## File: app/api/orders/[id]/picked-up/route.ts
 ````typescript
 import { applyOrderTransition } from "@/features/orders/transitions"
@@ -26884,15 +31003,15 @@ export async function PATCH(
 
 import { useMemo, useState } from "react"
 import {
-  Store,
+  Ban,
   CheckCircle2,
   Clock,
-  Ban,
-  Search,
   MoreHorizontal,
-  Tag,
-  ShieldCheck,
   RotateCcw,
+  Search,
+  ShieldCheck,
+  Store,
+  Tag,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -27183,8 +31302,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
-  Plus,
   Pencil,
+  Plus,
   Search,
   Trash2,
   Warehouse as WarehouseIcon,
@@ -27759,341 +31878,6 @@ export default function WarehouseLayout({
 }
 ````
 
-## File: components/data-table.tsx
-````typescript
-"use client"
-
-import * as React from "react"
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsUpDown,
-  ChevronUp,
-  Download,
-} from "lucide-react"
-
-import { cn } from "@/lib/utils"
-import { toCsv, downloadCsv } from "@/lib/csv"
-import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-
-type Align = "left" | "right" | "center"
-
-export interface DataTableColumn<T> {
-  /** Stable identifier, also used as the sort key. */
-  id: string
-  /** Header label (string or custom node). */
-  header: React.ReactNode
-  /** Renders the cell body for a given row. */
-  cell: (row: T) => React.ReactNode
-  /** Enable click-to-sort on this column. Requires `sortValue` (or falls back to the cell value if it's primitive). */
-  sortable?: boolean
-  /** Value used when sorting this column. */
-  sortValue?: (row: T) => string | number | boolean | null | undefined
-  /** Text alignment for header + cells. Defaults to "left". */
-  align?: Align
-  /** Extra classes for the header cell. */
-  headClassName?: string
-  /** Extra classes for body cells. */
-  cellClassName?: string
-}
-
-/** Enables a "Download CSV" toolbar button. `parser` is required — CSV
- * export only activates when the caller supplies a way to flatten a row. */
-export interface DataTableCsv<T> {
-  /** Converts one row into an array of cell values, in column order. */
-  parser: (row: T) => (string | number | null | undefined)[]
-  /** Header row labels, in the same order as `parser`'s output. */
-  headers?: string[]
-  /** Filename without extension. Defaults to "export". */
-  filename?: string
-  /** Export all rows matching the current search/filter/sort ("all", the
-   * default) or only the rows on the current page ("page"). */
-  scope?: "all" | "page"
-}
-
-interface DataTableProps<T> {
-  columns: DataTableColumn<T>[]
-  data: T[]
-  getRowKey: (row: T, index: number) => string
-  /** Rows per page. Pass 0 to disable pagination. Defaults to 10. */
-  pageSize?: number
-  /** Selectable page sizes shown in the footer. */
-  pageSizeOptions?: number[]
-  /** Column id to sort by initially. */
-  initialSortId?: string
-  initialSortDir?: SortDir
-  emptyMessage?: React.ReactNode
-  onRowClick?: (row: T) => void
-  className?: string
-  /** Enables a "Download CSV" button in the toolbar. */
-  csv?: DataTableCsv<T>
-}
-
-type SortDir = "asc" | "desc"
-
-const alignClass: Record<Align, string> = {
-  left: "text-left",
-  right: "text-right",
-  center: "text-center",
-}
-
-const justifyClass: Record<Align, string> = {
-  left: "justify-start",
-  right: "justify-end",
-  center: "justify-center",
-}
-
-export function DataTable<T>({
-  columns,
-  data,
-  getRowKey,
-  pageSize = 10,
-  pageSizeOptions,
-  initialSortId,
-  initialSortDir = "asc",
-  emptyMessage = "No records to display.",
-  onRowClick,
-  className,
-  csv,
-}: DataTableProps<T>) {
-  const [sortId, setSortId] = React.useState<string | null>(
-    initialSortId ?? null,
-  )
-  const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
-  const [size, setSize] = React.useState(pageSize)
-  const [page, setPage] = React.useState(1)
-  const paginated = size > 0
-
-  const filtered = React.useMemo(() => data, [data])
-
-  const sorted = React.useMemo(() => {
-    if (!sortId) return filtered
-    const col = columns.find((c) => c.id === sortId)
-    if (!col?.sortValue) return filtered
-    const getVal = col.sortValue
-    const copy = [...filtered]
-    copy.sort((a, b) => {
-      const av = getVal(a)
-      const bv = getVal(b)
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      let result: number
-      if (typeof av === "number" && typeof bv === "number") {
-        result = av - bv
-      } else {
-        result = String(av).localeCompare(String(bv), undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-      }
-      return sortDir === "asc" ? result : -result
-    })
-    return copy
-  }, [filtered, columns, sortId, sortDir])
-
-  const totalPages = paginated
-    ? Math.max(1, Math.ceil(sorted.length / size))
-    : 1
-
-  // Clamp page during render — avoids the extra render cycle that
-  // setState-in-effect causes. Page resets to 1 when query/filters change
-  // because totalPages changes, which clamps down naturally.
-  const currentPage = Math.min(Math.max(1, page), totalPages)
-
-  const visible = React.useMemo(() => {
-    if (!paginated) return sorted
-    const start = (currentPage - 1) * size
-    return sorted.slice(start, start + size)
-  }, [sorted, currentPage, size, paginated])
-
-  function toggleSort(col: DataTableColumn<T>) {
-    if (!col.sortable || !col.sortValue) return
-    if (sortId !== col.id) {
-      setSortId(col.id)
-      setSortDir("asc")
-      return
-    }
-    // Cycle: asc -> desc -> unsorted
-    if (sortDir === "asc") {
-      setSortDir("desc")
-    } else {
-      setSortId(null)
-      setSortDir("asc")
-    }
-  }
-
-  function handleDownloadCsv() {
-    if (!csv) return
-    const rows = csv.scope === "page" ? visible : sorted
-    const content = toCsv(rows.map(csv.parser), csv.headers)
-    downloadCsv(csv.filename ?? "export", content)
-  }
-
-  const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
-  const to = paginated
-    ? Math.min(currentPage * size, sorted.length)
-    : sorted.length
-
-  return (
-    <div className={cn("flex flex-col", className)}>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((col) => {
-              const align = col.align ?? "left"
-              const isSorted = sortId === col.id
-              const canSort = Boolean(col.sortable && col.sortValue)
-              return (
-                <TableHead
-                  key={col.id}
-                  className={cn(alignClass[align], col.headClassName)}
-                  aria-sort={
-                    isSorted
-                      ? sortDir === "asc"
-                        ? "ascending"
-                        : "descending"
-                      : undefined
-                  }
-                >
-                  {canSort ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(col)}
-                      className={cn(
-                        "hover:text-foreground inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium transition-colors select-none",
-                        isSorted ? "text-foreground" : "text-muted-foreground",
-                        justifyClass[align],
-                      )}
-                    >
-                      {col.header}
-                      {isSorted ? (
-                        sortDir === "asc" ? (
-                          <ChevronUp className="size-3.5" />
-                        ) : (
-                          <ChevronDown className="size-3.5" />
-                        )
-                      ) : (
-                        <ChevronsUpDown className="size-3.5 opacity-50" />
-                      )}
-                    </button>
-                  ) : (
-                    col.header
-                  )}
-                </TableHead>
-              )
-            })}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {visible.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="text-muted-foreground py-10 text-center text-sm"
-              >
-                {emptyMessage}
-              </TableCell>
-            </TableRow>
-          ) : (
-            visible.map((row, index) => (
-              <TableRow
-                key={getRowKey(row, index)}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={onRowClick ? "cursor-pointer" : undefined}
-              >
-                {columns.map((col) => {
-                  const align = col.align ?? "left"
-                  return (
-                    <TableCell
-                      key={col.id}
-                      className={cn(alignClass[align], col.cellClassName)}
-                    >
-                      {col.cell(row)}
-                    </TableCell>
-                  )
-                })}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-
-      {paginated ? (
-        <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-muted-foreground tabular-nums">
-              {from}–{to} of {sorted.length}
-            </span>
-            {pageSizeOptions && pageSizeOptions.length > 0 ? (
-              <label className="flex items-center gap-1.5">
-                <span className="sr-only">Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => {
-                    setSize(Number(e.target.value))
-                    setPage(1)
-                  }}
-                  className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
-                >
-                  {pageSizeOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt} / page
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <span className="text-muted-foreground tabular-nums">
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              aria-label="Previous page"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              aria-label="Next page"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDownloadCsv}
-            disabled={!csv}
-            className="gap-1.5"
-          >
-            <Download className="size-4" />
-            Download CSV
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-````
-
 ## File: components/image-upload.tsx
 ````typescript
 "use client"
@@ -28347,6 +32131,8 @@ import type {
   payoutRequest,
   order,
   division,
+  emailLog,
+  auditLog,
 } from "@/lib/db/schema"
 
 // =============================================================================
@@ -28400,6 +32186,10 @@ export type PickupLocation = Loosen<typeof pickupLocation.$inferSelect>
 export type Rider = Loosen<typeof rider.$inferSelect>
 export type Order = Loosen<typeof order.$inferSelect>
 export type PayoutRequest = Loosen<typeof payoutRequest.$inferSelect>
+export type EmailLog = Loosen<typeof emailLog.$inferSelect>
+export type AuditLog = Loosen<typeof auditLog.$inferSelect>
+
+export type EmailLogStatus = (typeof emailLog.$inferSelect)["status"]
 
 // =============================================================================
 // App-only input shapes — request payloads, not DB rows, so there's no table
@@ -28649,6 +32439,963 @@ export async function POST(req: Request) {
 }
 ````
 
+## File: app/login/page.tsx
+````typescript
+"use client"
+
+import { FormEvent, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { Loader2, Lock, FlaskConical } from "lucide-react"
+import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { siteConfig } from "@/config/site"
+import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { SEED_CREDENTIALS } from "@/lib/db/seed-credentials"
+
+const ROLES_ORDER = [
+  "Super Admin",
+  "Admin",
+  "Warehouse Admin",
+  "Merchant",
+  "Rider",
+]
+const grouped = ROLES_ORDER.map((role) => ({
+  role,
+  users: SEED_CREDENTIALS.filter((u) => u.role === role),
+}))
+
+const BrandIcon = siteConfig.icon
+const isDev = process.env.NEXT_PUBLIC_ENV === "development"
+
+export default function LoginPage() {
+  const router = useRouter()
+  const { login, currentUser, isReady } = useAuth()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (isReady && currentUser) {
+      router.replace(homeForRole(currentUser.role))
+    }
+  }, [isReady, currentUser, router])
+
+  function fillCredentials(value: string | null) {
+    if (!value) return
+    const cred = SEED_CREDENTIALS.find((c) => c.email === value)
+    if (!cred) return
+    setEmail(cred.email)
+    setPassword(cred.password)
+    setError(null)
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    const result = await login(email, password)
+    if (result.ok && result.user) {
+      router.replace(homeForRole(result.user.role))
+    } else if (result.ok) {
+      router.replace("/dashboard")
+    } else {
+      setError(result.error ?? "Unable to sign in.")
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen flex-col lg:flex-row">
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle className="bg-background/80 backdrop-blur" />
+      </div>
+      {/* Brand panel */}
+      <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
+        <div className="flex items-center gap-2">
+          <BrandIcon className="size-5" />
+          <span className="text-lg font-semibold tracking-tight">
+            {siteConfig.name}
+          </span>
+        </div>
+
+        <div className="max-w-md">
+          <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
+            {siteConfig.tagline}
+          </p>
+          <h1 className="mt-4 text-4xl leading-tight font-semibold text-balance">
+            Everything you need, in one place.
+          </h1>
+          <p className="text-sidebar-foreground/70 mt-4 leading-relaxed text-pretty">
+            Whether you're managing deliveries, tracking orders, or running
+            operations — sign in to access your workspace.
+          </p>
+        </div>
+
+        <p className="text-sidebar-foreground/50 text-xs">
+          {"\u00A9"} {new Date().getFullYear()} {siteConfig.name}. Internal use
+          only.
+        </p>
+      </section>
+
+      {/* Form panel */}
+      <section className="flex flex-1 items-center justify-center p-6 sm:p-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex items-center gap-2 lg:hidden">
+            <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
+              <BrandIcon className="size-5" />
+            </div>
+            <span className="text-lg font-semibold tracking-tight">
+              {siteConfig.name}
+            </span>
+          </div>
+
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="flex flex-col gap-1">
+              <CardTitle className="text-2xl">Welcome back</CardTitle>
+              <CardDescription>
+                Sign in to access your workspace.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Dev credentials picker — only rendered in development so the
+                  seed accounts are never exposed in production builds. */}
+              {isDev ? (
+                <div className="border-border bg-muted/40 mb-4 rounded-md border border-dashed p-3">
+                  <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
+                    <FlaskConical className="size-3.5" />
+                    Dev — fill seed credentials
+                  </p>
+                  <Select onValueChange={fillCredentials}>
+                    <SelectTrigger className="h-8 w-full text-xs">
+                      <SelectValue placeholder="Pick a user…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grouped.map(({ role, users }) => (
+                        <SelectGroup key={role}>
+                          <SelectLabel className="text-xs">{role}</SelectLabel>
+                          {users.map((u) => (
+                            <SelectItem
+                              key={u.email}
+                              value={u.email}
+                              className="text-xs"
+                            >
+                              {u.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@parcelflow.io"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {error ? (
+                  <p
+                    role="alert"
+                    className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm"
+                  >
+                    {error}
+                  </p>
+                ) : null}
+
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Signing in
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="size-4" />
+                      Sign in
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              <p className="text-muted-foreground mt-6 text-center text-sm">
+                Are you a merchant?{" "}
+                <Link
+                  href="/register"
+                  className="text-primary font-medium hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+    </main>
+  )
+}
+````
+
+## File: app/rider/pickup/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { PackageCheck, Search } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { TrackingCell } from "@/features/orders/components/tracking-cell"
+import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
+import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+
+const COLLECTED_STATUSES = [
+  "PICKED_UP",
+  "IN_WAREHOUSE",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+]
+
+type FilterTab = "TO_COLLECT" | "COLLECTED"
+
+export default function RiderPickupQueuePage() {
+  const { currentUser } = useAuth()
+  const { currentRider } = useRiders()
+  const { orders, allOrders, query, setQuery } = useOrders()
+  const { merchants } = useMerchants()
+  const { pickupLocations } = usePickupLocations()
+  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+
+  // All orders assigned to this rider for pickup. Tab counts use the
+  // unfiltered list; the table-facing versions below use the
+  // search-narrowed `orders`.
+  const myPickups = useMemo(
+    () =>
+      currentRider
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [allOrders, currentRider],
+  )
+
+  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
+  const collected = myPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visibleMyPickups = useMemo(
+    () =>
+      currentRider
+        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
+        : [],
+    [orders, currentRider],
+  )
+  const visibleToCollect = visibleMyPickups.filter(
+    (o) => o.status === "APPROVED",
+  )
+  const visibleCollected = visibleMyPickups.filter((o) =>
+    COLLECTED_STATUSES.includes(o.status),
+  )
+
+  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
+
+  function openConfirm(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  // Pickup is a merchant-facing step — the rider only needs to know who
+  // they're collecting from and where. Recipient/delivery details aren't
+  // relevant yet, so they're left off this view entirely.
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => <TrackingCell code={o.code} />,
+    },
+    {
+      id: "merchant",
+      header: "Merchant",
+      sortable: true,
+      sortValue: (o) => merchantName(o.merchantId),
+      cell: (o) => {
+        const m = merchant(o.merchantId)
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
+            <span className="text-muted-foreground text-xs">{m?.phone}</span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "pickup",
+      header: "Pickup from",
+      sortable: true,
+      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
+      cell: (o) => {
+        const p = pickup(o.pickupLocationId)
+        return (
+          <PickupLocationModal location={p ?? null}>
+            <div className="flex flex-col">
+              <span className="font-medium underline decoration-dotted underline-offset-4">
+                {p?.label ?? "—"}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {p?.address ?? "—"}
+              </span>
+            </div>
+          </PickupLocationModal>
+        )
+      },
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "APPROVED" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackageCheck className="size-4" />
+            Mark picked up
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.rider.pickup.title(
+          currentUser?.name.split(" ")[0] ?? "Rider",
+        )}
+        description={pageContent.rider.pickup.description}
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList>
+            <TabsTrigger value="TO_COLLECT">
+              To collect ({toCollect.length})
+            </TabsTrigger>
+            <TabsTrigger value="COLLECTED">
+              Collected ({collected.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search code, recipient, phone, city"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "TO_COLLECT"
+                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
+                : "Nothing collected yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <PickupConfirmDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        pickupLocation={
+          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
+        }
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
+## File: components/data-table.tsx
+````typescript
+"use client"
+
+import * as React from "react"
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
+  Download,
+} from "lucide-react"
+
+import { cn } from "@/lib/utils"
+import { downloadCsv, toCsv } from "@/lib/csv"
+import {
+  DEFAULT_TABLE_ROWS_PER_PAGE,
+  MAX_TABLE_ROWS_PER_PAGE,
+} from "@/lib/constants"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+
+type Align = "left" | "right" | "center"
+
+export interface DataTableColumn<T> {
+  /** Stable identifier, also used as the sort key. */
+  id: string
+  /** Header label (string or custom node). */
+  header: React.ReactNode
+  /** Renders the cell body for a given row. */
+  cell: (row: T) => React.ReactNode
+  /** Enable click-to-sort on this column. Requires `sortValue` (or falls back to the cell value if it's primitive). */
+  sortable?: boolean
+  /** Value used when sorting this column. */
+  sortValue?: (row: T) => string | number | boolean | null | undefined
+  /** Text alignment for header + cells. Defaults to "left". */
+  align?: Align
+  /** Extra classes for the header cell. */
+  headClassName?: string
+  /** Extra classes for body cells. */
+  cellClassName?: string
+}
+
+/** Enables a "Download CSV" toolbar button. `parser` is required — CSV
+ * export only activates when the caller supplies a way to flatten a row. */
+export interface DataTableCsv<T> {
+  /** Converts one row into an array of cell values, in column order. */
+  parser: (row: T) => (string | number | null | undefined)[]
+  /** Header row labels, in the same order as `parser`'s output. */
+  headers?: string[]
+  /** Filename without extension. Defaults to "export". */
+  filename?: string
+  /** Export all rows matching the current search/filter/sort ("all", the
+   * default) or only the rows on the current page ("page"). */
+  scope?: "all" | "page"
+}
+
+interface DataTableProps<T> {
+  columns: DataTableColumn<T>[]
+  data: T[]
+  getRowKey: (row: T, index: number) => string
+  /** Rows per page. Pass 0 to disable pagination. Defaults to the signed-in
+   * account's saved rows-per-page preference (Account settings), or 20 if
+   * unset/unauthenticated. An explicit prop always wins over the account
+   * default. Clamped to 1-250 regardless of source. */
+  pageSize?: number
+  /** Selectable page sizes shown in the footer. */
+  pageSizeOptions?: number[]
+  /** Column id to sort by initially. */
+  initialSortId?: string
+  initialSortDir?: SortDir
+  emptyMessage?: React.ReactNode
+  onRowClick?: (row: T) => void
+  className?: string
+  /** Enables a "Download CSV" button in the toolbar. */
+  csv?: DataTableCsv<T>
+}
+
+type SortDir = "asc" | "desc"
+
+const alignClass: Record<Align, string> = {
+  left: "text-left",
+  right: "text-right",
+  center: "text-center",
+}
+
+const justifyClass: Record<Align, string> = {
+  left: "justify-start",
+  right: "justify-end",
+  center: "justify-center",
+}
+
+/** Clamps a possibly-missing/invalid rows-per-page value to [1, 250],
+ * falling back to `fallback` (itself assumed already in range) when the
+ * input is missing, not an integer, or out of bounds. `0` is left as-is
+ * since it's the documented "disable pagination" sentinel, not a clamp
+ * target. */
+function clampPageSize(value: number | undefined | null, fallback: number) {
+  if (value === 0) return 0
+  if (
+    value === undefined ||
+    value === null ||
+    !Number.isInteger(value) ||
+    value < 1
+  ) {
+    return fallback
+  }
+  return Math.min(value, MAX_TABLE_ROWS_PER_PAGE)
+}
+
+export function DataTable<T>({
+  columns,
+  data,
+  getRowKey,
+  pageSize,
+  pageSizeOptions,
+  initialSortId,
+  initialSortDir = "asc",
+  emptyMessage = "No records to display.",
+  onRowClick,
+  className,
+  csv,
+}: DataTableProps<T>) {
+  const { currentUser } = useAuth()
+
+  // Effective default when the caller doesn't pass an explicit `pageSize`:
+  // the signed-in account's saved preference, clamped to 1-250, falling back
+  // to DEFAULT_TABLE_ROWS_PER_PAGE (20) if unset or out of range.
+  const accountDefault = clampPageSize(
+    currentUser?.tableRowsPerPage,
+    DEFAULT_TABLE_ROWS_PER_PAGE,
+  )
+  const effectivePageSize =
+    pageSize !== undefined
+      ? clampPageSize(pageSize, accountDefault)
+      : accountDefault
+
+  const [sortId, setSortId] = React.useState<string | null>(
+    initialSortId ?? null,
+  )
+  const [sortDir, setSortDir] = React.useState<SortDir>(initialSortDir)
+  const [size, setSize] = React.useState(effectivePageSize)
+  const [page, setPage] = React.useState(1)
+  const paginated = size > 0
+
+  // The account's preference loads asynchronously (it comes from the same
+  // session bootstrap as `currentUser`), so it's often not ready yet on first
+  // render. Adopt it once it arrives — but only when the caller didn't pass
+  // an explicit `pageSize` and the person hasn't already changed the page
+  // size in this table (via the selector below), so we never clobber either
+  // an explicit prop or a deliberate in-session choice.
+  const userChangedSize = React.useRef(false)
+  React.useEffect(() => {
+    if (pageSize === undefined && !userChangedSize.current) {
+      setSize(effectivePageSize)
+    }
+  }, [effectivePageSize, pageSize])
+
+  const filtered = React.useMemo(() => data, [data])
+
+  const sorted = React.useMemo(() => {
+    if (!sortId) return filtered
+    const col = columns.find((c) => c.id === sortId)
+    if (!col?.sortValue) return filtered
+    const getVal = col.sortValue
+    const copy = [...filtered]
+    copy.sort((a, b) => {
+      const av = getVal(a)
+      const bv = getVal(b)
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      let result: number
+      if (typeof av === "number" && typeof bv === "number") {
+        result = av - bv
+      } else {
+        result = String(av).localeCompare(String(bv), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        })
+      }
+      return sortDir === "asc" ? result : -result
+    })
+    return copy
+  }, [filtered, columns, sortId, sortDir])
+
+  const totalPages = paginated
+    ? Math.max(1, Math.ceil(sorted.length / size))
+    : 1
+
+  // Clamp page during render — avoids the extra render cycle that
+  // setState-in-effect causes. Page resets to 1 when query/filters change
+  // because totalPages changes, which clamps down naturally.
+  const currentPage = Math.min(Math.max(1, page), totalPages)
+
+  const visible = React.useMemo(() => {
+    if (!paginated) return sorted
+    const start = (currentPage - 1) * size
+    return sorted.slice(start, start + size)
+  }, [sorted, currentPage, size, paginated])
+
+  function toggleSort(col: DataTableColumn<T>) {
+    if (!col.sortable || !col.sortValue) return
+    if (sortId !== col.id) {
+      setSortId(col.id)
+      setSortDir("asc")
+      return
+    }
+    // Cycle: asc -> desc -> unsorted
+    if (sortDir === "asc") {
+      setSortDir("desc")
+    } else {
+      setSortId(null)
+      setSortDir("asc")
+    }
+  }
+
+  function handleDownloadCsv() {
+    if (!csv) return
+    const rows = csv.scope === "page" ? visible : sorted
+    const content = toCsv(rows.map(csv.parser), csv.headers)
+    downloadCsv(csv.filename ?? "export", content)
+  }
+
+  const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
+  const to = paginated
+    ? Math.min(currentPage * size, sorted.length)
+    : sorted.length
+
+  return (
+    <div className={cn("flex flex-col", className)}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {columns.map((col) => {
+              const align = col.align ?? "left"
+              const isSorted = sortId === col.id
+              const canSort = Boolean(col.sortable && col.sortValue)
+              return (
+                <TableHead
+                  key={col.id}
+                  className={cn(alignClass[align], col.headClassName)}
+                  aria-sort={
+                    isSorted
+                      ? sortDir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : undefined
+                  }
+                >
+                  {canSort ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col)}
+                      className={cn(
+                        "hover:text-foreground inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium transition-colors select-none",
+                        isSorted ? "text-foreground" : "text-muted-foreground",
+                        justifyClass[align],
+                      )}
+                    >
+                      {col.header}
+                      {isSorted ? (
+                        sortDir === "asc" ? (
+                          <ChevronUp className="size-3.5" />
+                        ) : (
+                          <ChevronDown className="size-3.5" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="size-3.5 opacity-50" />
+                      )}
+                    </button>
+                  ) : (
+                    col.header
+                  )}
+                </TableHead>
+              )
+            })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {visible.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={columns.length}
+                className="text-muted-foreground py-10 text-center text-sm"
+              >
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          ) : (
+            visible.map((row, index) => (
+              <TableRow
+                key={getRowKey(row, index)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={onRowClick ? "cursor-pointer" : undefined}
+              >
+                {columns.map((col) => {
+                  const align = col.align ?? "left"
+                  return (
+                    <TableCell
+                      key={col.id}
+                      className={cn(alignClass[align], col.cellClassName)}
+                    >
+                      {col.cell(row)}
+                    </TableCell>
+                  )
+                })}
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      {paginated ? (
+        <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground tabular-nums">
+              {from}–{to} of {sorted.length}
+            </span>
+            {pageSizeOptions && pageSizeOptions.length > 0 ? (
+              <label className="flex items-center gap-1.5">
+                <span className="sr-only">Rows per page</span>
+                <select
+                  value={size}
+                  onChange={(e) => {
+                    userChangedSize.current = true
+                    setSize(Number(e.target.value))
+                    setPage(1)
+                  }}
+                  className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
+                >
+                  {pageSizeOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt} / page
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <span className="text-muted-foreground tabular-nums">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDownloadCsv}
+            disabled={!csv}
+            className="gap-1.5"
+          >
+            <Download className="size-4" />
+            Download CSV
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+````
+
+## File: lib/auth.ts
+````typescript
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+import { pool } from "@/lib/db"
+
+export const auth = betterAuth({
+  database: pool,
+  plugins: [admin()],
+  baseURL:
+    process.env.BETTER_AUTH_DEV_URL ??
+    process.env.BETTER_AUTH_PRD_URL ??
+    undefined,
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+  },
+  trustedOrigins: [
+    ...(process.env.NEXT_PUBLIC_ENV === "development"
+      ? ["http://localhost:3000"]
+      : []),
+    ...(process.env.BETTER_AUTH_DEV_URL
+      ? [process.env.BETTER_AUTH_DEV_URL]
+      : []),
+    ...(process.env.BETTER_AUTH_PRD_URL
+      ? [process.env.BETTER_AUTH_PRD_URL]
+      : []),
+  ],
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
+})
+````
+
+## File: app/dashboard/layout.tsx
+````typescript
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { DataErrorBanner } from "@/components/data-error-banner"
+import { Sidebar } from "@/components/navigation/sidebar"
+import { MobileHeader } from "@/components/navigation/mobile-header"
+import { dashboardSidebarForRole } from "@/lib/nav-config"
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { currentUser, isReady } = useAuth()
+
+  useEffect(() => {
+    if (!isReady) return
+    if (!currentUser) {
+      router.replace("/login")
+    } else if (currentUser.role === "MERCHANT") {
+      router.replace("/merchant")
+    } else if (currentUser.role === "RIDER") {
+      router.replace("/rider")
+    } else if (currentUser.role === "WAREHOUSE_ADMIN") {
+      router.replace("/warehouse")
+    }
+  }, [isReady, currentUser, router])
+
+  if (
+    !isReady ||
+    !currentUser ||
+    currentUser.role === "MERCHANT" ||
+    currentUser.role === "RIDER" ||
+    currentUser.role === "WAREHOUSE_ADMIN"
+  ) {
+    return (
+      <div className="bg-background flex min-h-screen items-center justify-center">
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <Sidebar />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <DataErrorBanner />
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+````
+
 ## File: app/dashboard/payouts/page.tsx
 ````typescript
 "use client"
@@ -28656,13 +33403,13 @@ export async function POST(req: Request) {
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
-  Wallet,
-  Clock,
   Banknote,
-  Loader2,
   Check,
-  X,
+  Clock,
+  Loader2,
   Search,
+  Wallet,
+  X,
 } from "lucide-react"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -29044,240 +33791,81 @@ export default function PayoutsPage() {
 }
 ````
 
-## File: app/login/page.tsx
+## File: app/layout.tsx
 ````typescript
-"use client"
-
-import { FormEvent, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Loader2, Lock, FlaskConical } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { Analytics } from "@vercel/analytics/next"
+import type { Metadata, Viewport } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import { AuthProvider } from "@/features/account/hooks/use-auth"
 import { siteConfig } from "@/config/site"
-import { Button } from "@/components/ui/button"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { SEED_CREDENTIALS } from "@/lib/db/seed-credentials"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
+import NextTopLoader from "nextjs-toploader"
+import "./globals.css"
+import { ReactNode } from "react"
 
-const ROLES_ORDER = [
-  "Super Admin",
-  "Admin",
-  "Warehouse Admin",
-  "Merchant",
-  "Rider",
-]
-const grouped = ROLES_ORDER.map((role) => ({
-  role,
-  users: SEED_CREDENTIALS.filter((u) => u.role === role),
-}))
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+})
 
-const BrandIcon = siteConfig.icon
-const isDev = process.env.NEXT_PUBLIC_ENV === "development"
+export const metadata: Metadata = {
+  title: siteConfig.name,
+  description: siteConfig.description,
+  generator: "sarn.top",
+  icons: {
+    icon: [
+      {
+        url: "/icon-light-32x32.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/icon-dark-32x32.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: "/apple-icon.png",
+  },
+}
 
-export default function LoginPage() {
-  const router = useRouter()
-  const { login, currentUser, isReady } = useAuth()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+export const viewport: Viewport = {
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "black" },
+  ],
+}
 
-  useEffect(() => {
-    if (isReady && currentUser) {
-      router.replace(homeForRole(currentUser.role))
-    }
-  }, [isReady, currentUser, router])
-
-  function fillCredentials(value: string | null) {
-    if (!value) return
-    const cred = SEED_CREDENTIALS.find((c) => c.email === value)
-    if (!cred) return
-    setEmail(cred.email)
-    setPassword(cred.password)
-    setError(null)
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setSubmitting(true)
-    const result = await login(email, password)
-    if (result.ok && result.user) {
-      router.replace(homeForRole(result.user.role))
-    } else if (result.ok) {
-      router.replace("/dashboard")
-    } else {
-      setError(result.error ?? "Unable to sign in.")
-      setSubmitting(false)
-    }
-  }
-
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: ReactNode
+}>) {
   return (
-    <main className="flex min-h-screen flex-col lg:flex-row">
-      <div className="absolute top-4 right-4 z-10">
-        <ThemeToggle className="bg-background/80 backdrop-blur" />
-      </div>
-      {/* Brand panel */}
-      <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
-        <div className="flex items-center gap-2">
-          <BrandIcon className="size-5" />
-          <span className="text-lg font-semibold tracking-tight">
-            {siteConfig.name}
-          </span>
-        </div>
-
-        <div className="max-w-md">
-          <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
-            {siteConfig.tagline}
-          </p>
-          <h1 className="mt-4 text-4xl leading-tight font-semibold text-balance">
-            Everything you need, in one place.
-          </h1>
-          <p className="text-sidebar-foreground/70 mt-4 leading-relaxed text-pretty">
-            Whether you're managing deliveries, tracking orders, or running
-            operations — sign in to access your workspace.
-          </p>
-        </div>
-
-        <p className="text-sidebar-foreground/50 text-xs">
-          {"\u00A9"} {new Date().getFullYear()} {siteConfig.name}. Internal use
-          only.
-        </p>
-      </section>
-
-      {/* Form panel */}
-      <section className="flex flex-1 items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
-              <BrandIcon className="size-5" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight">
-              {siteConfig.name}
-            </span>
-          </div>
-
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader className="flex flex-col gap-1">
-              <CardTitle className="text-2xl">Welcome back</CardTitle>
-              <CardDescription>
-                Sign in to access your workspace.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Dev credentials picker — only rendered in development so the
-                  seed accounts are never exposed in production builds. */}
-              {isDev ? (
-                <div className="border-border bg-muted/40 mb-4 rounded-md border border-dashed p-3">
-                  <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
-                    <FlaskConical className="size-3.5" />
-                    Dev — fill seed credentials
-                  </p>
-                  <Select onValueChange={fillCredentials}>
-                    <SelectTrigger className="h-8 w-full text-xs">
-                      <SelectValue placeholder="Pick a user…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {grouped.map(({ role, users }) => (
-                        <SelectGroup key={role}>
-                          <SelectLabel className="text-xs">{role}</SelectLabel>
-                          {users.map((u) => (
-                            <SelectItem
-                              key={u.email}
-                              value={u.email}
-                              className="text-xs"
-                            >
-                              {u.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
-
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="you@parcelflow.io"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {error ? (
-                  <p
-                    role="alert"
-                    className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm"
-                  >
-                    {error}
-                  </p>
-                ) : null}
-
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Signing in
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="size-4" />
-                      Sign in
-                    </>
-                  )}
-                </Button>
-              </form>
-
-              <p className="text-muted-foreground mt-6 text-center text-sm">
-                Are you a merchant?{" "}
-                <Link
-                  href="/register"
-                  className="text-primary font-medium hover:underline"
-                >
-                  Create an account
-                </Link>
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-    </main>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="bg-background font-sans antialiased">
+        <NextTopLoader />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthProvider>{children}</AuthProvider>
+          <Toaster />
+        </ThemeProvider>
+        {process.env.NEXT_PUBLIC_ENV === "production" && <Analytics />}
+      </body>
+    </html>
   )
 }
 ````
@@ -29630,240 +34218,12 @@ export default function MerchantFinancePage() {
 }
 ````
 
-## File: app/rider/pickup/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { PackageCheck, Search } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-dialog"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-
-const COLLECTED_STATUSES = [
-  "PICKED_UP",
-  "IN_WAREHOUSE",
-  "IN_TRANSIT",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED",
-]
-
-type FilterTab = "TO_COLLECT" | "COLLECTED"
-
-export default function RiderPickupQueuePage() {
-  const { currentUser } = useAuth()
-  const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { pickupLocations } = usePickupLocations()
-  const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
-
-  // All orders assigned to this rider for pickup. Tab counts use the
-  // unfiltered list; the table-facing versions below use the
-  // search-narrowed `orders`.
-  const myPickups = useMemo(
-    () =>
-      currentRider
-        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [allOrders, currentRider],
-  )
-
-  const toCollect = myPickups.filter((o) => o.status === "APPROVED")
-  const collected = myPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visibleMyPickups = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-  const visibleToCollect = visibleMyPickups.filter(
-    (o) => o.status === "APPROVED",
-  )
-  const visibleCollected = visibleMyPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
-
-  function openConfirm(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  // Pickup is a merchant-facing step — the rider only needs to know who
-  // they're collecting from and where. Recipient/delivery details aren't
-  // relevant yet, so they're left off this view entirely.
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => {
-        const m = merchant(o.merchantId)
-        return (
-          <div className="flex flex-col">
-            <span className="font-medium">{m?.businessName ?? "Merchant"}</span>
-            <span className="text-muted-foreground text-xs">{m?.phone}</span>
-          </div>
-        )
-      },
-    },
-    {
-      id: "pickup",
-      header: "Pickup from",
-      sortable: true,
-      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickup(o.pickupLocationId)
-        return (
-          <PickupLocationModal location={p ?? null}>
-            <div className="flex flex-col">
-              <span className="font-medium underline decoration-dotted underline-offset-4">
-                {p?.label ?? "—"}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {p?.address ?? "—"}
-              </span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "APPROVED" ? (
-          <Button size="sm" onClick={() => openConfirm(o)}>
-            <PackageCheck className="size-4" />
-            Mark picked up
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.rider.pickup.title(
-          currentUser?.name.split(" ")[0] ?? "Rider",
-        )}
-        description={pageContent.rider.pickup.description}
-      />
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="TO_COLLECT">
-              To collect ({toCollect.length})
-            </TabsTrigger>
-            <TabsTrigger value="COLLECTED">
-              Collected ({collected.length})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "TO_COLLECT"
-                ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
-                : "Nothing collected yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <PickupConfirmDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        pickupLocation={
-          activeOrder ? (pickup(activeOrder.pickupLocationId) ?? null) : null
-        }
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
-    </div>
-  )
-}
-````
-
 ## File: app/warehouse/dispatch/page.tsx
 ````typescript
 "use client"
 
 import { useMemo, useState } from "react"
-import { Truck, PackageOpen, Bike, Search, Send } from "lucide-react"
+import { Bike, PackageOpen, Search, Send, Truck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -30439,13 +34799,13 @@ export default function WarehouseExceptionsPage() {
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
-  Wallet,
-  HandCoins,
-  CheckCircle2,
   Banknote,
   Bike,
+  CheckCircle2,
+  HandCoins,
   Loader2,
   Search,
+  Wallet,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -30734,418 +35094,6 @@ export default function WarehouseReconciliationPage() {
           />
         </CardContent>
       </Card>
-    </div>
-  )
-}
-````
-
-## File: app/dashboard/layout.tsx
-````typescript
-"use client"
-
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { DataErrorBanner } from "@/components/data-error-banner"
-import { Sidebar } from "@/components/navigation/sidebar"
-import { MobileHeader } from "@/components/navigation/mobile-header"
-import { dashboardSidebarForRole } from "@/lib/nav-config"
-
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const router = useRouter()
-  const { currentUser, isReady } = useAuth()
-
-  useEffect(() => {
-    if (!isReady) return
-    if (!currentUser) {
-      router.replace("/login")
-    } else if (currentUser.role === "MERCHANT") {
-      router.replace("/merchant")
-    } else if (currentUser.role === "RIDER") {
-      router.replace("/rider")
-    } else if (currentUser.role === "WAREHOUSE_ADMIN") {
-      router.replace("/warehouse")
-    }
-  }, [isReady, currentUser, router])
-
-  if (
-    !isReady ||
-    !currentUser ||
-    currentUser.role === "MERCHANT" ||
-    currentUser.role === "RIDER" ||
-    currentUser.role === "WAREHOUSE_ADMIN"
-  ) {
-    return (
-      <div className="bg-background flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-background flex min-h-screen">
-      <Sidebar />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
-
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
-````
-
-## File: app/layout.tsx
-````typescript
-import { Analytics } from "@vercel/analytics/next"
-import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import { AuthProvider } from "@/features/account/hooks/use-auth"
-import { siteConfig } from "@/config/site"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/sonner"
-import NextTopLoader from "nextjs-toploader"
-import "./globals.css"
-import { ReactNode } from "react"
-
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-})
-
-export const metadata: Metadata = {
-  title: siteConfig.name,
-  description: siteConfig.description,
-  generator: "sarn.top",
-  icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
-  },
-}
-
-export const viewport: Viewport = {
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "white" },
-    { media: "(prefers-color-scheme: dark)", color: "black" },
-  ],
-}
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: ReactNode
-}>) {
-  return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable}`}
-      suppressHydrationWarning
-    >
-      <body className="bg-background font-sans antialiased">
-        <NextTopLoader />
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <AuthProvider>{children}</AuthProvider>
-          <Toaster />
-        </ThemeProvider>
-        {process.env.NEXT_PUBLIC_ENV === "production" && <Analytics />}
-      </body>
-    </html>
-  )
-}
-````
-
-## File: app/warehouse/page.tsx
-````typescript
-"use client"
-
-import { useMemo, useState } from "react"
-import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
-import { useAuth } from "@/features/account/hooks/use-auth"
-import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
-import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
-import { PageHeader } from "@/components/page-header"
-import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { WarehouseReceiveDialog } from "@/features/orders/dialogs/warehouse-receive-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { StatCardList } from "@/components/stat-card-list"
-
-type FilterTab = "INCOMING" | "RECEIVED"
-
-export default function WarehouseIntakePage() {
-  const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const [tab, setTab] = useState<FilterTab>("INCOMING")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-
-  // Parcels that have been picked up and are heading to a warehouse. In this
-  // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
-  const incoming = useMemo(
-    () => orders.filter((o) => o.status === "PICKED_UP"),
-    [orders],
-  )
-
-  // Parcels this warehouse has already received.
-  const received = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              [
-                "IN_WAREHOUSE",
-                "IN_TRANSIT",
-                "OUT_FOR_DELIVERY",
-                "DELIVERED",
-              ].includes(o.status),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "INCOMING" ? incoming : received
-
-  function openConfirm(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
-  const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Brought by",
-      sortable: true,
-      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="text-muted-foreground size-4" />
-          {rider(o.pickupRiderId)?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "parcel",
-      header: "Parcel",
-      cell: (o) => (
-        <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType}
-        </span>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "notes",
-      header: "Notes",
-      cell: (o) => (
-        <div className="flex items-center gap-1.5">
-          {o.merchantNote ? (
-            <span
-              title={o.merchantNote}
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400"
-            >
-              M
-            </span>
-          ) : null}
-          {o.receiverNote ? (
-            <span
-              title={o.receiverNote}
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-600 dark:bg-red-950 dark:text-red-400"
-            >
-              R
-            </span>
-          ) : null}
-          {!o.merchantNote && !o.receiverNote ? (
-            <span className="text-muted-foreground/50 text-xs">—</span>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "actions",
-      header: "",
-      align: "right",
-      headClassName: "w-12",
-      cell: (o) =>
-        o.status === "PICKED_UP" ? (
-          <Button size="sm" onClick={() => openConfirm(o)}>
-            <PackagePlus className="size-4" />
-            Receive
-          </Button>
-        ) : null,
-    },
-  ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={pageContent.warehouse.intake.title(
-          currentUser?.name.split(" ")[0] ?? "Admin",
-        )}
-        description={pageContent.warehouse.intake.description(
-          currentWarehouse?.name ?? "your warehouse",
-        )}
-      />
-
-      <StatCardList
-        items={[
-          {
-            label: "Incoming",
-            value: incoming.length,
-            icon: Clock,
-            tone: "bg-chart-1/15 text-chart-1",
-          },
-          {
-            label: "Received",
-            value: received.length,
-            icon: Boxes,
-            tone: "bg-chart-2/15 text-chart-2",
-          },
-          {
-            label: "Held in warehouse",
-            value: received.filter((o) => o.status === "IN_WAREHOUSE").length,
-            icon: PackageOpen,
-            tone: "bg-primary/10 text-primary",
-          },
-        ]}
-      />
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-        <TabsList>
-          <TabsTrigger value="INCOMING">
-            Incoming ({incoming.length})
-          </TabsTrigger>
-          <TabsTrigger value="RECEIVED">
-            Received ({received.length})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <Card>
-        <CardContent className="p-0">
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowKey={(o) => o.id}
-            initialSortId="order"
-            emptyMessage={
-              tab === "INCOMING"
-                ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
-                : "Nothing received yet."
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <WarehouseReceiveDialog
-        order={activeOrder}
-        merchantName={
-          activeOrder
-            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
-            : ""
-        }
-        riderName={
-          activeOrder ? (rider(activeOrder.pickupRiderId)?.name ?? "—") : ""
-        }
-        warehouseName={currentWarehouse?.name ?? "your warehouse"}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-      />
     </div>
   )
 }
@@ -32198,6 +36146,272 @@ export default function RegisterPage() {
 }
 ````
 
+## File: app/warehouse/page.tsx
+````typescript
+"use client"
+
+import { useMemo, useState } from "react"
+import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
+import { useAuth } from "@/features/account/hooks/use-auth"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
+import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { useRiders } from "@/features/riders/hooks/use-riders"
+import { formatTk } from "@/lib/pricing"
+import type { Order } from "@/lib/types"
+import { PageHeader } from "@/components/page-header"
+import { pageContent } from "@/config/content"
+import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
+import { AddressModal } from "@/features/orders/components/address-modal"
+import { WarehouseReceiveDialog } from "@/features/orders/dialogs/warehouse-receive-dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { StatCardList } from "@/components/stat-card-list"
+
+type FilterTab = "INCOMING" | "RECEIVED"
+
+export default function WarehouseIntakePage() {
+  const { currentUser } = useAuth()
+  const { currentWarehouse } = useWarehouses()
+  const { orders } = useOrders()
+  const { merchants } = useMerchants()
+  const { riders } = useRiders()
+  const [tab, setTab] = useState<FilterTab>("INCOMING")
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const merchant = (id: string) => merchants.find((m) => m.id === id)
+  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
+  const rider = (id?: string | null) =>
+    id ? riders.find((r) => r.id === id) : undefined
+
+  // Parcels that have been picked up and are heading to a warehouse. In this
+  // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
+  const incoming = useMemo(
+    () => orders.filter((o) => o.status === "PICKED_UP"),
+    [orders],
+  )
+
+  // Parcels this warehouse has already received.
+  const received = useMemo(
+    () =>
+      currentWarehouse
+        ? orders.filter(
+            (o) =>
+              o.warehouseId === currentWarehouse.id &&
+              [
+                "IN_WAREHOUSE",
+                "IN_TRANSIT",
+                "OUT_FOR_DELIVERY",
+                "DELIVERED",
+              ].includes(o.status),
+          )
+        : [],
+    [orders, currentWarehouse],
+  )
+
+  const visible = tab === "INCOMING" ? incoming : received
+
+  function openConfirm(order: Order) {
+    setActiveOrder(order)
+    setDialogOpen(true)
+  }
+
+  const columns: DataTableColumn<Order>[] = [
+    {
+      id: "order",
+      header: "Order",
+      sortable: true,
+      sortValue: (o) => o.code,
+      cell: (o) => (
+        <div className="flex flex-col">
+          <span className="text-muted-foreground font-mono text-xs">
+            {o.code}
+          </span>
+          <span className="font-medium">{merchantName(o.merchantId)}</span>
+        </div>
+      ),
+    },
+    {
+      id: "rider",
+      header: "Brought by",
+      sortable: true,
+      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5 text-sm">
+          <Bike className="text-muted-foreground size-4" />
+          {rider(o.pickupRiderId)?.name ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "parcel",
+      header: "Parcel",
+      cell: (o) => (
+        <span className="text-muted-foreground text-sm">
+          {o.parcelWeightKg} KG · {o.deliveryType}
+        </span>
+      ),
+    },
+    {
+      id: "destination",
+      header: "Destination",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => (
+        <AddressModal order={o}>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.recipientName} · {o.recipientPhone}
+            </span>
+          </div>
+        </AddressModal>
+      ),
+    },
+    {
+      id: "collectible",
+      header: "Collectible",
+      align: "right",
+      sortable: true,
+      sortValue: (o) => o.totalCollectible,
+      cell: (o) => (
+        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
+      ),
+    },
+    {
+      id: "notes",
+      header: "Notes",
+      cell: (o) => (
+        <div className="flex items-center gap-1.5">
+          {o.merchantNote ? (
+            <span
+              title={o.merchantNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400"
+            >
+              M
+            </span>
+          ) : null}
+          {o.receiverNote ? (
+            <span
+              title={o.receiverNote}
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-semibold text-red-600 dark:bg-red-950 dark:text-red-400"
+            >
+              R
+            </span>
+          ) : null}
+          {!o.merchantNote && !o.receiverNote ? (
+            <span className="text-muted-foreground/50 text-xs">—</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (o) => o.status,
+      cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      headClassName: "w-12",
+      cell: (o) =>
+        o.status === "PICKED_UP" ? (
+          <Button size="sm" onClick={() => openConfirm(o)}>
+            <PackagePlus className="size-4" />
+            Receive
+          </Button>
+        ) : null,
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageContent.warehouse.intake.title(
+          currentUser?.name.split(" ")[0] ?? "Admin",
+        )}
+        description={pageContent.warehouse.intake.description(
+          currentWarehouse?.name ?? "your warehouse",
+        )}
+      />
+
+      <StatCardList
+        items={[
+          {
+            label: "Incoming",
+            value: incoming.length,
+            icon: Clock,
+            tone: "bg-chart-1/15 text-chart-1",
+          },
+          {
+            label: "Received",
+            value: received.length,
+            icon: Boxes,
+            tone: "bg-chart-2/15 text-chart-2",
+          },
+          {
+            label: "Held in warehouse",
+            value: received.filter((o) => o.status === "IN_WAREHOUSE").length,
+            icon: PackageOpen,
+            tone: "bg-primary/10 text-primary",
+          },
+        ]}
+      />
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+        <TabsList>
+          <TabsTrigger value="INCOMING">
+            Incoming ({incoming.length})
+          </TabsTrigger>
+          <TabsTrigger value="RECEIVED">
+            Received ({received.length})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <Card>
+        <CardContent className="p-0">
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowKey={(o) => o.id}
+            initialSortId="order"
+            emptyMessage={
+              tab === "INCOMING"
+                ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
+                : "Nothing received yet."
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <WarehouseReceiveDialog
+        order={activeOrder}
+        merchantName={
+          activeOrder
+            ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
+            : ""
+        }
+        riderName={
+          activeOrder ? (rider(activeOrder.pickupRiderId)?.name ?? "—") : ""
+        }
+        warehouseName={currentWarehouse?.name ?? "your warehouse"}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </div>
+  )
+}
+````
+
 ## File: app/dashboard/orders/page.tsx
 ````typescript
 "use client"
@@ -32205,13 +36419,13 @@ export default function RegisterPage() {
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
-  Package,
-  Clock,
+  Bike,
   CheckCircle2,
-  Truck,
+  Clock,
+  Package,
   Search,
   ShieldCheck,
-  Bike,
+  Truck,
 } from "lucide-react"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -32782,6 +36996,218 @@ export default function MerchantOverviewPage() {
 }
 ````
 
+## File: lib/nav-config.ts
+````typescript
+import {
+  LayoutDashboard,
+  Coins,
+  Users,
+  Store,
+  Package,
+  Wallet,
+  PackagePlus,
+  Truck,
+  AlertTriangle,
+  PackageCheck,
+  Bike,
+  ListChecks,
+  Warehouse as WarehouseIcon,
+  UserCog,
+  Building2,
+  Map as MapIcon,
+  ScrollText,
+  Mail,
+  type LucideIcon,
+} from "lucide-react"
+import type { Role } from "@/lib/types"
+import { ParcelIcon } from "@/icons/ParcelIcon"
+
+export interface SidebarNavItem {
+  href: string
+  label: string
+  icon: LucideIcon
+  exact?: boolean
+}
+
+export interface SidebarConfig {
+  // The brand mark accepts either a Lucide icon or the inline SVG ParcelIcon —
+  // both satisfy React.ComponentType<React.SVGProps<SVGSVGElement>>.
+  brandIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+  roleLabel: string
+  items: SidebarNavItem[]
+}
+
+// Super Admins oversee the whole platform and are the only role that can
+// provision Admin / Warehouse Admin accounts (the "Admins" page).
+export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Super Admin",
+  items: [
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/dashboard/orders", label: "Orders", icon: Package },
+    { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
+    { href: "/dashboard/team", label: "Admins", icon: Users },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
+    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
+    {
+      href: "/dashboard/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+    },
+    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    { href: "/dashboard/audit-logs", label: "Audit Logs", icon: ScrollText },
+    { href: "/dashboard/email-logs", label: "Email Logs", icon: Mail },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+// Admins handle day-to-day operations: order approval, merchant pricing, and
+// managing the rider roster (the "Riders" page).
+export const ADMIN_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Admin",
+  items: [
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/dashboard/orders", label: "Orders", icon: Package },
+    { href: "/dashboard/riders", label: "Riders", icon: Bike },
+    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
+    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    { href: "/dashboard/audit-logs", label: "Audit Logs", icon: ScrollText },
+    { href: "/dashboard/email-logs", label: "Email Logs", icon: Mail },
+    {
+      href: "/dashboard/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+// Picks the correct console sidebar for the two admin-tier roles. Defaults to
+// the Super Admin layout for any other role that reaches the dashboard shell.
+export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
+  return role === "ADMIN" ? ADMIN_SIDEBAR : SUPER_ADMIN_SIDEBAR
+}
+
+export const MERCHANT_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Merchant",
+  items: [
+    {
+      href: "/merchant",
+      label: "Overview",
+      icon: LayoutDashboard,
+      exact: true,
+    },
+    { href: "/merchant/orders/new", label: "Create Order", icon: PackagePlus },
+    { href: "/merchant/finance", label: "Finance", icon: Wallet },
+    {
+      href: "/merchant/business",
+      label: "Business",
+      icon: Building2,
+      exact: true,
+    },
+    {
+      href: "/merchant/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+export const WAREHOUSE_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Warehouse",
+  items: [
+    {
+      href: "/warehouse",
+      label: "Intake queue",
+      icon: PackagePlus,
+      exact: true,
+    },
+    {
+      href: "/warehouse/dispatch",
+      label: "Dispatch desk",
+      icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/warehouse/orders",
+      label: "Order progress",
+      icon: Package,
+      exact: true,
+    },
+    {
+      href: "/warehouse/riders",
+      label: "Riders",
+      icon: Bike,
+      exact: true,
+    },
+    {
+      href: "/warehouse/exceptions",
+      label: "Exceptions",
+      icon: AlertTriangle,
+      exact: true,
+    },
+    {
+      href: "/warehouse/reconciliation",
+      label: "COD reconciliation",
+      icon: Wallet,
+      exact: true,
+    },
+    {
+      href: "/warehouse/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+
+export const RIDER_SIDEBAR: SidebarConfig = {
+  brandIcon: ParcelIcon,
+  roleLabel: "Rider",
+  items: [
+    { href: "/rider", label: "To-do", icon: ListChecks, exact: true },
+    {
+      href: "/rider/pickup",
+      label: "Pickup queue",
+      icon: PackageCheck,
+      exact: true,
+    },
+    {
+      href: "/rider/delivery",
+      label: "Delivery queue",
+      icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/rider/account",
+      label: "Account",
+      icon: UserCog,
+      exact: true,
+    },
+  ],
+}
+````
+
 ## File: app/rider/page.tsx
 ````typescript
 "use client"
@@ -33232,212 +37658,6 @@ export default function RiderTodoPage() {
       />
     </div>
   )
-}
-````
-
-## File: lib/nav-config.ts
-````typescript
-import {
-  LayoutDashboard,
-  Coins,
-  Users,
-  Store,
-  Package,
-  Wallet,
-  PackagePlus,
-  Truck,
-  AlertTriangle,
-  PackageCheck,
-  Bike,
-  ListChecks,
-  Warehouse as WarehouseIcon,
-  UserCog,
-  Building2,
-  Map as MapIcon,
-  type LucideIcon,
-} from "lucide-react"
-import type { Role } from "@/lib/types"
-import { ParcelIcon } from "@/icons/ParcelIcon"
-
-export interface SidebarNavItem {
-  href: string
-  label: string
-  icon: LucideIcon
-  exact?: boolean
-}
-
-export interface SidebarConfig {
-  // The brand mark accepts either a Lucide icon or the inline SVG ParcelIcon —
-  // both satisfy React.ComponentType<React.SVGProps<SVGSVGElement>>.
-  brandIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>
-  roleLabel: string
-  items: SidebarNavItem[]
-}
-
-// Super Admins oversee the whole platform and are the only role that can
-// provision Admin / Warehouse Admin accounts (the "Admins" page).
-export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Super Admin",
-  items: [
-    {
-      href: "/dashboard",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/dashboard/orders", label: "Orders", icon: Package },
-    { href: "/dashboard/security-money", label: "Security Money", icon: Coins },
-    { href: "/dashboard/team", label: "Admins", icon: Users },
-    { href: "/dashboard/riders", label: "Riders", icon: Bike },
-    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-    { href: "/dashboard/divisions", label: "Divisions", icon: MapIcon },
-    {
-      href: "/dashboard/warehouses",
-      label: "Warehouses",
-      icon: WarehouseIcon,
-    },
-    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-    {
-      href: "/dashboard/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-// Admins handle day-to-day operations: order approval, merchant pricing, and
-// managing the rider roster (the "Riders" page).
-export const ADMIN_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Admin",
-  items: [
-    {
-      href: "/dashboard",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/dashboard/orders", label: "Orders", icon: Package },
-    { href: "/dashboard/riders", label: "Riders", icon: Bike },
-    { href: "/dashboard/merchants", label: "Merchants", icon: Store },
-    { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
-    {
-      href: "/dashboard/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-// Picks the correct console sidebar for the two admin-tier roles. Defaults to
-// the Super Admin layout for any other role that reaches the dashboard shell.
-export function dashboardSidebarForRole(role: Role | undefined): SidebarConfig {
-  return role === "ADMIN" ? ADMIN_SIDEBAR : SUPER_ADMIN_SIDEBAR
-}
-
-export const MERCHANT_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Merchant",
-  items: [
-    {
-      href: "/merchant",
-      label: "Overview",
-      icon: LayoutDashboard,
-      exact: true,
-    },
-    { href: "/merchant/orders/new", label: "Create Order", icon: PackagePlus },
-    { href: "/merchant/finance", label: "Finance", icon: Wallet },
-    {
-      href: "/merchant/business",
-      label: "Business",
-      icon: Building2,
-      exact: true,
-    },
-    {
-      href: "/merchant/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-export const WAREHOUSE_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Warehouse",
-  items: [
-    {
-      href: "/warehouse",
-      label: "Intake queue",
-      icon: PackagePlus,
-      exact: true,
-    },
-    {
-      href: "/warehouse/dispatch",
-      label: "Dispatch desk",
-      icon: Truck,
-      exact: true,
-    },
-    {
-      href: "/warehouse/orders",
-      label: "Order progress",
-      icon: Package,
-      exact: true,
-    },
-    {
-      href: "/warehouse/riders",
-      label: "Riders",
-      icon: Bike,
-      exact: true,
-    },
-    {
-      href: "/warehouse/exceptions",
-      label: "Exceptions",
-      icon: AlertTriangle,
-      exact: true,
-    },
-    {
-      href: "/warehouse/reconciliation",
-      label: "COD reconciliation",
-      icon: Wallet,
-      exact: true,
-    },
-    {
-      href: "/warehouse/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
-}
-
-export const RIDER_SIDEBAR: SidebarConfig = {
-  brandIcon: ParcelIcon,
-  roleLabel: "Rider",
-  items: [
-    { href: "/rider", label: "To-do", icon: ListChecks, exact: true },
-    {
-      href: "/rider/pickup",
-      label: "Pickup queue",
-      icon: PackageCheck,
-      exact: true,
-    },
-    {
-      href: "/rider/delivery",
-      label: "Delivery queue",
-      icon: Truck,
-      exact: true,
-    },
-    {
-      href: "/rider/account",
-      label: "Account",
-      icon: UserCog,
-      exact: true,
-    },
-  ],
 }
 ````
 
@@ -34672,6 +38892,8 @@ import {
   profile,
   order,
   payoutRequest,
+  auditLog,
+  emailLog,
 } from "@/lib/db/schema"
 import { eq, sql } from "drizzle-orm"
 
@@ -34777,7 +38999,7 @@ async function cleanDatabase() {
   // TRUNCATE with CASCADE lets Postgres resolve all FK dependencies in one shot,
   // so we don't have to manually maintain deletion order.
   await db.execute(
-    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division" CASCADE`,
+    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division", "audit_log", "email_log" CASCADE`,
   )
 
   log("Clean complete.\n")
@@ -35980,6 +40202,140 @@ async function seedPayoutLinkedOrders() {
 }
 
 // ---------------------------------------------------------------------------
+// Audit logs — a handful of representative entries so the Audit Logs page
+// (Admin / Super Admin) isn't empty on first run. Timestamps are fixed
+// (not "now") so a re-seed produces a stable, readable timeline.
+// ---------------------------------------------------------------------------
+
+async function seedAuditLogs() {
+  log("Seeding audit logs…")
+
+  const rows = [
+    {
+      id: "auditlog_seed_0001",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "SECURITY_CONFIG_UPDATED",
+      entityType: "security_config",
+      entityId: "default",
+      description: "Updated security money rules",
+      createdAt: "2025-01-10T09:00:00Z",
+    },
+    {
+      id: "auditlog_seed_0002",
+      actorId: "u5f1ybhii5mzu2ejkcckusxn",
+      actorName: "Tanvir Hossain",
+      actorRole: "ADMIN" as const,
+      action: "MERCHANT_APPROVED",
+      entityType: "merchant",
+      entityId: "merchant_threadnstyle",
+      description: "Approved merchant Thread & Style",
+      createdAt: "2025-01-12T10:15:00Z",
+    },
+    {
+      id: "auditlog_seed_0003",
+      actorId: "u5f1ybhii5mzu2ejkcckusxn",
+      actorName: "Tanvir Hossain",
+      actorRole: "ADMIN" as const,
+      action: "ORDER_APPROVE",
+      entityType: "order",
+      entityId: "order_pf100274",
+      description: "Approved order PF-100274",
+      createdAt: "2025-01-14T07:20:00Z",
+    },
+    {
+      id: "auditlog_seed_0004",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "PAYOUT_APPROVED",
+      entityType: "payout_request",
+      entityId: "jybrz4o9bx5nefstz1drr1ex",
+      description: "Approved payout request PR-1001",
+      createdAt: "2025-01-15T12:00:00Z",
+    },
+    {
+      id: "auditlog_seed_0005",
+      actorId: "byai6ci02ogt3lnawaro35pj",
+      actorName: "Nadia Rahman",
+      actorRole: "SUPER_ADMIN" as const,
+      action: "TEAM_MEMBER_CREATED",
+      entityType: "user",
+      entityId: "u5f1ybhii5mzu2ejkcckusxn",
+      description:
+        "Created ADMIN account for Tanvir Hossain (tanvir@parcelflow.io)",
+      createdAt: "2025-01-08T08:00:00Z",
+    },
+  ]
+
+  for (const row of rows) {
+    const exists = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.id, row.id))
+    if (exists.length > 0) {
+      log(`  skip audit log ${row.id}`)
+      continue
+    }
+    await db.insert(auditLog).values(row)
+    log(`  created audit log ${row.action}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email logs — a handful of representative sent/failed entries so the Email
+// Logs page (Admin / Super Admin) isn't empty on first run.
+// ---------------------------------------------------------------------------
+
+async function seedEmailLogs() {
+  log("Seeding email logs…")
+
+  const rows = [
+    {
+      id: "emaillog_seed_0001",
+      to: "owner@threadnstyle.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "SENT" as const,
+      attempts: 1,
+      error: null,
+      createdAt: "2025-01-12T10:15:05Z",
+    },
+    {
+      id: "emaillog_seed_0002",
+      to: "owner@urbanthreads.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "SENT" as const,
+      attempts: 2,
+      error: null,
+      createdAt: "2025-01-13T11:05:00Z",
+    },
+    {
+      id: "emaillog_seed_0003",
+      to: "owner@gadgethub.com",
+      subject: "[ParcelFlow] Your merchant account has been approved",
+      status: "FAILED" as const,
+      attempts: 4,
+      error: "Connection timeout while contacting mail server",
+      createdAt: "2025-01-16T09:40:00Z",
+    },
+  ]
+
+  for (const row of rows) {
+    const exists = await db
+      .select()
+      .from(emailLog)
+      .where(eq(emailLog.id, row.id))
+    if (exists.length > 0) {
+      log(`  skip email log ${row.id}`)
+      continue
+    }
+    await db.insert(emailLog).values(row)
+    log(`  created email log to ${row.to} (${row.status})`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -35998,6 +40354,8 @@ async function main() {
     await seedPickupLocations()
     await seedSecurityConfig()
     await seedUsers() // must come after warehouses (warehouseId FK in profile)
+    await seedAuditLogs() // references seeded user ids, but no FK constraint
+    await seedEmailLogs()
 
     if (!MIN_MODE) {
       await seedOrders() // must come after riders + merchants + pickup locations
@@ -36080,6 +40438,20 @@ main()
       "when": 1782214516326,
       "tag": "0007_jazzy_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782296155471,
+      "tag": "0008_add_table_rows_per_page",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782356699411,
+      "tag": "0009_glamorous_redwing",
+      "breakpoints": true
     }
   ]
 }
@@ -36088,13 +40460,13 @@ main()
 ## File: lib/db/schema.ts
 ````typescript
 import {
-  pgTable,
-  text,
   boolean,
-  timestamp,
   doublePrecision,
   integer,
   jsonb,
+  pgTable,
+  text,
+  timestamp,
 } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 
@@ -36203,6 +40575,10 @@ export const profile = pgTable("profile", {
   isActive: boolean("isActive").notNull().default(true),
   // Only meaningful for ADMIN users.
   canManagePricing: boolean("canManagePricing").notNull().default(false),
+  // DataTable's default rows-per-page when the caller doesn't pass an
+  // explicit `pageSize` prop. Clamped to 1-250 at the validation layer
+  // (lib/validation.ts) and again defensively in components/data-table.tsx.
+  tableRowsPerPage: integer("tableRowsPerPage").notNull().default(20),
   // Domain entity references. Stored as plain text (no FK constraint) to avoid
   // circular dependencies between the profile table and its referents.
   // Only the field matching the user's role is expected to be populated.
@@ -36529,13 +40905,73 @@ export const failedMail = pgTable("failed_mail", {
   attempts: integer("attempts").notNull(), // total attempts made (retries + 1)
   failedAt: ts("failedAt").notNull().defaultNow(),
 })
+
+// =============================================================================
+// Email log
+//
+// A row is inserted by sendMail() for every send attempt that's fully
+// resolved (either delivered, or exhausted all retries). This is the
+// complete email history shown to Admin/Super Admin — failed_mail above
+// remains untouched (and still used for any future manual-resend tooling),
+// this table is the superset that also includes successful sends.
+// =============================================================================
+
+export const emailLogStatuses = ["SENT", "FAILED"] as const
+
+export const emailLog = pgTable("email_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  to: text("to").notNull(), // comma-joined if multiple recipients
+  subject: text("subject").notNull(),
+  status: text("status", { enum: emailLogStatuses }).notNull(),
+  // Number of attempts made before resolving (1 = succeeded on first try).
+  attempts: integer("attempts").notNull(),
+  // Populated only when status is FAILED.
+  error: text("error"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  // Populated only when an Admin/Super Admin manually overrides a FAILED
+  // entry to SENT (e.g. after confirming delivery or resending by hand).
+  markedSentBy: text("markedSentBy"),
+  markedSentAt: ts("markedSentAt"),
+})
+
+// =============================================================================
+// Audit log
+//
+// A generic, append-only trail of state-changing actions taken by Admin /
+// Super Admin (and, where relevant, Warehouse Admin / Merchant / Rider)
+// accounts. Visible only to Admin and Super Admin. Rows are written through
+// the single lib/audit.ts#logAudit() helper — never inserted ad hoc — so the
+// shape stays consistent across every call site.
+// =============================================================================
+
+export const auditLog = pgTable("audit_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  actorId: text("actorId"), // profile.userId of whoever performed the action
+  actorName: text("actorName").notNull(),
+  actorRole: text("actorRole", { enum: profileRoles }).notNull(),
+  // Short machine-readable verb, e.g. "ORDER_APPROVED", "MERCHANT_SUSPENDED".
+  action: text("action").notNull(),
+  // The kind of entity affected, e.g. "order", "merchant", "payout_request".
+  entityType: text("entityType").notNull(),
+  entityId: text("entityId"),
+  // Human-readable summary shown directly in the table, e.g.
+  // "Approved order ORD-0042".
+  description: text("description").notNull(),
+  // Optional structured context (old/new values, etc.) for future drill-down.
+  metadata: jsonb("metadata"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+})
 ````
 
 ## File: lib/validation.ts
 ````typescript
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { MAX_BULK_ORDERS } from "@/lib/constants"
+import { MAX_BULK_ORDERS, MAX_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 export async function parseBody<T extends z.ZodType>(
   req: Request,
@@ -36769,10 +41205,22 @@ export const profileUpdateSchema = z
     name: requiredString("Name").optional(),
     // `null` clears the avatar; a string sets it; omitted leaves it unchanged.
     image: imageUrl("Avatar").nullish(),
+    tableRowsPerPage: z
+      .int("Rows per page must be a whole number")
+      .min(1, "Rows per page must be at least 1")
+      .max(
+        MAX_TABLE_ROWS_PER_PAGE,
+        `Rows per page cannot exceed ${MAX_TABLE_ROWS_PER_PAGE}`,
+      )
+      .optional(),
   })
-  .refine((d) => d.name !== undefined || d.image !== undefined, {
-    error: "Provide a name or an image to update",
-  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.image !== undefined ||
+      d.tableRowsPerPage !== undefined,
+    { error: "Provide at least one field to update" },
+  )
 
 export const pickupLocationSchema = z.object({
   label: requiredString("Shop name"),

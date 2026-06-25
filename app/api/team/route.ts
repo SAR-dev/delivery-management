@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
@@ -112,6 +113,14 @@ export async function POST(req: Request) {
     .from(profile)
     .where(eq(profile.userId, created.user.id))
     .limit(1)
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "TEAM_MEMBER_CREATED",
+    entityType: "user",
+    entityId: created.user.id,
+    description: `Created ${newRole} account for ${created.user.name} (${created.user.email})`,
+  })
 
   return NextResponse.json(
     {

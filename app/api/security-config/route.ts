@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { securityConfig } from "@/lib/db/schema"
 import { parseBody, securityConfigSchema } from "@/lib/validation"
@@ -42,6 +43,15 @@ export async function PATCH(req: Request) {
     })
     .where(eq(securityConfig.id, "default"))
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "SECURITY_CONFIG_UPDATED",
+    entityType: "security_config",
+    entityId: "default",
+    description: "Updated security money rules",
+    metadata: { lowValueThreshold, lowValueFlatFee, highValuePercentage },
+  })
 
   return NextResponse.json(updated)
 }

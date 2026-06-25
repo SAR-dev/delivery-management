@@ -1,6 +1,13 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { merchant, order, pickupLocation, rider, warehouse, } from "@/lib/db/schema"
+import {
+  merchant,
+  order,
+  pickupLocation,
+  rider,
+  warehouse,
+} from "@/lib/db/schema"
 import {
   orderApproveSchema,
   orderDeliveredSchema,
@@ -396,6 +403,21 @@ export type TransitionName = keyof typeof ORDER_TRANSITIONS
 // mirrors the original routes exactly:
 //   session → role gate → (parse body) → fetch order → guard → update.
 // ---------------------------------------------------------------------------
+// Human-readable past-tense label for each transition, used to build the
+// audit log description (e.g. "Approved order ORD-0042").
+const TRANSITION_LABELS: Record<TransitionName, string> = {
+  approve: "Approved",
+  dispatch: "Dispatched",
+  "picked-up": "Marked picked up",
+  "out-for-delivery": "Marked out for delivery",
+  delivered: "Marked delivered",
+  failed: "Marked failed delivery attempt",
+  return: "Returned",
+  reattempt: "Scheduled reattempt for",
+  receive: "Received",
+  "settle-cod": "Settled COD for",
+}
+
 export async function applyOrderTransition(
   name: TransitionName,
   orderId: string,
@@ -423,7 +445,8 @@ export async function applyOrderTransition(
   // guard against stale state. `FOR UPDATE` makes a second concurrent
   // transaction block here until the first commits, then re-reads the
   // already-updated row — so its own guard correctly sees the new status.
-  return await db.transaction(async (tx) => {
+  const committed: { order: OrderRow | null } = { order: null }
+  const response = await db.transaction(async (tx) => {
     const [orderRow] = await tx
       .select()
       .from(order)
@@ -455,6 +478,21 @@ export async function applyOrderTransition(
       .where(eq(order.id, orderId))
       .returning()
 
+    committed.order = updated
     return NextResponse.json(updated)
   })
+
+  // Fire the audit log only once the transaction has committed and actually
+  // produced an updated order (guard/not-found short-circuits leave this null).
+  if (committed.order) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: `ORDER_${name.toUpperCase().replace(/-/g, "_")}`,
+      entityType: "order",
+      entityId: committed.order.id,
+      description: `${TRANSITION_LABELS[name]} order ${committed.order.code}`,
+    })
+  }
+
+  return response
 }

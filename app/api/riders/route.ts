@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, rider } from "@/lib/db/schema"
 import { and, eq, ilike, or } from "drizzle-orm"
@@ -85,6 +86,14 @@ export async function POST(req: Request) {
     phone,
     isActive: true,
     riderId: createdRider.id,
+  })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "RIDER_CREATED",
+    entityType: "rider",
+    entityId: createdRider.id,
+    description: `Created rider ${createdRider.name} (${createdRider.zone})`,
   })
 
   return NextResponse.json(createdRider, { status: 201 })

@@ -1,14 +1,16 @@
 import type {
-  user,
-  profile,
-  warehouse,
-  rider,
-  merchant,
-  pickupLocation,
-  securityConfig,
-  payoutRequest,
-  order,
+  auditLog,
   division,
+  emailLog,
+  merchant,
+  order,
+  payoutRequest,
+  pickupLocation,
+  profile,
+  rider,
+  securityConfig,
+  user,
+  warehouse,
 } from "@/lib/db/schema"
 
 // =============================================================================
@@ -62,6 +64,10 @@ export type PickupLocation = Loosen<typeof pickupLocation.$inferSelect>
 export type Rider = Loosen<typeof rider.$inferSelect>
 export type Order = Loosen<typeof order.$inferSelect>
 export type PayoutRequest = Loosen<typeof payoutRequest.$inferSelect>
+export type EmailLog = Loosen<typeof emailLog.$inferSelect>
+export type AuditLog = Loosen<typeof auditLog.$inferSelect>
+
+export type EmailLogStatus = (typeof emailLog.$inferSelect)["status"]
 
 // =============================================================================
 // App-only input shapes — request payloads, not DB rows, so there's no table

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { order, profile, rider, warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseUpdateSchema } from "@/lib/validation"
@@ -73,6 +74,16 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_UPDATED",
+    entityType: "warehouse",
+    entityId: updated.id,
+    description: `Updated warehouse ${updated.name}`,
+    metadata: updates,
+  })
+
   return NextResponse.json(updated)
 }
 
@@ -116,6 +127,21 @@ export async function DELETE(
     )
   }
 
+  const [existing] = await db
+    .select({ name: warehouse.name })
+    .from(warehouse)
+    .where(eq(warehouse.id, id))
+    .limit(1)
+
   await db.delete(warehouse).where(eq(warehouse.id, id))
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "WAREHOUSE_DELETED",
+    entityType: "warehouse",
+    entityId: id,
+    description: `Deleted warehouse ${existing?.name ?? id}`,
+  })
+
   return NextResponse.json({ ok: true })
 }

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division } from "@/lib/db/schema"
 import { divisionCreateSchema, parseBody } from "@/lib/validation"
@@ -48,6 +49,14 @@ export async function POST(req: Request) {
     .insert(division)
     .values({ name, isActive: true })
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_CREATED",
+    entityType: "division",
+    entityId: created.id,
+    description: `Created division ${created.name}`,
+  })
 
   return NextResponse.json(created, { status: 201 })
 }

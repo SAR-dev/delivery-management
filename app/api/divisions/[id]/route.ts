@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import {
   division,
@@ -54,6 +55,16 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_UPDATED",
+    entityType: "division",
+    entityId: updated.id,
+    description: `Updated division ${updated.name}`,
+    metadata: updates,
+  })
+
   return NextResponse.json(updated)
 }
 
@@ -102,6 +113,21 @@ export async function DELETE(
     )
   }
 
+  const [existing] = await db
+    .select({ name: division.name })
+    .from(division)
+    .where(eq(division.id, id))
+    .limit(1)
+
   await db.delete(division).where(eq(division.id, id))
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "DIVISION_DELETED",
+    entityType: "division",
+    entityId: id,
+    description: `Deleted division ${existing?.name ?? id}`,
+  })
+
   return NextResponse.json({ ok: true })
 }

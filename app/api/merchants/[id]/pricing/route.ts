@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { merchantPricingSchema, parseBody } from "@/lib/validation"
@@ -29,5 +30,15 @@ export async function PATCH(
 
   if (!updated)
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_PRICING_UPDATED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Updated pricing for merchant ${updated.businessName}`,
+    metadata: { baseRate, extraRatePerKg, freeWeightKg, maxWeightKg },
+  })
+
   return NextResponse.json(updated)
 }

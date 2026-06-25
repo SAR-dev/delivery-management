@@ -32,6 +32,7 @@ function serializeUser(
     phone: row.phone,
     isActive: row.isActive,
     canManagePricing: row.canManagePricing,
+    tableRowsPerPage: row.tableRowsPerPage,
     warehouseId: row.warehouseId,
     merchantId: row.merchantId,
     riderId: row.riderId,
@@ -57,7 +58,8 @@ export async function GET() {
   return NextResponse.json(serializeUser(session.user, row))
 }
 
-// Update the signed-in user's own profile (currently just their display name).
+// Update the signed-in user's own profile: display name, avatar (both on the
+// `user` row), and/or table rows-per-page preference (on `profile`).
 export async function PATCH(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) {
@@ -66,30 +68,49 @@ export async function PATCH(req: Request) {
 
   const parsed = await parseBody(req, profileUpdateSchema)
   if (parsed.error) return parsed.error
+  const { name, image, tableRowsPerPage } = parsed.data
 
-  const updates: { name?: string; image?: string | null; updatedAt: string } = {
-    updatedAt: new Date().toISOString(),
+  // Transaction: the name/image write (user table) and the rows-per-page
+  // write (profile table) are two tables backing one logical "update my
+  // account" action — keep them atomic even though today's UI only ever
+  // sends one group at a time.
+  const result = await db.transaction(async (tx) => {
+    let updatedUser: Parameters<typeof serializeUser>[0] = session.user
+    if (name !== undefined || image !== undefined) {
+      const userUpdates: {
+        name?: string
+        image?: string | null
+        updatedAt: string
+      } = { updatedAt: new Date().toISOString() }
+      if (name !== undefined) userUpdates.name = name
+      if (image !== undefined) userUpdates.image = image
+      const [row] = await tx
+        .update(user)
+        .set(userUpdates)
+        .where(eq(user.id, session.user.id))
+        .returning()
+      updatedUser = { ...session.user, ...row }
+    }
+
+    if (tableRowsPerPage !== undefined) {
+      await tx
+        .update(profile)
+        .set({ tableRowsPerPage })
+        .where(eq(profile.userId, session.user.id))
+    }
+
+    const [profileRow] = await tx
+      .select()
+      .from(profile)
+      .where(eq(profile.userId, session.user.id))
+      .limit(1)
+
+    return { updatedUser, profileRow }
+  })
+
+  if (!result.profileRow) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
-  if (parsed.data.name !== undefined) updates.name = parsed.data.name
-  if (parsed.data.image !== undefined) updates.image = parsed.data.image
 
-  const [updatedUser] = await db
-    .update(user)
-    .set(updates)
-    .where(eq(user.id, session.user.id))
-    .returning()
-
-  const [row] = await db
-    .select()
-    .from(profile)
-    .where(eq(profile.userId, session.user.id))
-    .limit(1)
-
-  if (!row) {
-    return NextResponse.json(null, { status: 404 })
-  }
-
-  return NextResponse.json(
-    serializeUser({ ...session.user, ...updatedUser }, row),
-  )
+  return NextResponse.json(serializeUser(result.updatedUser, result.profileRow))
 }

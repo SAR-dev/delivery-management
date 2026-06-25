@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { sendMail } from "@/lib/mailer"
@@ -42,6 +43,14 @@ export async function PATCH(
     })
     .where(eq(merchant.id, id))
     .returning()
+
+  await logAudit({
+    actor: { userId: me.userId, name: me.name, role: me.role },
+    action: "MERCHANT_APPROVED",
+    entityType: "merchant",
+    entityId: updated.id,
+    description: `Approved merchant ${updated.businessName}`,
+  })
 
   sendMail(
     {

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { payoutRequest } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
@@ -18,7 +19,10 @@ export async function PATCH(
 
   // Transaction: lock the request row for the guard + write so a concurrent
   // call can't slip in between the "still APPROVED" check and the write.
-  return await db.transaction(async (tx) => {
+  const committed: { row: typeof payoutRequest.$inferSelect | null } = {
+    row: null,
+  }
+  const response = await db.transaction(async (tx) => {
     const [current] = await tx
       .select({ status: payoutRequest.status })
       .from(payoutRequest)
@@ -41,6 +45,19 @@ export async function PATCH(
       .where(eq(payoutRequest.id, id))
       .returning()
 
+    committed.row = updated
     return NextResponse.json(updated)
   })
+
+  if (committed.row) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: "PAYOUT_PAID",
+      entityType: "payout_request",
+      entityId: committed.row.id,
+      description: `Marked payout request ${committed.row.code} as paid`,
+    })
+  }
+
+  return response
 }

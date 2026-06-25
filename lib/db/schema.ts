@@ -1,11 +1,11 @@
 import {
-  pgTable,
-  text,
   boolean,
-  timestamp,
   doublePrecision,
   integer,
   jsonb,
+  pgTable,
+  text,
+  timestamp,
 } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 
@@ -114,6 +114,10 @@ export const profile = pgTable("profile", {
   isActive: boolean("isActive").notNull().default(true),
   // Only meaningful for ADMIN users.
   canManagePricing: boolean("canManagePricing").notNull().default(false),
+  // DataTable's default rows-per-page when the caller doesn't pass an
+  // explicit `pageSize` prop. Clamped to 1-250 at the validation layer
+  // (lib/validation.ts) and again defensively in components/data-table.tsx.
+  tableRowsPerPage: integer("tableRowsPerPage").notNull().default(20),
   // Domain entity references. Stored as plain text (no FK constraint) to avoid
   // circular dependencies between the profile table and its referents.
   // Only the field matching the user's role is expected to be populated.
@@ -439,4 +443,64 @@ export const failedMail = pgTable("failed_mail", {
   error: text("error").notNull(), // lastError.message
   attempts: integer("attempts").notNull(), // total attempts made (retries + 1)
   failedAt: ts("failedAt").notNull().defaultNow(),
+})
+
+// =============================================================================
+// Email log
+//
+// A row is inserted by sendMail() for every send attempt that's fully
+// resolved (either delivered, or exhausted all retries). This is the
+// complete email history shown to Admin/Super Admin — failed_mail above
+// remains untouched (and still used for any future manual-resend tooling),
+// this table is the superset that also includes successful sends.
+// =============================================================================
+
+export const emailLogStatuses = ["SENT", "FAILED"] as const
+
+export const emailLog = pgTable("email_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  to: text("to").notNull(), // comma-joined if multiple recipients
+  subject: text("subject").notNull(),
+  status: text("status", { enum: emailLogStatuses }).notNull(),
+  // Number of attempts made before resolving (1 = succeeded on first try).
+  attempts: integer("attempts").notNull(),
+  // Populated only when status is FAILED.
+  error: text("error"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  // Populated only when an Admin/Super Admin manually overrides a FAILED
+  // entry to SENT (e.g. after confirming delivery or resending by hand).
+  markedSentBy: text("markedSentBy"),
+  markedSentAt: ts("markedSentAt"),
+})
+
+// =============================================================================
+// Audit log
+//
+// A generic, append-only trail of state-changing actions taken by Admin /
+// Super Admin (and, where relevant, Warehouse Admin / Merchant / Rider)
+// accounts. Visible only to Admin and Super Admin. Rows are written through
+// the single lib/audit.ts#logAudit() helper — never inserted ad hoc — so the
+// shape stays consistent across every call site.
+// =============================================================================
+
+export const auditLog = pgTable("audit_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  actorId: text("actorId"), // profile.userId of whoever performed the action
+  actorName: text("actorName").notNull(),
+  actorRole: text("actorRole", { enum: profileRoles }).notNull(),
+  // Short machine-readable verb, e.g. "ORDER_APPROVED", "MERCHANT_SUSPENDED".
+  action: text("action").notNull(),
+  // The kind of entity affected, e.g. "order", "merchant", "payout_request".
+  entityType: text("entityType").notNull(),
+  entityId: text("entityId"),
+  // Human-readable summary shown directly in the table, e.g.
+  // "Approved order ORD-0042".
+  description: text("description").notNull(),
+  // Optional structured context (old/new values, etc.) for future drill-down.
+  metadata: jsonb("metadata"),
+  createdAt: ts("createdAt").notNull().defaultNow(),
 })
