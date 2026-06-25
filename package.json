@@ -25,6 +25,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
     "@base-ui/react": "^1.5.0",
+    "@libsql/client": "^0.17.4",
     "@paralleldrive/cuid2": "^3.3.0",
     "@vercel/analytics": "1.6.1",
     "better-auth": "^1.6.19",
@@ -37,7 +38,6 @@
     "next-themes": "^0.4.6",
     "nextjs-toploader": "^3.9.17",
     "nodemailer": "^9.0.1",
-    "pg": "8.21.0",
     "react": "^19",
     "react-dom": "^19",
     "sonner": "^2.0.7",
@@ -52,7 +52,6 @@
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^24",
     "@types/nodemailer": "^8.0.1",
-    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",

@@ -500,7 +500,6 @@ export async function applyOrderTransition(
       .select()
       .from(order)
       .where(eq(order.id, orderId))
-      .for("update")
       .limit(1)
     if (!orderRow) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })

@@ -517,7 +517,7 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
      handler with `requireSession()`; gate writes by `me.role`.
    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-     role-scoped — **enforce it server-side; Neon has no RLS.**
+     role-scoped — **enforce it server-side; Turso has no RLS.**
    - If this is a resource Admin/Super Admin manage (not pure
      merchant/rider self-service), call `logAudit()` after each write
      succeeds — see [§3.5](#35-audit-log-libaudits).
@@ -681,17 +681,22 @@ done; don't add a second `logAudit()` call in the route wrapper.
 
 ## Applying schema changes
 
-The DB connection string lives in `.env.development.local` (not `.env`), so load
+The DB credentials live in `.env.development.local` (not `.env`), so load
 it explicitly when running DB scripts from the shell:
+
+**Local dev and production both use Turso cloud** — set `TURSO_DATABASE_URL`
+and `TURSO_AUTH_TOKEN` in `.env.development.local`, then:
 
 ```bash
 set -a && . ./.env.development.local && set +a && pnpm db:push
 set -a && . ./.env.development.local && set +a && pnpm db:seed
 ```
 
-- `pnpm db:push` applies `schema.ts` to Neon. A `NOT NULL` add fails if existing
-  rows violate it — backfill first (a quick `UPDATE` via the Neon SQL tooling) or
-  give the column a default.
+Use the Turso CLI shell (`turso db shell parcelflow`) to inspect the database
+or run one-off backfills.
+
+- `pnpm db:push` applies `schema.ts` to the target database. A `NOT NULL` add
+  fails if existing rows violate it — backfill first or give the column a default.
 - The seed is **idempotent** — it skips rows that already exist. After changing
   seed values for existing ids, either reset the data or run a targeted `UPDATE`.
 

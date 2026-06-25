@@ -6,15 +6,16 @@ Quick-load reference so the project can be bootstrapped fast in future chats.
 
 - **App:** ParcelFlow — B2B delivery / parcel management app.
 - **Repo:** https://github.com/SAR-dev/delivery-management.git
-- **Stack:** Next.js 16 (App Router) · Drizzle ORM · Better Auth · Postgres (Neon) · Tailwind v4 · shadcn · SWR · zod.
+- **Stack:** Next.js 16 (App Router) · Drizzle ORM · Better Auth · Turso (libSQL/SQLite) · Tailwind v4 · shadcn · SWR · zod.
 - **Package manager:** `pnpm`.
 
 ## Required environment variables
 
-Live in `.env.development.local` (Neon integration provides `DATABASE_URL`).
+Live in `.env.development.local` (copy from `.env.example`).
 
-- `DATABASE_URL` — provided by the connected **Neon** integration.
-- `BETTER_AUTH_SECRET` — NOT provided by Neon. Must be generated and added manually:
+- `TURSO_DATABASE_URL` — from `turso db show parcelflow --url`
+- `TURSO_AUTH_TOKEN` — from `turso db tokens create parcelflow`
+- `BETTER_AUTH_SECRET` — must be generated manually:
   ```bash
   printf "BETTER_AUTH_SECRET='%s'\n" "$(openssl rand -base64 32)" >> .env.development.local
   ```
@@ -26,13 +27,16 @@ Live in `.env.development.local` (Neon integration provides `DATABASE_URL`).
 ## Bootstrap steps (in order)
 
 ```bash
+# 0. Create Turso database (one-time)
+turso db create parcelflow
+
 # 1. install deps
 pnpm install
 
-# 2. make env vars available to the CLI (scripts don't auto-read .env.development.local)
+# 2. make env vars available to the CLI
 set -a && . ./.env.development.local && set +a
 
-# 3. push schema  (plain `pnpm db:push` needs a TTY confirmation, so use --force)
+# 3. push schema (plain `pnpm db:push` needs a TTY confirmation, so use --force)
 pnpm exec drizzle-kit push --force
 
 # 4. seed data
@@ -41,11 +45,11 @@ pnpm db:seed
 
 ## Key files
 
-- `lib/db/index.ts` — Drizzle client (uses `pg`, reads `DATABASE_URL`).
+- `lib/db/index.ts` — Drizzle client (uses `@libsql/client`, reads `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`).
 - `lib/db/schema*` — table definitions.
 - `lib/db/seed.ts` — seed script (~1200 lines), creates users via Better Auth.
-- `lib/auth.ts` — Better Auth config (needs `BETTER_AUTH_SECRET`).
-- `drizzle.config.ts` — drizzle-kit config.
+- `lib/auth.ts` — Better Auth config (uses Drizzle adapter for Turso).
+- `drizzle.config.ts` — drizzle-kit config (dialect: turso).
 
 ## Database schema (tables created by db:push)
 

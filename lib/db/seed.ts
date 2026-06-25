@@ -18,7 +18,7 @@
 
 import "dotenv/config"
 import { auth } from "@/lib/auth"
-import { db, pool } from "@/lib/db"
+import { db } from "@/lib/db"
 import {
   auditLog,
   division,
@@ -134,11 +134,24 @@ async function createUser(input: {
 async function cleanDatabase() {
   log("Cleaning existing data…")
 
-  // TRUNCATE with CASCADE lets Postgres resolve all FK dependencies in one shot,
-  // so we don't have to manually maintain deletion order.
-  await db.execute(
-    sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division", "audit_log", "email_log" CASCADE`,
-  )
+  // SQLite has no TRUNCATE — delete in FK-safe order (children before parents).
+  // FK enforcement may be off by default in SQLite, but this order is safe either way.
+  await db.run(sql`DELETE FROM "audit_log"`)
+  await db.run(sql`DELETE FROM "email_log"`)
+  await db.run(sql`DELETE FROM "failed_mail"`)
+  await db.run(sql`DELETE FROM "order"`)
+  await db.run(sql`DELETE FROM "payout_request"`)
+  await db.run(sql`DELETE FROM "security_config"`)
+  await db.run(sql`DELETE FROM "pickup_location"`)
+  await db.run(sql`DELETE FROM "profile"`)
+  await db.run(sql`DELETE FROM "verification"`)
+  await db.run(sql`DELETE FROM "session"`)
+  await db.run(sql`DELETE FROM "account"`)
+  await db.run(sql`DELETE FROM "user"`)
+  await db.run(sql`DELETE FROM "rider"`)
+  await db.run(sql`DELETE FROM "merchant"`)
+  await db.run(sql`DELETE FROM "warehouse"`)
+  await db.run(sql`DELETE FROM "division"`)
 
   log("Clean complete.\n")
 }
@@ -1508,7 +1521,9 @@ async function main() {
     console.error("\n[seed] ERROR:", err)
     process.exit(1)
   } finally {
-    await pool.end()
+    // Close the libSQL client connection when seeding is done.
+    const { client } = await import("@/lib/db")
+    client.close()
   }
 }
 

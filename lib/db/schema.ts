@@ -1,59 +1,57 @@
 import {
-  boolean,
-  doublePrecision,
   integer,
-  jsonb,
-  pgTable,
+  real,
+  sqliteTable,
   text,
-  timestamp,
-} from "drizzle-orm/pg-core"
+} from "drizzle-orm/sqlite-core"
+import { sql } from "drizzle-orm"
 import { createId } from "@paralleldrive/cuid2"
 
 // =============================================================================
 // Shared column helpers
 // =============================================================================
 
-// All timestamp columns use `mode: "string"` so Drizzle decodes them as ISO
-// strings instead of `Date` objects. Inferred row types can be used directly
-// as app-level types with no conversion layer — consistent with how dates are
-// represented everywhere else (React state, server/client boundaries, etc.).
-const ts = (name: string) =>
-  timestamp(name, { mode: "string", withTimezone: true })
+// All timestamp columns stored as ISO strings (text) in SQLite.
+// SQLite has no timezone-aware timestamp type; storing as text preserves
+// existing app behavior where timestamps are treated as ISO strings throughout.
+const ts = (name: string) => text(name)
+
+// SQLite has no native array type. Arrays are stored as JSON text and
+// deserialized automatically by Drizzle's json mode.
+const textArray = (name: string) =>
+  text(name, { mode: "json" }).$type<string[] | null>()
 
 // =============================================================================
 // Better Auth tables
 //
-// Better Auth manages its own migrations and talks to Postgres directly
-// (see lib/auth.ts: `database: pool`), so it never reads these Drizzle
-// definitions. They exist solely to give the app typed access for queries and
-// joins. The SQL shape here MUST stay in sync with whatever Better Auth
-// creates in the database — if Better Auth changes a column, update it here.
-//
-// Column names are camelCase because that is what Better Auth requires.
-// Better Auth generates and injects its own IDs, so no $defaultFn is needed.
+// Better Auth manages its own migrations; these definitions exist solely to
+// give the app typed access for queries and joins. Column names are camelCase
+// because that is what Better Auth requires.
 // =============================================================================
 
-export const user = pgTable("user", {
+export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("emailVerified").notNull().default(false),
+  emailVerified: integer("emailVerified", { mode: "boolean" })
+    .notNull()
+    .default(false),
   image: text("image"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
-  updatedAt: ts("updatedAt").notNull().defaultNow(),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   // Required by the better-auth admin plugin
   role: text("role"),
-  banned: boolean("banned"),
+  banned: integer("banned", { mode: "boolean" }),
   banReason: text("banReason"),
   banExpires: ts("banExpires"),
 })
 
-export const session = pgTable("session", {
+export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
   expiresAt: ts("expiresAt").notNull(),
   token: text("token").notNull().unique(),
-  createdAt: ts("createdAt").notNull().defaultNow(),
-  updatedAt: ts("updatedAt").notNull().defaultNow(),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId")
@@ -61,7 +59,7 @@ export const session = pgTable("session", {
     .references(() => user.id, { onDelete: "cascade" }),
 })
 
-export const account = pgTable("account", {
+export const account = sqliteTable("account", {
   id: text("id").primaryKey(),
   accountId: text("accountId").notNull(),
   providerId: text("providerId").notNull(),
@@ -75,28 +73,23 @@ export const account = pgTable("account", {
   refreshTokenExpiresAt: ts("refreshTokenExpiresAt"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
-  updatedAt: ts("updatedAt").notNull().defaultNow(),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
 
-export const verification = pgTable("verification", {
+export const verification = sqliteTable("verification", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
   expiresAt: ts("expiresAt").notNull(),
-  createdAt: ts("createdAt").defaultNow(),
-  updatedAt: ts("updatedAt").defaultNow(),
+  createdAt: ts("createdAt").default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt").default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
 // Platform profile (extends a Better Auth user with role + domain links)
-// userId is the PK and comes from Better Auth — no $defaultFn needed.
 // =============================================================================
 
-// `enum` here is a Drizzle-only hint — it narrows the inferred TypeScript type
-// for `role` to this literal union instead of `string`. No Postgres enum type
-// is created; the column remains plain `text` in the database and no migration
-// is needed when this list changes. Runtime validation is the caller's job.
 export const profileRoles = [
   "SUPER_ADMIN",
   "ADMIN",
@@ -105,132 +98,107 @@ export const profileRoles = [
   "RIDER",
 ] as const
 
-export const profile = pgTable("profile", {
+export const profile = sqliteTable("profile", {
   userId: text("userId")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   role: text("role", { enum: profileRoles }).notNull(),
   phone: text("phone").notNull().default(""),
-  isActive: boolean("isActive").notNull().default(true),
-  // Only meaningful for ADMIN users.
-  canManagePricing: boolean("canManagePricing").notNull().default(false),
-  // DataTable's default rows-per-page when the caller doesn't pass an
-  // explicit `pageSize` prop. Clamped to 1-250 at the validation layer
-  // (lib/validation.ts) and again defensively in components/data-table.tsx.
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
+  canManagePricing: integer("canManagePricing", { mode: "boolean" })
+    .notNull()
+    .default(false),
   tableRowsPerPage: integer("tableRowsPerPage").notNull().default(20),
-  // Domain entity references. Stored as plain text (no FK constraint) to avoid
-  // circular dependencies between the profile table and its referents.
-  // Only the field matching the user's role is expected to be populated.
-  warehouseId: text("warehouseId"), // WAREHOUSE_ADMIN: the warehouse they manage
-  merchantId: text("merchantId"), // MERCHANT: their merchant business
-  riderId: text("riderId"), // RIDER: their rider profile
-  createdAt: ts("createdAt").notNull().defaultNow(),
+  warehouseId: text("warehouseId"),
+  merchantId: text("merchantId"),
+  riderId: text("riderId"),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
-// Divisions (geographic regions, e.g. Bangladesh divisions)
-//
-// Managed by Super Admins. Every address-bearing entity (warehouse, merchant,
-// pickup location, order receiver) references a division so parcels can be
-// routed to the hub serving the division they are picked up from.
+// Divisions
 // =============================================================================
 
-export const division = pgTable("division", {
+export const division = sqliteTable("division", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
   name: text("name").notNull().unique(),
-  isActive: boolean("isActive").notNull().default(true),
-  createdAt: ts("createdAt").notNull().defaultNow(),
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
 // Warehouses
 // =============================================================================
 
-export const warehouse = pgTable("warehouse", {
+export const warehouse = sqliteTable("warehouse", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
   name: text("name").notNull(),
   address: text("address").notNull(),
   city: text("city").notNull(),
-  // Division this hub serves. Soft reference (no FK) so divisions can be
-  // managed independently. Nullable in the DB for backwards compatibility;
-  // required at the validation/UI layer for new records.
   divisionId: text("divisionId"),
-  // Soft reference to a WAREHOUSE_ADMIN user id; no FK to avoid tight coupling.
   managedBy: text("managedBy"),
-  isActive: boolean("isActive").notNull().default(true),
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
 })
 
 // =============================================================================
-// Riders (standalone entity — not tightly coupled to a user row)
+// Riders
 // =============================================================================
 
-// What a rider is allowed to do. Decoupled from the warehouse association so a
-// rider can, e.g., be a PICKUP rider that still belongs to a hub, or handle
-// BOTH legs. Drizzle-only `enum` hint — the column stays plain `text`.
 export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
 
-export const rider = pgTable("rider", {
+export const rider = sqliteTable("rider", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
-  // Service zone the rider primarily covers.
   zone: text("zone").notNull(),
-  isActive: boolean("isActive").notNull().default(true),
-  // What the rider is allowed to do, independent of their home warehouse.
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
   taskType: text("taskType", { enum: riderTaskTypes })
     .notNull()
     .default("DELIVERY"),
-  // Home warehouse this rider dispatches from. Every rider belongs to exactly
-  // one warehouse. `restrict` prevents deleting a hub that still has riders.
   warehouseId: text("warehouseId")
     .notNull()
     .references(() => warehouse.id, { onDelete: "restrict" }),
 })
 
 // =============================================================================
-// Merchants (standalone entity — owner contact info stored here directly)
+// Merchants
 // =============================================================================
 
 export const merchantStatuses = ["PENDING", "ACTIVE", "SUSPENDED"] as const
 
-export const merchant = pgTable("merchant", {
+export const merchant = sqliteTable("merchant", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
   businessName: text("businessName").notNull(),
-  // Owner contact details captured at registration.
   ownerName: text("ownerName").notNull(),
   email: text("email").notNull(),
   phone: text("phone").notNull(),
   address: text("address").notNull(),
-  // Division the merchant's business address belongs to (soft reference).
   divisionId: text("divisionId"),
   status: text("status", { enum: merchantStatuses })
     .notNull()
     .default("PENDING"),
-  // Delivery pricing — set by an Admin after approval.
-  baseRate: doublePrecision("baseRate").notNull().default(0),
-  extraRatePerKg: doublePrecision("extraRatePerKg").notNull().default(0),
-  maxWeightKg: doublePrecision("maxWeightKg").notNull().default(3),
-  freeWeightKg: doublePrecision("freeWeightKg").notNull().default(1),
-  // Soft reference (user id) to the admin who approved this merchant.
-  // Null until an admin acts on the PENDING application.
+  baseRate: real("baseRate").notNull().default(0),
+  extraRatePerKg: real("extraRatePerKg").notNull().default(0),
+  maxWeightKg: real("maxWeightKg").notNull().default(3),
+  freeWeightKg: real("freeWeightKg").notNull().default(1),
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
-// Pickup locations (simplified: no city, no is_default)
+// Pickup locations
 // =============================================================================
 
-export const pickupLocation = pgTable("pickup_location", {
+export const pickupLocation = sqliteTable("pickup_location", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -239,35 +207,23 @@ export const pickupLocation = pgTable("pickup_location", {
     .references(() => merchant.id, { onDelete: "cascade" }),
   label: text("label").notNull(),
   address: text("address").notNull(),
-  // Division this pickup location is in. Drives which warehouse a parcel
-  // collected here is routed to (soft reference).
   divisionId: text("divisionId"),
-  // Optional map link (e.g. Google Maps URL) so riders can pinpoint the shop.
   mapLink: text("mapLink"),
-  // Optional list of image URLs (shop front / landmark photos) to help riders
-  // find the pickup location.
-  imageLinks: text("imageLinks").array(),
+  // SQLite has no array type — stored as JSON text, Drizzle handles
+  // serialize/deserialize transparently via mode: "json".
+  imageLinks: textArray("imageLinks"),
 })
 
 // =============================================================================
 // Security money config
-//
-// Single-row configuration table. The one row always has id = 'default' and
-// is inserted by the seed script. No $defaultFn is used because the id value
-// must be the literal string 'default', not a generated cuid.
 // =============================================================================
 
-export const securityConfig = pgTable("security_config", {
+export const securityConfig = sqliteTable("security_config", {
   id: text("id").primaryKey(), // always 'default'
-  lowValueThreshold: doublePrecision("lowValueThreshold")
-    .notNull()
-    .default(1000),
-  lowValueFlatFee: doublePrecision("lowValueFlatFee").notNull().default(10),
-  highValuePercentage: doublePrecision("highValuePercentage")
-    .notNull()
-    .default(1),
-  updatedAt: ts("updatedAt").notNull().defaultNow(),
-  // Name (not id) of the admin who last updated, matching frontend display.
+  lowValueThreshold: real("lowValueThreshold").notNull().default(1000),
+  lowValueFlatFee: real("lowValueFlatFee").notNull().default(10),
+  highValuePercentage: real("highValuePercentage").notNull().default(1),
+  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   updatedBy: text("updatedBy").notNull(),
 })
 
@@ -282,28 +238,24 @@ export const payoutRequestStatuses = [
   "REJECTED",
 ] as const
 
-export const payoutRequest = pgTable("payout_request", {
+export const payoutRequest = sqliteTable("payout_request", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  // Short human-friendly reference shown in the UI (e.g. PR-0001).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
     .notNull()
     .references(() => merchant.id),
-  // Order IDs bundled into this payout request, stored as jsonb. The
-  // .$type<string[]>() call tells Drizzle the inferred type without altering
-  // the column — no manual JSON.stringify / JSON.parse is needed at runtime.
-  orderIds: jsonb("orderIds").$type<string[]>().notNull(),
-  amount: doublePrecision("amount").notNull(),
+  // Stored as JSON text (was jsonb in Postgres). Drizzle handles
+  // serialize/deserialize transparently via mode: "json".
+  orderIds: text("orderIds", { mode: "json" }).$type<string[]>().notNull(),
+  amount: real("amount").notNull(),
   status: text("status", { enum: payoutRequestStatuses })
     .notNull()
     .default("PENDING"),
-  // Merchant-supplied payout destination.
   payoutMethod: text("payoutMethod").notNull(),
   payoutDetails: text("payoutDetails").notNull(),
-  requestedAt: ts("requestedAt").notNull().defaultNow(),
-  // Super Admin review stamps.
+  requestedAt: ts("requestedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   reviewedBy: text("reviewedBy"),
   reviewedAt: ts("reviewedAt"),
   rejectReason: text("rejectReason"),
@@ -312,9 +264,6 @@ export const payoutRequest = pgTable("payout_request", {
 
 // =============================================================================
 // Orders
-//
-// All lifecycle timestamps are embedded directly on the order row rather than
-// in a separate audit log table. Fields are null until their stage is reached.
 // =============================================================================
 
 export const orderDeliveryTypes = ["STANDARD", "FRAGILE"] as const
@@ -332,11 +281,10 @@ export const orderStatuses = [
   "CANCELLED",
 ] as const
 
-export const order = pgTable("order", {
+export const order = sqliteTable("order", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  // Short human-friendly tracking code (e.g. PF-000123).
   code: text("code").notNull().unique(),
   merchantId: text("merchantId")
     .notNull()
@@ -348,165 +296,116 @@ export const order = pgTable("order", {
   recipientPhone: text("recipientPhone").notNull(),
   deliveryAddress: text("deliveryAddress").notNull(),
   deliveryCity: text("deliveryCity").notNull(),
-  // Division of the receiver address (soft reference).
   deliveryDivisionId: text("deliveryDivisionId"),
-  // Optional map link (e.g. Google Maps URL) the merchant can share to pinpoint
-  // the recipient location.
   deliveryMapLink: text("deliveryMapLink"),
-  // Optional list of image URLs (location photos / landmarks) shared by the
-  // merchant to help the rider find the address.
-  deliveryImageLinks: text("deliveryImageLinks").array(),
-  parcelWeightKg: doublePrecision("parcelWeightKg").notNull(),
+  // Stored as JSON text (was text[]).
+  deliveryImageLinks: textArray("deliveryImageLinks"),
+  parcelWeightKg: real("parcelWeightKg").notNull(),
   deliveryType: text("deliveryType", { enum: orderDeliveryTypes })
     .notNull()
     .default("STANDARD"),
-  productCost: doublePrecision("productCost").notNull(),
-  deliveryCharge: doublePrecision("deliveryCharge").notNull(),
-  securityMoney: doublePrecision("securityMoney").notNull(),
-  totalCollectible: doublePrecision("totalCollectible").notNull(),
+  productCost: real("productCost").notNull(),
+  deliveryCharge: real("deliveryCharge").notNull(),
+  securityMoney: real("securityMoney").notNull(),
+  totalCollectible: real("totalCollectible").notNull(),
   status: text("status", { enum: orderStatuses }).notNull().default("PENDING"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 
-  // Admin approval and pickup rider assignment.
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
   pickupRiderId: text("pickupRiderId").references(() => rider.id),
   assignedAt: ts("assignedAt"),
 
-  // Pickup rider collects parcel from merchant.
   pickedUpAt: ts("pickedUpAt"),
-  // Photo(s) the pickup rider captures as proof of collection (shop front,
-  // parcel in hand, etc). Multiple images allowed, same pattern as the
-  // pickup-location reference photos above.
-  pickupProofRefs: text("pickupProofRefs").array(),
+  // Stored as JSON text (was text[]).
+  pickupProofRefs: textArray("pickupProofRefs"),
 
-  // Parcel received at warehouse.
   warehouseId: text("warehouseId").references(() => warehouse.id),
   receivedAtWarehouseAt: ts("receivedAtWarehouseAt"),
-  // Name of the Warehouse Admin who logged the parcel in.
   receivedByWarehouse: text("receivedByWarehouse"),
 
-  // Warehouse Admin assigns delivery rider and dispatches parcel.
   deliveryRiderId: text("deliveryRiderId").references(() => rider.id),
   dispatchedAt: ts("dispatchedAt"),
-  // Name of the Warehouse Admin who dispatched.
   dispatchedBy: text("dispatchedBy"),
 
-  // Delivery rider heads out and attempts delivery.
   outForDeliveryAt: ts("outForDeliveryAt"),
-  // Successful delivery.
   deliveredAt: ts("deliveredAt"),
-  // Soft reference to uploaded proof image (URL / storage key).
   deliveryProofRef: text("deliveryProofRef"),
-  amountCollected: doublePrecision("amountCollected"),
-  // Failed attempt.
+  amountCollected: real("amountCollected"),
   failedAttemptAt: ts("failedAttemptAt"),
   failureNote: text("failureNote"),
   deliveryAttempts: integer("deliveryAttempts").notNull().default(0),
 
-  // Warehouse Admin resolves a failed delivery attempt.
   failedResolvedAt: ts("failedResolvedAt"),
-  // Name of the Warehouse Admin who resolved the exception.
   failedResolvedBy: text("failedResolvedBy"),
-  // Set only when parcel is closed as RETURNED.
   returnedAt: ts("returnedAt"),
   returnReason: text("returnReason"),
 
-  // Set when an order is cancelled (terminal).
   cancelledAt: ts("cancelledAt"),
-  cancelledBy: text("cancelledBy"), // name of actor, matches approvedBy / dispatchedBy pattern
-  cancelReason: text("cancelReason"), // optional free-text note
+  cancelledBy: text("cancelledBy"),
+  cancelReason: text("cancelReason"),
 
-  // Notes — merchant can add a note at order creation; receiver (recipient)
-  // can add a note via the tracking page before delivery.
   merchantNote: text("merchantNote"),
   receiverNote: text("receiverNote"),
 
-  // COD reconciliation — rider settles cash with Warehouse Admin.
   codSettledAt: ts("codSettledAt"),
   codSettledBy: text("codSettledBy"),
-  // Payout request this order is attached to. Presence of this field (combined
-  // with a non-REJECTED request status) locks the order so it cannot be
-  // included in a second payout request.
   payoutRequestId: text("payoutRequestId").references(() => payoutRequest.id),
 })
 
 // =============================================================================
 // Failed mail log
-//
-// A row is inserted whenever sendMail() exhausts all retries without success.
-// Useful for debugging delivery failures and manual re-sending.
 // =============================================================================
 
-export const failedMail = pgTable("failed_mail", {
+export const failedMail = sqliteTable("failed_mail", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  to: text("to").notNull(), // comma-joined if multiple recipients
+  to: text("to").notNull(),
   subject: text("subject").notNull(),
   html: text("html"),
   text: text("text"),
-  error: text("error").notNull(), // lastError.message
-  attempts: integer("attempts").notNull(), // total attempts made (retries + 1)
-  failedAt: ts("failedAt").notNull().defaultNow(),
+  error: text("error").notNull(),
+  attempts: integer("attempts").notNull(),
+  failedAt: ts("failedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
 // Email log
-//
-// A row is inserted by sendMail() for every send attempt that's fully
-// resolved (either delivered, or exhausted all retries). This is the
-// complete email history shown to Admin/Super Admin — failed_mail above
-// remains untouched (and still used for any future manual-resend tooling),
-// this table is the superset that also includes successful sends.
 // =============================================================================
 
 export const emailLogStatuses = ["SENT", "FAILED"] as const
 
-export const emailLog = pgTable("email_log", {
+export const emailLog = sqliteTable("email_log", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  to: text("to").notNull(), // comma-joined if multiple recipients
+  to: text("to").notNull(),
   subject: text("subject").notNull(),
   status: text("status", { enum: emailLogStatuses }).notNull(),
-  // Number of attempts made before resolving (1 = succeeded on first try).
   attempts: integer("attempts").notNull(),
-  // Populated only when status is FAILED.
   error: text("error"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
-  // Populated only when an Admin/Super Admin manually overrides a FAILED
-  // entry to SENT (e.g. after confirming delivery or resending by hand).
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   markedSentBy: text("markedSentBy"),
   markedSentAt: ts("markedSentAt"),
 })
 
 // =============================================================================
 // Audit log
-//
-// A generic, append-only trail of state-changing actions taken by Admin /
-// Super Admin (and, where relevant, Warehouse Admin / Merchant / Rider)
-// accounts. Visible only to Admin and Super Admin. Rows are written through
-// the single lib/audit.ts#logAudit() helper — never inserted ad hoc — so the
-// shape stays consistent across every call site.
 // =============================================================================
 
-export const auditLog = pgTable("audit_log", {
+export const auditLog = sqliteTable("audit_log", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
-  actorId: text("actorId"), // profile.userId of whoever performed the action
+  actorId: text("actorId"),
   actorName: text("actorName").notNull(),
   actorRole: text("actorRole", { enum: profileRoles }).notNull(),
-  // Short machine-readable verb, e.g. "ORDER_APPROVED", "MERCHANT_SUSPENDED".
   action: text("action").notNull(),
-  // The kind of entity affected, e.g. "order", "merchant", "payout_request".
   entityType: text("entityType").notNull(),
   entityId: text("entityId"),
-  // Human-readable summary shown directly in the table, e.g.
-  // "Approved order ORD-0042".
   description: text("description").notNull(),
-  // Optional structured context (old/new values, etc.) for future drill-down.
-  metadata: jsonb("metadata"),
-  createdAt: ts("createdAt").notNull().defaultNow(),
+  // Stored as JSON text (was jsonb in Postgres).
+  metadata: text("metadata", { mode: "json" }),
+  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 })
