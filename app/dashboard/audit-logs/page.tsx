@@ -77,7 +77,7 @@ export default function AuditLogsPage() {
   ]
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={pageContent.dashboard.auditLogs.title}
         description={pageContent.dashboard.auditLogs.description}
@@ -128,6 +128,6 @@ export default function AuditLogsPage() {
           />
         </CardContent>
       </Card>
-    </>
+    </div>
   )
 }

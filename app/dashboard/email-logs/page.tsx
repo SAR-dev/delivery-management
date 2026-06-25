@@ -134,7 +134,7 @@ export default function EmailLogsPage() {
   ]
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title={pageContent.dashboard.emailLogs.title}
         description={pageContent.dashboard.emailLogs.description}
@@ -185,6 +185,6 @@ export default function EmailLogsPage() {
           />
         </CardContent>
       </Card>
-    </>
+    </div>
   )
 }
