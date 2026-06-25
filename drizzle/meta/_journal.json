@@ -71,6 +71,13 @@
       "when": 1782356699411,
       "tag": "0009_glamorous_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782391686857,
+      "tag": "0010_marvelous_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import { useState } from "react"
 import { useParams } from "next/navigation"
 import {
   ArrowLeft,
+  Ban,
   Bike,
   Loader2,
   MapPin,
@@ -27,6 +29,7 @@ import { OrderStatusBadge } from "@/features/orders/components/order-status-badg
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
+import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -83,6 +86,8 @@ export default function OrderDetailPage() {
   const { riders } = useRiders()
   const { warehouses } = useWarehouses()
   const { pickupLocations } = usePickupLocations()
+
+  const [cancelOpen, setCancelOpen] = useState(false)
 
   const order: Order | undefined = orders.find((o) => o.id === params.id)
 
@@ -148,7 +153,26 @@ export default function OrderDetailPage() {
               Placed {new Date(order.createdAt).toLocaleString()}
             </p>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <div className="flex items-center gap-3">
+            <OrderStatusBadge status={order.status} />
+            {[
+              "PENDING",
+              "APPROVED",
+              "PICKED_UP",
+              "IN_WAREHOUSE",
+              "IN_TRANSIT",
+            ].includes(order.status) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+                onClick={() => setCancelOpen(true)}
+              >
+                <Ban className="size-3.5" />
+                Cancel order
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -352,6 +376,12 @@ export default function OrderDetailPage() {
           />
         </div>
       </div>
+
+      <CancelOrderDialog
+        order={order}
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+      />
     </div>
   )
 }

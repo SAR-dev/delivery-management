@@ -2,15 +2,16 @@
 
 import { Fragment } from "react"
 import {
-  PackageCheck,
-  ClipboardCheck,
+  Ban,
   Bike,
-  Warehouse,
-  Truck,
   CheckCircle2,
-  XCircle,
-  Undo2,
+  ClipboardCheck,
   ImageOff,
+  PackageCheck,
+  Truck,
+  Undo2,
+  Warehouse,
+  XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Order, OrderStatus } from "@/lib/types"
@@ -34,6 +35,7 @@ const STATUS_RANK: Record<OrderStatus, number> = {
   DELIVERED: 5,
   FAILED_ATTEMPT: 4,
   RETURNED: 4,
+  CANCELLED: 0,
 }
 
 const STEPS: {
@@ -127,6 +129,7 @@ export function TrackingTimeline({
   const currentRank = STATUS_RANK[order.status]
   const isReturned = order.status === "RETURNED"
   const isFailed = order.status === "FAILED_ATTEMPT"
+  const isCancelled = order.status === "CANCELLED"
 
   const stepDetails: Partial<
     Record<StepKey, { role: string; name: string; sub: string }>
@@ -181,6 +184,7 @@ export function TrackingTimeline({
         const isCurrent =
           currentRank === step.rank &&
           !isReturned &&
+          !isCancelled &&
           !(isFailed && step.key === "DELIVERED")
         const isCompleted = reached && !isCurrent
         const Icon = step.icon
@@ -189,7 +193,10 @@ export function TrackingTimeline({
 
         const showFailedAfter = step.key === "OUT_FOR_DELIVERY" && isFailed
         const showReturnedAfter = step.key === "OUT_FOR_DELIVERY" && isReturned
-        const hasExceptionAfter = showFailedAfter || showReturnedAfter
+        const showCancelledAfter =
+          isCancelled && step.rank === currentRank && !isLast
+        const hasExceptionAfter =
+          showFailedAfter || showReturnedAfter || showCancelledAfter
 
         return (
           <Fragment key={step.key}>
@@ -355,6 +362,31 @@ export function TrackingTimeline({
                     {formatStamp(order.returnedAt) ??
                       "This parcel was returned and will not be delivered."}
                   </p>
+                </div>
+              </li>
+            )}
+
+            {showCancelledAfter && (
+              <li className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-8 shrink-0 items-center justify-center rounded-full border">
+                    <Ban className="size-3.5" />
+                  </span>
+                </div>
+                <div className="pt-0.5 pb-0">
+                  <p className="text-destructive text-sm leading-none font-medium">
+                    Cancelled
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {formatStamp(order.cancelledAt) ??
+                      "This order was cancelled."}
+                  </p>
+                  {order.cancelledBy && (
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      By {order.cancelledBy}
+                      {order.cancelReason ? ` · ${order.cancelReason}` : ""}
+                    </p>
+                  )}
                 </div>
               </li>
             )}

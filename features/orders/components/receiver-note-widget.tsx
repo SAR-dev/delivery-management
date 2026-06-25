@@ -1,12 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { StickyNote, Send, Check, AlertCircle } from "lucide-react"
+import { AlertCircle, Check, Send, StickyNote } from "lucide-react"
 
 interface Props {
   orderId: string
   initialNote: string | null | undefined
-  // Whether the order is in a terminal status (DELIVERED / RETURNED)
+  // Whether the order is in a terminal status (DELIVERED / RETURNED / CANCELLED)
   isTerminal: boolean
 }
 

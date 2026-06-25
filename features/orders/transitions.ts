@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema"
 import {
   orderApproveSchema,
+  orderCancelSchema,
   orderDeliveredSchema,
   orderDispatchSchema,
   orderFailedSchema,
@@ -394,6 +395,53 @@ export const ORDER_TRANSITIONS = {
       codSettledBy: session.name,
     }),
   }),
+
+  // -------------------------------------------------------------------------
+  cancel: defineTransition({
+    authorize: (me) =>
+      me.role === "SUPER_ADMIN" ||
+      me.role === "ADMIN" ||
+      me.role === "WAREHOUSE_ADMIN" ||
+      me.role === "MERCHANT",
+    schema: orderCancelSchema,
+    guard: ({ order: o, session }) => {
+      if (session.role === "MERCHANT") {
+        // Merchants can only cancel orders they own, before pickup.
+        if (o.merchantId !== session.merchantId) {
+          return { error: "Forbidden", status: 403 }
+        }
+        const merchantAllowed = ["PENDING", "APPROVED"] as const
+        if (!(merchantAllowed as readonly string[]).includes(o.status)) {
+          return {
+            error: "Orders can only be cancelled before they are picked up.",
+            status: 400,
+          }
+        }
+      } else {
+        // Admin / Super Admin / Warehouse Admin: before out-for-delivery.
+        const adminAllowed = [
+          "PENDING",
+          "APPROVED",
+          "PICKED_UP",
+          "IN_WAREHOUSE",
+          "IN_TRANSIT",
+        ] as const
+        if (!(adminAllowed as readonly string[]).includes(o.status)) {
+          return {
+            error: "Orders cannot be cancelled once they are out for delivery.",
+            status: 400,
+          }
+        }
+      }
+      return null
+    },
+    buildUpdate: ({ session, body }) => ({
+      status: "CANCELLED",
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: session.name,
+      cancelReason: body?.reason?.trim() ?? null,
+    }),
+  }),
 } as const
 
 export type TransitionName = keyof typeof ORDER_TRANSITIONS
@@ -416,6 +464,7 @@ const TRANSITION_LABELS: Record<TransitionName, string> = {
   reattempt: "Scheduled reattempt for",
   receive: "Received",
   "settle-cod": "Settled COD for",
+  cancel: "Cancelled",
 }
 
 export async function applyOrderTransition(

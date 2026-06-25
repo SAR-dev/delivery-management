@@ -28,7 +28,7 @@ components/                          generic, feature-agnostic UI only
 lib/
   db/schema.ts                       Drizzle tables — source of truth for entities
   types.ts                           re-exports entity types from schema
-  validation.ts                      zod schemas + parseBody
+  validation.ts                      zod schemas + parseBody (missing/empty body is treated as `{}`)
   api-auth.ts                        requireSession()
   audit.ts                           logAudit() — the only audit_log writer
   nav-config.ts                      sidebar entries per role
@@ -148,7 +148,7 @@ export const PATCH = (req, ctx) => applyOrderTransition("approve", req, ctx)
 
 To add a lifecycle action: add one entry to `transitions`, add a one-line route
 wrapper, and add a spec case in
-`app/api/orders/[id]/__tests__/transitions.spec.ts`. Never duplicate the
+`app/api/orders/[id]/transitions.spec.ts`. Never duplicate the
 auth/parse/guard/update plumbing inline.
 
 ### Transaction boundary + row lock
@@ -627,7 +627,13 @@ export async function POST(req: Request) {
 
 Rules: `requireSession()` first; validate the body with `parseBody` + a zod
 schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
-return the created/updated row so the hook can update its cache. **If the
+return the created/updated row so the hook can update its cache. **`parseBody`
+normalises a missing or unparseable request body to `{}`** before running the
+schema — so schemas where every field is optional (e.g. `orderCancelSchema`)
+parse successfully even when the client sends no body at all. This is a Zod 4
+requirement: `z.object({...}).safeParse(undefined)` fails even if all fields
+are optional, so the normalisation happens in `parseBody` rather than in each
+schema. **If the
 handler reads a row, checks its status, and conditionally writes to it**
 (an approve/reject/mark-paid style endpoint), wrap the read + guard + write in
 `db.transaction()` with `.for("update")` on the initial read — see
@@ -642,14 +648,24 @@ machine in `features/orders/transitions.ts`.
 
 1. Add one entry to the `transitions` object: `authorize`, optional `schema`,
    ordered `guard`, and `buildUpdate`.
-2. Add a one-line wrapper route
-   `app/api/orders/[id]/<action>/route.ts`:
+2. Add a route wrapper at `app/api/orders/[id]/<action>/route.ts`.
+   Next.js 15 makes `params` a `Promise`, so you must await it before
+   passing the id:
+
    ```ts
    import { applyOrderTransition } from "@/features/orders/transitions"
-   export const PATCH = (req, ctx) => applyOrderTransition("<action>", req, ctx)
+
+   export async function PATCH(
+     req: Request,
+     { params }: { params: Promise<{ id: string }> },
+   ) {
+     const { id } = await params
+     return applyOrderTransition("<action>", id, req)
+   }
    ```
+
 3. Add a spec case in
-   `app/api/orders/[id]/__tests__/transitions.spec.ts`.
+   `app/api/orders/[id]/transitions.spec.ts`.
 4. Expose it through `use-orders.ts` and the relevant UI.
 
 Never duplicate the auth/parse/guard/update plumbing inline — the shared

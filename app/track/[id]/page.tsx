@@ -1,26 +1,27 @@
 import { Fragment } from "react"
 import Link from "next/link"
 import {
-  Package,
-  Search,
-  MapPin,
-  Store,
-  ArrowRight,
-  CheckCircle2,
-  XCircle,
-  Undo2,
-  ClipboardCheck,
-  PackageCheck,
-  Bike,
-  Warehouse,
-  Truck,
-  User,
-  ImageOff,
   ArrowLeft,
+  ArrowRight,
+  Ban,
+  Bike,
+  CheckCircle2,
+  ClipboardCheck,
+  ImageOff,
+  MapPin,
+  Package,
+  PackageCheck,
+  Search,
   StickyNote,
+  Store,
+  Truck,
+  Undo2,
+  User,
+  Warehouse,
+  XCircle,
 } from "lucide-react"
 import { db } from "@/lib/db"
-import { order, merchant, rider, warehouse } from "@/lib/db/schema"
+import { merchant, order, rider, warehouse } from "@/lib/db/schema"
 import { eq, or } from "drizzle-orm"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -78,6 +79,7 @@ const STATUS_RANK: Record<OrderStatus, number> = {
   DELIVERED: 5,
   FAILED_ATTEMPT: 4,
   RETURNED: 4,
+  CANCELLED: 0,
 }
 
 const STEPS: {
@@ -186,6 +188,11 @@ const STATUS_COPY: Record<
     headline: "Returned to merchant",
     sub: "This parcel was returned and will not be delivered.",
     color: "text-muted-foreground",
+  },
+  CANCELLED: {
+    headline: "Order cancelled",
+    sub: "This order has been cancelled and will not be delivered.",
+    color: "text-destructive",
   },
 }
 
@@ -444,7 +451,11 @@ function OrderDetail({
       <ReceiverNoteWidget
         orderId={o.id}
         initialNote={o.receiverNote}
-        isTerminal={o.status === "DELIVERED" || o.status === "RETURNED"}
+        isTerminal={
+          o.status === "DELIVERED" ||
+          o.status === "RETURNED" ||
+          o.status === "CANCELLED"
+        }
       />
 
       {/* Search again button */}
@@ -480,6 +491,7 @@ function Timeline({
   const currentRank = STATUS_RANK[o.status]
   const isReturned = o.status === "RETURNED"
   const isFailed = o.status === "FAILED_ATTEMPT"
+  const isCancelled = o.status === "CANCELLED"
 
   type HandlerInfo = { role: string; name: string; detail?: string } | null
   const stepHandlers: Partial<Record<StepKey, HandlerInfo>> = {
@@ -532,6 +544,7 @@ function Timeline({
         const isCurrent =
           currentRank === step.rank &&
           !isReturned &&
+          !isCancelled &&
           !(isFailed && step.key === "DELIVERED")
         const isCompleted = reached && !isCurrent
         const Icon = step.icon
@@ -540,7 +553,10 @@ function Timeline({
 
         const showFailedAfter = step.key === "OUT_FOR_DELIVERY" && isFailed
         const showReturnedAfter = step.key === "OUT_FOR_DELIVERY" && isReturned
-        const hasExceptionAfter = showFailedAfter || showReturnedAfter
+        const showCancelledAfter =
+          isCancelled && step.rank === currentRank && !isLast
+        const hasExceptionAfter =
+          showFailedAfter || showReturnedAfter || showCancelledAfter
 
         return (
           <Fragment key={step.key}>
@@ -712,6 +728,30 @@ function Timeline({
                     {formatStamp(o.returnedAt) ??
                       "This parcel was returned and will not be delivered."}
                   </p>
+                </div>
+              </li>
+            )}
+
+            {showCancelledAfter && (
+              <li key="CANCELLED" className="flex gap-3.5">
+                <div className="flex flex-col items-center">
+                  <span className="border-destructive/30 bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-full border">
+                    <Ban className="size-4" />
+                  </span>
+                </div>
+                <div className="pt-0.5 pb-0">
+                  <p className="text-destructive text-sm font-medium">
+                    Order cancelled
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {formatStamp(o.cancelledAt) ??
+                      "This order was cancelled and will not be delivered."}
+                  </p>
+                  {o.cancelReason ? (
+                    <p className="text-muted-foreground mt-0.5 text-xs italic">
+                      {o.cancelReason}
+                    </p>
+                  ) : null}
                 </div>
               </li>
             )}

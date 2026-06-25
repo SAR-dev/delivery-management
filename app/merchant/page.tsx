@@ -1,13 +1,15 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import {
-  PackagePlus,
-  Package,
-  Wallet,
-  Truck,
-  Clock,
   AlertCircle,
+  Ban,
+  Clock,
+  Package,
+  PackagePlus,
+  Truck,
+  Wallet,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -22,6 +24,7 @@ import { MerchantStatusBadge } from "@/features/merchants/components/merchant-st
 import { TrackingCell } from "@/features/orders/components/tracking-cell"
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
+import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -38,6 +41,9 @@ export default function MerchantOverviewPage() {
   const { currentMerchant } = useMerchants()
   const { orders } = useOrders()
   const { pickupLocations } = usePickupLocations()
+
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [cancelOpen, setCancelOpen] = useState(false)
 
   const myOrders = currentMerchant
     ? orders.filter((o) => o.merchantId === currentMerchant.id)
@@ -57,7 +63,12 @@ export default function MerchantOverviewPage() {
   const delivered = myOrders.filter((o) => o.status === "DELIVERED").length
   const pending = myOrders.filter((o) => o.status === "PENDING").length
   const codOutstanding = myOrders
-    .filter((o) => o.status !== "DELIVERED" && o.status !== "RETURNED")
+    .filter(
+      (o) =>
+        o.status !== "DELIVERED" &&
+        o.status !== "RETURNED" &&
+        o.status !== "CANCELLED",
+    )
     .reduce((sum, o) => sum + o.productCost, 0)
 
   const isActive = currentMerchant?.status === "ACTIVE"
@@ -165,6 +176,28 @@ export default function MerchantOverviewPage() {
       sortable: true,
       sortValue: (o) => o.status,
       cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: (o) => {
+        const canCancel = o.status === "PENDING" || o.status === "APPROVED"
+        if (!canCancel) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              setCancelTarget(o)
+              setCancelOpen(true)
+            }}
+          >
+            <Ban className="size-3.5" />
+            Cancel
+          </Button>
+        )
+      },
     },
   ]
 
@@ -294,6 +327,15 @@ export default function MerchantOverviewPage() {
           )}
         </CardContent>
       </Card>
+
+      <CancelOrderDialog
+        order={cancelTarget}
+        open={cancelOpen}
+        onOpenChange={(open) => {
+          setCancelOpen(open)
+          if (!open) setCancelTarget(null)
+        }}
+      />
     </>
   )
 }
