@@ -26,7 +26,10 @@ features/<name>/
   transitions.ts                     orders only — the state machine
 components/                          generic, feature-agnostic UI only
 lib/
-  db/schema.ts                       Drizzle tables — source of truth for entities
+  db/index.ts                        Drizzle client — reads DB_PROVIDER, initialises pg or libsql
+  db/schema.ts                       re-exports schema.postgres or schema.turso based on DB_PROVIDER
+  db/schema.postgres.ts              PostgreSQL table definitions (pg-core types)
+  db/schema.turso.ts                 SQLite/Turso table definitions (sqlite-core types)
   types.ts                           re-exports entity types from schema
   validation.ts                      zod schemas + parseBody (missing/empty body is treated as `{}`)
   api-auth.ts                        requireSession()
@@ -38,6 +41,9 @@ lib/
 config/
   site.json, site.ts                 brand name, tagline, icon
   content.ts                         page titles/descriptions (copy)
+drizzle/
+  postgres/                          PostgreSQL migration files
+  turso/                             Turso/SQLite migration files
 ```
 
 ---
@@ -462,8 +468,11 @@ the JSON directly in components.
 
 Example: the `rider.taskType` column added recently.
 
-1. **Schema** — add the column in `lib/db/schema.ts`. Use a `text(... { enum })`
-   for enums and export the values array if the UI needs it:
+1. **Schema** — add the column in **both** `lib/db/schema.postgres.ts` and
+   `lib/db/schema.turso.ts`. The postgres file uses pg-core types (`text`,
+   `boolean`, `doublePrecision`, `jsonb`, …); the turso file uses sqlite-core
+   equivalents (`text`, `integer`, `real`, `text({ mode: "json" })`, …).
+   Use a `text(... { enum })` for enums and export the values array if the UI needs it:
    ```ts
    export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
    // ...
@@ -506,7 +515,8 @@ the above in three ways:
 
 Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 
-1. **Schema** — add the `pgTable` in `lib/db/schema.ts`, with `createId()` PK and
+1. **Schema** — add the `pgTable` / `sqliteTable` in **both**
+   `lib/db/schema.postgres.ts` and `lib/db/schema.turso.ts`, with `createId()` PK and
    relations via `.references()`.
 2. **Type** — re-export from `lib/types.ts`:
    `export type Thing = typeof thing.$inferSelect`.
@@ -517,7 +527,7 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
      handler with `requireSession()`; gate writes by `me.role`.
    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-     role-scoped — **enforce it server-side; Turso has no RLS.**
+     role-scoped — **enforce it server-side; Neon has no RLS.**
    - If this is a resource Admin/Super Admin manage (not pure
      merchant/rider self-service), call `logAudit()` after each write
      succeeds — see [§3.5](#35-audit-log-libaudits).
@@ -681,21 +691,29 @@ done; don't add a second `logAudit()` call in the route wrapper.
 
 ## Applying schema changes
 
-The DB credentials live in `.env.development.local` (not `.env`), so load
+The DB connection string lives in `.env.development.local` (not `.env`), so load
 it explicitly when running DB scripts from the shell:
-
-**Local dev and production both use Turso cloud** — set `TURSO_DATABASE_URL`
-and `TURSO_AUTH_TOKEN` in `.env.development.local`, then:
 
 ```bash
 set -a && . ./.env.development.local && set +a && pnpm db:push
 set -a && . ./.env.development.local && set +a && pnpm db:seed
 ```
 
-Use the Turso CLI shell (`turso db shell parcelflow`) to inspect the database
-or run one-off backfills.
+**When you add or change a column, update both schema files** —
+`lib/db/schema.postgres.ts` and `lib/db/schema.turso.ts`. They use different
+type systems (pg-core vs sqlite-core) but must represent the same shape.
 
-- `pnpm db:push` applies `schema.ts` to the target database. A `NOT NULL` add
+Provider-specific push shortcuts:
+
+```bash
+pnpm db:push:pg      # DB_PROVIDER=postgres
+pnpm db:push:turso   # DB_PROVIDER=turso
+```
+
+The plain `pnpm db:push` reads `DB_PROVIDER` from the environment and routes
+to the correct dialect automatically.
+
+- `pnpm db:push` applies the schema to the active database. A `NOT NULL` add
   fails if existing rows violate it — backfill first or give the column a default.
 - The seed is **idempotent** — it skips rows that already exist. After changing
   seed values for existing ids, either reset the data or run a targeted `UPDATE`.

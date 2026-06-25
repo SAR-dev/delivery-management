@@ -5,10 +5,10 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 ## Tech Stack
 
 - **Next.js 16** (App Router) + React + TypeScript
-- **Neon** Postgres database
+- **PostgreSQL** (e.g. Neon) **or** **Turso** (SQLite) — switched via `DB_PROVIDER` env var
 - **Drizzle ORM** for type-safe queries
 - **Better Auth** for email + password authentication
-- **Image uploads** (avatars, delivery proof, pickup-location photos) — stored on local disk
+- **Image uploads** (avatars, delivery proof, pickup-location photos) — stored on local disk or Cloudflare R2
 - **Tailwind CSS** + shadcn/ui components
 
 ## Getting Started
@@ -25,26 +25,40 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    cp .env.example .env.local
    ```
 
-   At minimum you need `DATABASE_URL` and `BETTER_AUTH_SECRET` (generate one
-   with `openssl rand -base64 32`). Everything else in `.env.example` is
-   either optional or has a safe default — see the comments in that file for
-   what each one does and when you need it (R2 storage, mail, tunnel, etc).
-   The app validates required vars on boot (`lib/env.ts`) and refuses to
-   start with a clear error if something's missing.
+3. Choose a database provider and set the required vars:
 
-3. Image uploads (avatars, delivery proof, pickup-location photos) work out
-   of the box with the default `STORAGE_PROVIDER=local` — files are written
-   to `./uploads` (override with `UPLOADS_DIR`) and served from
+   **PostgreSQL** (default — e.g. Neon):
+   ```env
+   DB_PROVIDER=postgres
+   DATABASE_URL=postgresql://user:pass@host:5432/dbname
+   BETTER_AUTH_SECRET=<generate with: openssl rand -base64 32>
+   ```
+
+   **Turso** (SQLite edge database):
+   ```env
+   DB_PROVIDER=turso
+   TURSO_DATABASE_URL=libsql://your-db.turso.io
+   TURSO_AUTH_TOKEN=your-token
+   BETTER_AUTH_SECRET=<generate with: openssl rand -base64 32>
+   ```
+
+   Everything else in `.env.example` is either optional or has a safe default —
+   see the comments there for R2 storage, mail, tunnel, etc. The app validates
+   required vars on boot (`lib/env.ts`) and refuses to start with a clear error
+   if something's missing.
+
+4. Image uploads work out of the box with the default `STORAGE_PROVIDER=local` —
+   files are written to `./uploads` (override with `UPLOADS_DIR`) and served from
    `app/uploads/[...path]/route.ts`. No extra setup needed.
 
-4. Set up the database:
+5. Set up the database:
 
    ```bash
    pnpm db:push   # apply the schema
    pnpm db:seed   # load sample data
    ```
 
-5. Start the dev server:
+6. Start the dev server:
 
    ```bash
    pnpm dev
@@ -56,14 +70,16 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 
 The commands you'll use day-to-day:
 
-| Command        | What it does                       |
-| -------------- | ---------------------------------- |
-| `pnpm dev`     | Start the development server       |
-| `pnpm db:push` | Push the schema to the database    |
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Start the development server |
+| `pnpm db:push` | Push schema to the active DB (reads `DB_PROVIDER`) |
+| `pnpm db:push:pg` | Push schema — PostgreSQL only |
+| `pnpm db:push:turso` | Push schema — Turso only |
 | `pnpm db:seed` | Seed the database with sample data |
 
-For everything else (build, lint, typecheck, format, test, Drizzle Studio,
-etc.) see the full, current list in [`package.json`](./package.json)'s
+For everything else (build, lint, typecheck, format, test, generate migrations,
+Drizzle Studio, etc.) see the full, current list in [`package.json`](./package.json)'s
 `scripts` block — that's the source of truth, so it can't go stale here.
 
 ## Roles & Areas
@@ -123,16 +139,39 @@ After seeding, sign in at `/login` with any of the following:
 ```
 app/          Routes for each role + auth and tracking
   uploads/    Serves locally-stored uploaded files (local storage driver)
-components/    Shared UI, including the reusable DataTable
+components/   Shared UI, including the reusable DataTable
 lib/
-  auth.ts     Better Auth server config
-  db/         Drizzle client, schema, and seed script
-  storage/    Upload config + local-disk storage driver
+  auth.ts     Better Auth config (uses pool for postgres, drizzleAdapter for turso)
+  db/
+    index.ts          Drizzle client — initialises pg or libsql based on DB_PROVIDER
+    schema.ts         Re-exports the correct schema based on DB_PROVIDER
+    schema.postgres.ts  PostgreSQL table definitions
+    schema.turso.ts     SQLite/Turso table definitions
+  storage/    Upload config + local-disk and R2 storage drivers
+drizzle/
+  postgres/   PostgreSQL migration files
+  turso/      Turso/SQLite migration files
 ```
 
 ## Deployment notes
 
-Image uploads are written to local disk under `UPLOADS_DIR` (defaults to
+**Database provider** is selected at runtime via `DB_PROVIDER` in your `.env` file.
+`docker-compose.yml` passes it through automatically and defaults to `postgres` if unset:
+
+```env
+# PostgreSQL
+DB_PROVIDER=postgres
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+
+# — or —
+
+# Turso
+DB_PROVIDER=turso
+TURSO_DATABASE_URL=libsql://your-db.turso.io
+TURSO_AUTH_TOKEN=your-token
+```
+
+**Image uploads** are written to local disk under `UPLOADS_DIR` (defaults to
 `./uploads`) and served by `app/uploads/[...path]/route.ts`. In Docker, this
 directory is mounted as a named volume (`uploads_data`, see
 `docker-compose.yml`) so uploaded files survive container rebuilds and
@@ -141,4 +180,4 @@ proofs, and pickup-location photos.
 
 If you run more than one app instance/container behind a load balancer, point
 `UPLOADS_DIR` at a shared network volume so every instance sees the same
-files.
+files, or switch to `STORAGE_PROVIDER=r2` (Cloudflare R2) which is inherently shared.

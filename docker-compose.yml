@@ -9,6 +9,14 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    # DB_PROVIDER selects the database backend at runtime:
+    #
+    #   DB_PROVIDER=postgres  →  set DATABASE_URL in .env
+    #   DB_PROVIDER=turso     →  set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN in .env
+    #
+    # The default is postgres when DB_PROVIDER is not set.
+    environment:
+      - DB_PROVIDER=${DB_PROVIDER:-postgres}
     volumes:
       - uploads_data:/app/uploads
     restart: unless-stopped

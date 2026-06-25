@@ -27,6 +27,7 @@ export async function PATCH(
       .select({ status: payoutRequest.status })
       .from(payoutRequest)
       .where(eq(payoutRequest.id, id))
+      .for("update")
       .limit(1)
 
     if (!current)

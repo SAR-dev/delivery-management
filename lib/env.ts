@@ -62,9 +62,15 @@ function minLength(
 
 export function validateEnv(): void {
   const errors = collect((e) => {
-    // --- Database (Turso) ---------------------------------------------------
-    required(e, "TURSO_DATABASE_URL", "Turso database URL")
-    required(e, "TURSO_AUTH_TOKEN", "Turso auth token")
+    // --- Database -----------------------------------------------------------
+    const dbProvider = oneOf(e, "DB_PROVIDER", ["postgres", "turso"], "postgres")
+
+    if (dbProvider === "postgres") {
+      required(e, "DATABASE_URL", "PostgreSQL connection string")
+    } else if (dbProvider === "turso") {
+      required(e, "TURSO_DATABASE_URL", "Turso database URL")
+      required(e, "TURSO_AUTH_TOKEN", "Turso auth token")
+    }
 
     // --- Auth ---------------------------------------------------------------
     const secret = required(e, "BETTER_AUTH_SECRET", "Auth secret key")

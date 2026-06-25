@@ -1,38 +1,32 @@
 import "dotenv/config"
-import { client, db } from "@/lib/db"
-import { user, profile, account } from "@/lib/db/schema"
-import { eq, sql } from "drizzle-orm"
+import { pool } from "@/lib/db"
 
 async function main() {
-  const dbUrl = process.env.TURSO_DATABASE_URL ?? ""
-  console.log("[check] TURSO_DATABASE_URL:", dbUrl)
+  const dbUrl = process.env.DATABASE_URL ?? ""
+  const host = dbUrl.replace(/^.*@/, "").replace(/\/.*$/, "")
+  console.log("[check] DATABASE_URL host:", host)
 
-  // List all tables in the SQLite database
-  const tables = await db.run(
-    sql`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`,
+  const schemas = await pool.query(
+    `SELECT table_schema, count(*)::int AS n
+     FROM information_schema.tables
+     WHERE table_schema NOT IN ('pg_catalog','information_schema')
+     GROUP BY table_schema ORDER BY table_schema`,
   )
-  console.log("[check] tables:", tables.rows)
+  console.log("[check] schemas:", schemas.rows)
 
-  // Check the superadmin user
-  const rows = await db
-    .select({
-      email: user.email,
-      role: profile.role,
-      hasCredential: account.id,
-      pwPrefix: account.password,
-    })
-    .from(user)
-    .leftJoin(profile, eq(profile.userId, user.id))
-    .leftJoin(
-      account,
-      sql`${account.userId} = ${user.id} AND ${account.providerId} = 'credential'`,
-    )
-    .where(eq(user.email, "superadmin@parcelflow.io"))
-    .limit(1)
+  const users = await pool.query(
+    `SELECT u.email,
+            p.role,
+            (a.id IS NOT NULL) AS has_credential,
+            left(a.password, 12) AS pw_prefix
+     FROM "user" u
+     LEFT JOIN profile p ON p."userId" = u.id
+     LEFT JOIN account a ON a."userId" = u.id AND a."providerId" = 'credential'
+     WHERE u.email = 'superadmin@parcelflow.io'`,
+  )
+  console.log("[check] superadmin row:", users.rows)
 
-  console.log("[check] superadmin row:", rows)
-
-  client.close()
+  await pool.end()
 }
 
 main().catch((e) => {
