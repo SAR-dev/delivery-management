@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
+  Ban,
   Bike,
   CheckCircle2,
   Clock,
@@ -24,6 +25,7 @@ import { OrderStatusBadge } from "@/features/orders/components/order-status-badg
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
+import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,6 +43,8 @@ export default function OrdersPage() {
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [cancelOpen, setCancelOpen] = useState(false)
 
   const merchantName = (id: string) =>
     merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
@@ -55,7 +59,8 @@ export default function OrdersPage() {
       pending: allOrders.filter((o) => o.status === "PENDING").length,
       approved: allOrders.filter((o) => o.status === "APPROVED").length,
       inProgress: allOrders.filter(
-        (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
+        (o) =>
+          !["PENDING", "DELIVERED", "RETURNED", "CANCELLED"].includes(o.status),
       ).length,
       total: allOrders.length,
     }),
@@ -187,13 +192,41 @@ export default function OrdersPage() {
       header: "",
       align: "right",
       headClassName: "w-12",
-      cell: (o) =>
-        o.status === "PENDING" ? (
-          <Button size="sm" onClick={() => openApprove(o)}>
-            <ShieldCheck className="size-4" />
-            Review
-          </Button>
-        ) : null,
+      cell: (o) => {
+        const canApprove = o.status === "PENDING"
+        const canCancel = [
+          "PENDING",
+          "APPROVED",
+          "PICKED_UP",
+          "IN_WAREHOUSE",
+          "IN_TRANSIT",
+        ].includes(o.status)
+        if (!canApprove && !canCancel) return null
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {canApprove && (
+              <Button size="sm" onClick={() => openApprove(o)}>
+                <ShieldCheck className="size-4" />
+                Review
+              </Button>
+            )}
+            {canCancel && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  setCancelTarget(o)
+                  setCancelOpen(true)
+                }}
+              >
+                <Ban className="size-3.5" />
+                Cancel
+              </Button>
+            )}
+          </div>
+        )
+      },
     },
   ]
 
@@ -271,6 +304,15 @@ export default function OrdersPage() {
         order={activeOrder}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+      />
+
+      <CancelOrderDialog
+        order={cancelTarget}
+        open={cancelOpen}
+        onOpenChange={(open) => {
+          setCancelOpen(open)
+          if (!open) setCancelTarget(null)
+        }}
       />
     </div>
   )

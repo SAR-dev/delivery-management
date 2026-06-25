@@ -329,6 +329,7 @@ export const orderStatuses = [
   "DELIVERED",
   "FAILED_ATTEMPT",
   "RETURNED",
+  "CANCELLED",
 ] as const
 
 export const order = pgTable("order", {
@@ -410,6 +411,11 @@ export const order = pgTable("order", {
   // Set only when parcel is closed as RETURNED.
   returnedAt: ts("returnedAt"),
   returnReason: text("returnReason"),
+
+  // Set when an order is cancelled (terminal).
+  cancelledAt: ts("cancelledAt"),
+  cancelledBy: text("cancelledBy"), // name of actor, matches approvedBy / dispatchedBy pattern
+  cancelReason: text("cancelReason"), // optional free-text note
 
   // Notes — merchant can add a note at order creation; receiver (recipient)
   // can add a note via the tracking page before delivery.

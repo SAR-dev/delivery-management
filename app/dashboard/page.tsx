@@ -2,17 +2,17 @@
 
 import Link from "next/link"
 import {
-  Coins,
-  Users,
-  Warehouse as WarehouseIcon,
-  Store,
-  Package,
   ArrowRight,
+  Bike,
   CheckCircle2,
   Circle,
+  Coins,
+  Package,
   ShieldCheck,
-  Bike,
+  Store,
   Truck,
+  Users,
+  Warehouse as WarehouseIcon,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -79,7 +79,8 @@ function AdminOverview() {
 
   const pendingOrders = orders.filter((o) => o.status === "PENDING").length
   const inProgressOrders = orders.filter(
-    (o) => !["PENDING", "DELIVERED", "RETURNED"].includes(o.status),
+    (o) =>
+      !["PENDING", "DELIVERED", "RETURNED", "CANCELLED"].includes(o.status),
   ).length
   const activeRiders = riders.filter((r) => r.isActive).length
   const pendingMerchants = merchants.filter(

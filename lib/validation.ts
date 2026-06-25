@@ -15,6 +15,13 @@ export async function parseBody<T extends z.ZodType>(
     raw = undefined
   }
 
+  // Treat a missing or unparseable body as an empty object so that schemas
+  // where every field is optional (e.g. orderCancelSchema) still pass.
+  // Zod 4 rejects `undefined` for z.object() even when all fields are optional.
+  if (raw === undefined) {
+    raw = {}
+  }
+
   const result = schema.safeParse(raw)
   if (!result.success) {
     return {
@@ -183,6 +190,14 @@ export const orderFailedSchema = z.object({
 
 export const orderReturnSchema = z.object({
   reason: requiredString("A return reason"),
+})
+
+export const orderCancelSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(100, "Reason cannot exceed 100 characters")
+    .optional(),
 })
 
 export const payoutCreateSchema = z.object({

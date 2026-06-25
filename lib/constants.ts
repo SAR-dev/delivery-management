@@ -42,6 +42,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   DELIVERED: "Delivered",
   FAILED_ATTEMPT: "Failed attempt",
   RETURNED: "Returned",
+  CANCELLED: "Cancelled",
 }
 
 export const ORDER_STATUS_TONES: Record<OrderStatus, BadgeTone> = {
@@ -54,6 +55,7 @@ export const ORDER_STATUS_TONES: Record<OrderStatus, BadgeTone> = {
   DELIVERED: "success",
   FAILED_ATTEMPT: "danger",
   RETURNED: "neutral",
+  CANCELLED: "danger",
 }
 
 export const MERCHANT_STATUS_LABELS: Record<MerchantStatus, string> = {

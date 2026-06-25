@@ -23,6 +23,7 @@ const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
   failed: "FAILED_ATTEMPT",
   reattempt: "OUT_FOR_DELIVERY",
   return: "RETURNED",
+  cancel: "CANCELLED",
 }
 
 type Result = { ok: boolean; error?: string }
@@ -249,6 +250,11 @@ export function useOrders() {
     (orderId: string) => patchOrder(orderId, "settle-cod"),
     [patchOrder],
   )
+  const cancelOrder = useCallback(
+    (orderId: string, reason?: string) =>
+      patchOrder(orderId, "cancel", reason ? { reason } : undefined),
+    [patchOrder],
+  )
 
   // Public mutation — used from the tracking page without a session. Updates
   // receiverNote optimistically and reconciles with the server row.
@@ -308,6 +314,7 @@ export function useOrders() {
     reattemptFailedOrder,
     returnFailedOrder,
     settleOrderCod,
+    cancelOrder,
     updateReceiverNote,
   }
 }

@@ -6,7 +6,7 @@ import { NextResponse } from "next/server"
 
 // Public endpoint — no session required. The tracking page lets the recipient
 // leave a note on their own parcel before it is delivered. Locked once the
-// order reaches a terminal status (DELIVERED / RETURNED).
+// order reaches a terminal status (DELIVERED / RETURNED / CANCELLED).
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -26,7 +26,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found" }, { status: 404 })
   }
 
-  if (orderRow.status === "DELIVERED" || orderRow.status === "RETURNED") {
+  if (
+    orderRow.status === "DELIVERED" ||
+    orderRow.status === "RETURNED" ||
+    orderRow.status === "CANCELLED"
+  ) {
     return NextResponse.json(
       { error: "Cannot add a note to a completed order." },
       { status: 409 },

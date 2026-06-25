@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
+import { Ban, Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -14,6 +14,7 @@ import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
+import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -41,6 +42,8 @@ export default function WarehouseOrdersPage() {
   const [tab, setTab] = useState<FilterTab>("ALL")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [cancelOpen, setCancelOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
@@ -147,6 +150,35 @@ export default function WarehouseOrdersPage() {
       sortable: true,
       sortValue: (o) => o.status,
       cell: (o) => <OrderStatusBadge status={o.status} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: (o) => {
+        const canCancel = [
+          "PENDING",
+          "APPROVED",
+          "PICKED_UP",
+          "IN_WAREHOUSE",
+          "IN_TRANSIT",
+        ].includes(o.status)
+        if (!canCancel) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={(e) => {
+              e.stopPropagation()
+              setCancelTarget(o)
+              setCancelOpen(true)
+            }}
+          >
+            <Ban className="size-3.5" />
+            Cancel
+          </Button>
+        )
+      },
     },
   ]
 
@@ -269,6 +301,15 @@ export default function WarehouseOrdersPage() {
           />
         ) : null}
       </FormDialog>
+
+      <CancelOrderDialog
+        order={cancelTarget}
+        open={cancelOpen}
+        onOpenChange={(open) => {
+          setCancelOpen(open)
+          if (!open) setCancelTarget(null)
+        }}
+      />
     </div>
   )
 }

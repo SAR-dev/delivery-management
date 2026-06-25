@@ -21,7 +21,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
-const COMPLETED_STATUSES = ["DELIVERED", "FAILED_ATTEMPT", "RETURNED"]
+const COMPLETED_STATUSES = [
+  "DELIVERED",
+  "FAILED_ATTEMPT",
+  "RETURNED",
+  "CANCELLED",
+]
 
 type FilterTab = "TO_DELIVER" | "COMPLETED"
 
