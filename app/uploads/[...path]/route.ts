@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises"
 import { extname, join, normalize, sep } from "node:path"
 import { NextResponse } from "next/server"
-import { UPLOADS_DIR } from "@/lib/storage/local"
+import { LOCAL_UPLOADS_DIR } from "@/lib/storage/local"
 
 // Serves files written by lib/storage/local.ts. Anyone with the URL can view
 // the image (avatars, delivery proofs, and pickup photos are all shown across
@@ -23,7 +23,7 @@ export async function GET(
 ) {
   const { path: segments } = await params
 
-  // Reject empty paths or any segment that could escape UPLOADS_DIR.
+  // Reject empty paths or any segment that could escape LOCAL_UPLOADS_DIR.
   if (
     segments.length === 0 ||
     segments.some((s) => s === ".." || s === "." || s.includes(sep))
@@ -32,8 +32,8 @@ export async function GET(
   }
 
   const relativePath = segments.join("/")
-  const targetPath = normalize(join(UPLOADS_DIR, relativePath))
-  const root = normalize(UPLOADS_DIR + sep)
+  const targetPath = normalize(join(LOCAL_UPLOADS_DIR, relativePath))
+  const root = normalize(LOCAL_UPLOADS_DIR + sep)
   if (!targetPath.startsWith(root)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }

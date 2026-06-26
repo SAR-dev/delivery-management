@@ -66,7 +66,7 @@ export function validateEnv(): void {
     const dbProvider = oneOf(e, "DB_PROVIDER", ["postgres", "turso"], "postgres")
 
     if (dbProvider === "postgres") {
-      required(e, "DATABASE_URL", "PostgreSQL connection string")
+      required(e, "POSTGRES_DATABASE_URL", "PostgreSQL connection string")
     } else if (dbProvider === "turso") {
       required(e, "TURSO_DATABASE_URL", "Turso database URL")
       required(e, "TURSO_AUTH_TOKEN", "Turso auth token")
@@ -103,7 +103,9 @@ export function validateEnv(): void {
     // --- Storage ------------------------------------------------------------
     const provider = oneOf(e, "STORAGE_PROVIDER", ["local", "r2"], "local")
 
-    if (provider === "r2") {
+    if (provider === "local") {
+      required(e, "LOCAL_UPLOADS_DIR", "Local uploads directory path")
+    } else if (provider === "r2") {
       required(e, "R2_ACCOUNT_ID", "Cloudflare account ID")
       required(e, "R2_ACCESS_KEY_ID", "R2 API access key")
       required(e, "R2_SECRET_ACCESS_KEY", "R2 API secret key")
@@ -120,6 +122,6 @@ export function validateEnv(): void {
 
   throw new Error(
     `\n\nMissing or invalid environment variables (${errors.length}):\n\n${lines}\n\n` +
-      `Check your .env file against .env.example and restart the server.\n`,
+    `Check your .env file against .env.example and restart the server.\n`,
   )
 }

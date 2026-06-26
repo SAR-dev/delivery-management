@@ -1,7 +1,8 @@
-onlyBuiltDependencies:
+approvedBuilds:
   - esbuild
   - sharp
 
-approvedBuilds:
+onlyBuiltDependencies:
   - esbuild
+  - msw
   - sharp

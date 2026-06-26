@@ -38,7 +38,7 @@ if (dbProvider === "postgres") {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const schema = require("./schema.postgres")
 
-  pool = new Pool({ connectionString: process.env.DATABASE_URL }) as import("pg").Pool
+  pool = new Pool({ connectionString: process.env.POSTGRES_DATABASE_URL }) as import("pg").Pool
   db = drizzle(pool, { schema })
 } else {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

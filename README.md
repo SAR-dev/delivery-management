@@ -30,7 +30,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    **PostgreSQL** (default — e.g. Neon):
    ```env
    DB_PROVIDER=postgres
-   DATABASE_URL=postgresql://user:pass@host:5432/dbname
+   POSTGRES_DATABASE_URL=postgresql://user:pass@host:5432/dbname
    BETTER_AUTH_SECRET=<generate with: openssl rand -base64 32>
    ```
 
@@ -48,7 +48,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    if something's missing.
 
 4. Image uploads work out of the box with the default `STORAGE_PROVIDER=local` —
-   files are written to `./uploads` (override with `UPLOADS_DIR`) and served from
+   files are written to `./uploads` (override with `LOCAL_UPLOADS_DIR`) and served from
    `app/uploads/[...path]/route.ts`. No extra setup needed.
 
 5. Set up the database:
@@ -161,7 +161,7 @@ drizzle/
 ```env
 # PostgreSQL
 DB_PROVIDER=postgres
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
+POSTGRES_DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
 # — or —
 
@@ -171,7 +171,7 @@ TURSO_DATABASE_URL=libsql://your-db.turso.io
 TURSO_AUTH_TOKEN=your-token
 ```
 
-**Image uploads** are written to local disk under `UPLOADS_DIR` (defaults to
+**Image uploads** are written to local disk under `LOCAL_UPLOADS_DIR` (defaults to
 `./uploads`) and served by `app/uploads/[...path]/route.ts`. In Docker, this
 directory is mounted as a named volume (`uploads_data`, see
 `docker-compose.yml`) so uploaded files survive container rebuilds and
@@ -179,5 +179,5 @@ redeploys — without that volume, every redeploy would wipe avatars, delivery
 proofs, and pickup-location photos.
 
 If you run more than one app instance/container behind a load balancer, point
-`UPLOADS_DIR` at a shared network volume so every instance sees the same
+`LOCAL_UPLOADS_DIR` at a shared network volume so every instance sees the same
 files, or switch to `STORAGE_PROVIDER=r2` (Cloudflare R2) which is inherently shared.

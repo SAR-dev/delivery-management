@@ -16,7 +16,7 @@ Set `DB_PROVIDER` in your env file before running any `db:*` commands:
 
 | `DB_PROVIDER` | Driver | Required vars |
 |---|---|---|
-| `postgres` (default) | `pg` | `DATABASE_URL` |
+| `postgres` (default) | `pg` | `POSTGRES_DATABASE_URL` |
 | `turso` | `@libsql/client` | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` |
 
 ## Required environment variables
@@ -25,7 +25,7 @@ Set `DB_PROVIDER` in your env file before running any `db:*` commands:
 
 ```env
 DB_PROVIDER=postgres
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
+POSTGRES_DATABASE_URL=postgresql://user:pass@host:5432/dbname
 BETTER_AUTH_SECRET=<generate below>
 ```
 

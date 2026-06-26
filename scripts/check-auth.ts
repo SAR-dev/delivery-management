@@ -2,9 +2,9 @@ import "dotenv/config"
 import { pool } from "@/lib/db"
 
 async function main() {
-  const dbUrl = process.env.DATABASE_URL ?? ""
+  const dbUrl = process.env.POSTGRES_DATABASE_URL ?? ""
   const host = dbUrl.replace(/^.*@/, "").replace(/\/.*$/, "")
-  console.log("[check] DATABASE_URL host:", host)
+  console.log("[check] POSTGRES_DATABASE_URL host:", host)
 
   const schemas = await pool.query(
     `SELECT table_schema, count(*)::int AS n

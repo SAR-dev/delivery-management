@@ -4,8 +4,8 @@ import { defineConfig } from "drizzle-kit"
 const provider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase()
 
 if (provider === "postgres") {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required when DB_PROVIDER=postgres")
+  if (!process.env.POSTGRES_DATABASE_URL) {
+    throw new Error("POSTGRES_DATABASE_URL is required when DB_PROVIDER=postgres")
   }
 } else if (provider === "turso") {
   if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
@@ -24,7 +24,7 @@ export default defineConfig(
         out: "./drizzle/postgres",
         dialect: "postgresql",
         dbCredentials: {
-          url: process.env.DATABASE_URL!,
+          url: process.env.POSTGRES_DATABASE_URL!,
         },
         strict: true,
         verbose: true,
