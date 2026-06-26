@@ -1,9 +1,4 @@
-import {
-  integer,
-  real,
-  sqliteTable,
-  text,
-} from "drizzle-orm/sqlite-core"
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { sql } from "drizzle-orm"
 import { createId } from "@paralleldrive/cuid2"
 
@@ -37,8 +32,12 @@ export const user = sqliteTable("user", {
     .notNull()
     .default(false),
   image: text("image"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
   // Required by the better-auth admin plugin
   role: text("role"),
   banned: integer("banned", { mode: "boolean" }),
@@ -50,8 +49,12 @@ export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
   expiresAt: ts("expiresAt").notNull(),
   token: text("token").notNull().unique(),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId")
@@ -73,8 +76,12 @@ export const account = sqliteTable("account", {
   refreshTokenExpiresAt: ts("refreshTokenExpiresAt"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
-  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 export const verification = sqliteTable("verification", {
@@ -112,7 +119,9 @@ export const profile = sqliteTable("profile", {
   warehouseId: text("warehouseId"),
   merchantId: text("merchantId"),
   riderId: text("riderId"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
@@ -125,7 +134,9 @@ export const division = sqliteTable("division", {
     .$defaultFn(() => createId()),
   name: text("name").notNull().unique(),
   isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
@@ -191,7 +202,9 @@ export const merchant = sqliteTable("merchant", {
   freeWeightKg: real("freeWeightKg").notNull().default(1),
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
@@ -223,7 +236,9 @@ export const securityConfig = sqliteTable("security_config", {
   lowValueThreshold: real("lowValueThreshold").notNull().default(1000),
   lowValueFlatFee: real("lowValueFlatFee").notNull().default(10),
   highValuePercentage: real("highValuePercentage").notNull().default(1),
-  updatedAt: ts("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
   updatedBy: text("updatedBy").notNull(),
 })
 
@@ -255,7 +270,9 @@ export const payoutRequest = sqliteTable("payout_request", {
     .default("PENDING"),
   payoutMethod: text("payoutMethod").notNull(),
   payoutDetails: text("payoutDetails").notNull(),
-  requestedAt: ts("requestedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  requestedAt: ts("requestedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
   reviewedBy: text("reviewedBy"),
   reviewedAt: ts("reviewedAt"),
   rejectReason: text("rejectReason"),
@@ -309,7 +326,9 @@ export const order = sqliteTable("order", {
   securityMoney: real("securityMoney").notNull(),
   totalCollectible: real("totalCollectible").notNull(),
   status: text("status", { enum: orderStatuses }).notNull().default("PENDING"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 
   approvedBy: text("approvedBy"),
   approvedAt: ts("approvedAt"),
@@ -367,7 +386,9 @@ export const failedMail = sqliteTable("failed_mail", {
   text: text("text"),
   error: text("error").notNull(),
   attempts: integer("attempts").notNull(),
-  failedAt: ts("failedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  failedAt: ts("failedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })
 
 // =============================================================================
@@ -385,7 +406,9 @@ export const emailLog = sqliteTable("email_log", {
   status: text("status", { enum: emailLogStatuses }).notNull(),
   attempts: integer("attempts").notNull(),
   error: text("error"),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
   markedSentBy: text("markedSentBy"),
   markedSentAt: ts("markedSentAt"),
 })
@@ -407,5 +430,7 @@ export const auditLog = sqliteTable("audit_log", {
   description: text("description").notNull(),
   // Stored as JSON text (was jsonb in Postgres).
   metadata: text("metadata", { mode: "json" }),
-  createdAt: ts("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
 })

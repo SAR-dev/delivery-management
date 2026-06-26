@@ -95,12 +95,8 @@
           "name": "account_userId_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -223,9 +219,7 @@
         "division_name_unique": {
           "name": "division_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -786,12 +780,8 @@
           "name": "order_merchantId_merchant_id_fk",
           "tableFrom": "order",
           "tableTo": "merchant",
-          "columnsFrom": [
-            "merchantId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -799,12 +789,8 @@
           "name": "order_pickupLocationId_pickup_location_id_fk",
           "tableFrom": "order",
           "tableTo": "pickup_location",
-          "columnsFrom": [
-            "pickupLocationId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["pickupLocationId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -812,12 +798,8 @@
           "name": "order_pickupRiderId_rider_id_fk",
           "tableFrom": "order",
           "tableTo": "rider",
-          "columnsFrom": [
-            "pickupRiderId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["pickupRiderId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -825,12 +807,8 @@
           "name": "order_warehouseId_warehouse_id_fk",
           "tableFrom": "order",
           "tableTo": "warehouse",
-          "columnsFrom": [
-            "warehouseId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -838,12 +816,8 @@
           "name": "order_deliveryRiderId_rider_id_fk",
           "tableFrom": "order",
           "tableTo": "rider",
-          "columnsFrom": [
-            "deliveryRiderId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["deliveryRiderId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -851,12 +825,8 @@
           "name": "order_payoutRequestId_payout_request_id_fk",
           "tableFrom": "order",
           "tableTo": "payout_request",
-          "columnsFrom": [
-            "payoutRequestId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["payoutRequestId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -866,9 +836,7 @@
         "order_code_unique": {
           "name": "order_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -966,12 +934,8 @@
           "name": "payout_request_merchantId_merchant_id_fk",
           "tableFrom": "payout_request",
           "tableTo": "merchant",
-          "columnsFrom": [
-            "merchantId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -981,9 +945,7 @@
         "payout_request_code_unique": {
           "name": "payout_request_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -1043,12 +1005,8 @@
           "name": "pickup_location_merchantId_merchant_id_fk",
           "tableFrom": "pickup_location",
           "tableTo": "merchant",
-          "columnsFrom": [
-            "merchantId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchantId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1135,12 +1093,8 @@
           "name": "profile_userId_user_id_fk",
           "tableFrom": "profile",
           "tableTo": "user",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1206,12 +1160,8 @@
           "name": "rider_warehouseId_warehouse_id_fk",
           "tableFrom": "rider",
           "tableTo": "warehouse",
-          "columnsFrom": [
-            "warehouseId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["warehouseId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1336,12 +1286,8 @@
           "name": "session_userId_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1351,9 +1297,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -1441,9 +1385,7 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},

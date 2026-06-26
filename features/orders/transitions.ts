@@ -1,13 +1,7 @@
 import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import {
-  merchant,
-  order,
-  pickupLocation,
-  rider,
-  warehouse,
-} from "@/lib/db/schema"
+import { merchant, order, pickupLocation, rider, warehouse, } from "@/lib/db/schema"
 import {
   orderApproveSchema,
   orderCancelSchema,
@@ -495,7 +489,7 @@ export async function applyOrderTransition(
   // transaction block here until the first commits, then re-reads the
   // already-updated row — so its own guard correctly sees the new status.
   const committed: { order: OrderRow | null } = { order: null }
-  const response = await db.transaction(async (tx) => {
+  const response = await db.transaction(async (tx: any) => {
     const [orderRow] = await tx
       .select()
       .from(order)

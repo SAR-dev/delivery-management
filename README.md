@@ -28,6 +28,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 3. Choose a database provider and set the required vars:
 
    **PostgreSQL** (default — e.g. Neon):
+
    ```env
    DB_PROVIDER=postgres
    POSTGRES_DATABASE_URL=postgresql://user:pass@host:5432/dbname
@@ -35,6 +36,7 @@ A B2B delivery and logistics management platform. It covers the full parcel life
    ```
 
    **Turso** (SQLite edge database):
+
    ```env
    DB_PROVIDER=turso
    TURSO_DATABASE_URL=libsql://your-db.turso.io
@@ -70,13 +72,13 @@ A B2B delivery and logistics management platform. It covers the full parcel life
 
 The commands you'll use day-to-day:
 
-| Command | What it does |
-|---|---|
-| `pnpm dev` | Start the development server |
-| `pnpm db:push` | Push schema to the active DB (reads `DB_PROVIDER`) |
-| `pnpm db:push:pg` | Push schema — PostgreSQL only |
-| `pnpm db:push:turso` | Push schema — Turso only |
-| `pnpm db:seed` | Seed the database with sample data |
+| Command              | What it does                                       |
+| -------------------- | -------------------------------------------------- |
+| `pnpm dev`           | Start the development server                       |
+| `pnpm db:push`       | Push schema to the active DB (reads `DB_PROVIDER`) |
+| `pnpm db:push:pg`    | Push schema — PostgreSQL only                      |
+| `pnpm db:push:turso` | Push schema — Turso only                           |
+| `pnpm db:seed`       | Seed the database with sample data                 |
 
 For everything else (build, lint, typecheck, format, test, generate migrations,
 Drizzle Studio, etc.) see the full, current list in [`package.json`](./package.json)'s

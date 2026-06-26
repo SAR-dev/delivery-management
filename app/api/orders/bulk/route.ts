@@ -62,7 +62,9 @@ export async function POST(req: Request) {
     .select({ id: division.id })
     .from(division)
     .where(and(inArray(division.id, divisionIds), eq(division.isActive, true)))
-  const validDivisionIds = new Set(validDivisions.map((d) => d.id))
+  const validDivisionIds = new Set(
+    validDivisions.map((d: { id: string }) => d.id),
+  )
   const badDivisionRows = inputs
     .map((o, i) => ({ i, ok: validDivisionIds.has(o.deliveryDivisionId) }))
     .filter((o) => !o.ok)
@@ -93,7 +95,7 @@ export async function POST(req: Request) {
 
   // Insert the whole batch in one transaction. The starting sequence is read
   // inside the transaction so concurrent bulk submissions can't collide.
-  const created = await db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx: any) => {
     const [{ maxCode }] = await tx
       .select({ maxCode: sql<string>`max(${order.code})` })
       .from(order)

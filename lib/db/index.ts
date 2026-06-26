@@ -16,13 +16,12 @@
  * Better Auth uses `pool` directly on postgres, and the drizzle adapter on Turso.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any
 let pool: import("pg").Pool | null = null
 
-export const dbProvider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase() as
-  | "postgres"
-  | "turso"
+export const dbProvider = (
+  process.env.DB_PROVIDER ?? "postgres"
+).toLowerCase() as "postgres" | "turso"
 
 if (dbProvider !== "postgres" && dbProvider !== "turso") {
   throw new Error(
@@ -38,7 +37,9 @@ if (dbProvider === "postgres") {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const schema = require("./schema.postgres")
 
-  pool = new Pool({ connectionString: process.env.POSTGRES_DATABASE_URL }) as import("pg").Pool
+  pool = new Pool({
+    connectionString: process.env.POSTGRES_DATABASE_URL,
+  }) as import("pg").Pool
   db = drizzle(pool, { schema })
 } else {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -63,7 +63,12 @@ function minLength(
 export function validateEnv(): void {
   const errors = collect((e) => {
     // --- Database -----------------------------------------------------------
-    const dbProvider = oneOf(e, "DB_PROVIDER", ["postgres", "turso"], "postgres")
+    const dbProvider = oneOf(
+      e,
+      "DB_PROVIDER",
+      ["postgres", "turso"],
+      "postgres",
+    )
 
     if (dbProvider === "postgres") {
       required(e, "POSTGRES_DATABASE_URL", "PostgreSQL connection string")
@@ -122,6 +127,6 @@ export function validateEnv(): void {
 
   throw new Error(
     `\n\nMissing or invalid environment variables (${errors.length}):\n\n${lines}\n\n` +
-    `Check your .env file against .env.example and restart the server.\n`,
+      `Check your .env file against .env.example and restart the server.\n`,
   )
 }

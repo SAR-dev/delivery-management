@@ -63,7 +63,10 @@ export async function POST(req: Request) {
     )
   }
 
-  const amount = payableOrders.reduce((sum, o) => sum + o.productCost, 0)
+  const amount = payableOrders.reduce(
+    (sum: number, o: { productCost: number }) => sum + o.productCost,
+    0,
+  )
 
   const [{ maxCode }] = await db
     .select({ maxCode: sql<string>`max(code)` })
@@ -75,13 +78,13 @@ export async function POST(req: Request) {
   const code = `PR-${String(seq).padStart(4, "0")}`
 
   // Transaction: insert the request and lock its orders atomically.
-  const newRequest = await db.transaction(async (tx) => {
+  const newRequest = await db.transaction(async (tx: any) => {
     const [inserted] = await tx
       .insert(payoutRequest)
       .values({
         code,
         merchantId: me.merchantId!,
-        orderIds: payableOrders.map((o) => o.id),
+        orderIds: payableOrders.map((o: { id: string }) => o.id),
         amount,
         status: "PENDING",
         payoutMethod: payoutMethod.trim(),

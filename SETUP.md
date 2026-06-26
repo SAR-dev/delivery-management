@@ -14,10 +14,10 @@ Quick-load reference so the project can be bootstrapped fast in future chats.
 
 Set `DB_PROVIDER` in your env file before running any `db:*` commands:
 
-| `DB_PROVIDER` | Driver | Required vars |
-|---|---|---|
-| `postgres` (default) | `pg` | `POSTGRES_DATABASE_URL` |
-| `turso` | `@libsql/client` | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` |
+| `DB_PROVIDER`        | Driver           | Required vars                             |
+| -------------------- | ---------------- | ----------------------------------------- |
+| `postgres` (default) | `pg`             | `POSTGRES_DATABASE_URL`                   |
+| `turso`              | `@libsql/client` | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` |
 
 ## Required environment variables
 
@@ -39,6 +39,7 @@ BETTER_AUTH_SECRET=<generate below>
 ```
 
 Generate `BETTER_AUTH_SECRET`:
+
 ```bash
 printf "BETTER_AUTH_SECRET='%s'\n" "$(openssl rand -base64 32)" >> .env.development.local
 ```

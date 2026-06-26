@@ -36,7 +36,7 @@ export async function PATCH(
     )
   }
 
-  const updated = await db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx: any) => {
     // Unlock orders before updating the request status.
     await tx
       .update(order)

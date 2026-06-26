@@ -1,14 +1,14 @@
 /**
  * lib/db/schema.ts
  *
- * Unified schema re-export. Picks the correct schema based on DB_PROVIDER.
- * All application imports use this file — they never import schema.postgres
- * or schema.turso directly.
+ * Static re-export of the postgres schema for TypeScript's type checker.
+ * Both schema.postgres and schema.turso export the same names with the same
+ * logical shape, so postgres types are valid for both providers.
+ *
+ * Runtime provider dispatch (which driver/schema is actually instantiated)
+ * lives in lib/db/index.ts — not here. Application code imports types and
+ * table references from this file; it never imports schema.postgres or
+ * schema.turso directly.
  */
 
-const provider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase()
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = provider === "turso"
-  ? require("./schema.turso")
-  : require("./schema.postgres")
+export * from "./schema.postgres"

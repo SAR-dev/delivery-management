@@ -22,7 +22,7 @@ export async function PATCH(
   const committed: { row: typeof payoutRequest.$inferSelect | null } = {
     row: null,
   }
-  const response = await db.transaction(async (tx) => {
+  const response = await db.transaction(async (tx: any) => {
     const [current] = await tx
       .select({ status: payoutRequest.status })
       .from(payoutRequest)

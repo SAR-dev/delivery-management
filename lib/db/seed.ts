@@ -1508,7 +1508,7 @@ async function main() {
     console.error("\n[seed] ERROR:", err)
     process.exit(1)
   } finally {
-    await pool.end()
+    await pool!.end()
   }
 }
 

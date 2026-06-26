@@ -5,7 +5,9 @@ const provider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase()
 
 if (provider === "postgres") {
   if (!process.env.POSTGRES_DATABASE_URL) {
-    throw new Error("POSTGRES_DATABASE_URL is required when DB_PROVIDER=postgres")
+    throw new Error(
+      "POSTGRES_DATABASE_URL is required when DB_PROVIDER=postgres",
+    )
   }
 } else if (provider === "turso") {
   if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
@@ -14,7 +16,9 @@ if (provider === "postgres") {
     )
   }
 } else {
-  throw new Error(`Invalid DB_PROVIDER: "${provider}". Must be "postgres" or "turso".`)
+  throw new Error(
+    `Invalid DB_PROVIDER: "${provider}". Must be "postgres" or "turso".`,
+  )
 }
 
 export default defineConfig(

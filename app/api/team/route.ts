@@ -36,21 +36,23 @@ export async function GET(req: Request) {
     .innerJoin(user, eq(profile.userId, user.id))
     .where(where)
 
-  const team = rows.map(({ profile: p, user: u }) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    emailVerified: u.emailVerified,
-    createdAt: u.createdAt,
-    updatedAt: u.updatedAt,
-    role: p.role,
-    phone: p.phone,
-    isActive: p.isActive,
-    canManagePricing: p.canManagePricing,
-    warehouseId: p.warehouseId,
-    merchantId: p.merchantId,
-    riderId: p.riderId,
-  }))
+  const team = rows.map(
+    ({ profile: p, user: u }: { profile: any; user: any }) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      emailVerified: u.emailVerified,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+      role: p.role,
+      phone: p.phone,
+      isActive: p.isActive,
+      canManagePricing: p.canManagePricing,
+      warehouseId: p.warehouseId,
+      merchantId: p.merchantId,
+      riderId: p.riderId,
+    }),
+  )
 
   return NextResponse.json(team)
 }
