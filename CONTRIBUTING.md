@@ -25,6 +25,8 @@ features/<name>/
   hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
   transitions.ts                     orders only — the state machine
 components/                          generic, feature-agnostic UI only
+  search-input.tsx                   standalone search input with icon
+proxy.ts                             edge proxy — upload rate-limiting (matcher: /api/uploads)
 lib/
   db/index.ts                        Drizzle client — reads DB_PROVIDER, initialises pg or libsql
   db/schema.ts                       re-exports schema.postgres or schema.turso based on DB_PROVIDER
@@ -38,6 +40,7 @@ lib/
   constants.ts, pricing.ts           cross-cutting domain logic
   mailer.ts, mail-templates.ts       transactional email (+ email_log history)
   storage/                           file upload backends (local / R2)
+  hooks/use-debounced-value.ts       shared debounce hook used by all search hooks
 config/
   site.json, site.ts                 brand name, tagline, icon
   content.ts                         page titles/descriptions (copy)
@@ -75,10 +78,11 @@ features/
 ```
 
 `components/` keeps **only generic, feature-agnostic** building blocks
-(`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
-`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
-(`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
-`hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
+(`ui/**`, `data-table.tsx`, `search-input.tsx`, `page-header.tsx`,
+`status-badge.tsx`, `form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps
+cross-cutting concerns (`types.ts`, `constants.ts`, `db/**`, `validation.ts`,
+`pricing.ts`, the SWR `hooks/fetcher.ts` and `hooks/use-debounced-value.ts`,
+`hooks/use-data-error.ts`, auth glue, mailer, storage).
 
 **One documented exception:** `components/data-table.tsx` imports
 `useAuth()` from `features/account` to default its `pageSize` prop to the
@@ -264,6 +268,8 @@ Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
 all seven hooks — copy `use-orders.ts` rather than improvising:
 
 ```ts
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+
 const KEY = "/api/orders"
 
 export function useOrders() {
@@ -278,11 +284,7 @@ export function useOrders() {
 
   // 2. Debounced query state, owned by the hook.
   const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
+  const debouncedQuery = useDebouncedValue(query)
 
   // 3. A second, parallel SWR call for the search results — only active once
   //    there's a non-empty debounced query. Separate cache entry from KEY.
@@ -316,6 +318,8 @@ export function useOrders() {
 
 Rules:
 
+- **Use `useDebouncedValue`** from `lib/hooks/use-debounced-value.ts` for
+  debouncing — never inline `useEffect` + `useState` debouncing in hooks.
 - **Never widen scope.** Search is `?q=` appended to the same role-scoped API
   route — it narrows what a role-scoped `where` already returns, never
   bypasses it. Every resource's `GET` composes the search clause onto the
@@ -409,6 +413,14 @@ the file before sending and targets the correct folder (avatar vs. photo). The
 
 Never write backend-specific upload logic outside `lib/storage/`.
 
+### Upload rate limiting
+
+`proxy.ts` runs as the edge proxy and rate-limits `POST /api/uploads` to 20
+requests per minute per IP using an in-process sliding-window counter. For
+multi-instance deployments, swap the in-memory `Map` for a Redis/Upstash store.
+The matcher is configured in `proxy.ts`'s `config` export — don't widen it
+without a reason.
+
 ---
 
 ## 5. Environment validation (`lib/env.ts`)
@@ -424,6 +436,15 @@ When you add a new env var:
 
 Never read `process.env` for a required variable without a corresponding entry
 in `validateEnv()`.
+
+Key env vars:
+
+- `BETTER_AUTH_URL` — the app's base URL (used for auth callbacks). In
+  production, falls back to `NEXT_PUBLIC_SITE_URL` if set.
+- `NEXT_PUBLIC_SITE_URL` — canonical public URL for SEO metadata, OG tags, and
+  sitemaps. Falls back to `BETTER_AUTH_URL` → `site.json` if unset.
+- `VERCEL_PROJECT_NAME` — scopes preview deployment trusted origins in
+  `lib/auth.ts`. Falls back to a broader `*.vercel.app` match if unset.
 
 ---
 
@@ -558,13 +579,35 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
    from the hook and render the search `<Input>` (with a `Search` icon, see
    `app/dashboard/orders/page.tsx`) above the table — don't keep a local
-   `useState` for it. `DataTable`'s own footer already places pagination on
-   the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page. Don't pass a `pageSize` prop
-   unless this table genuinely needs a different size than the rest of the
-   app — it already defaults to the signed-in account's saved preference
-   (Account settings → Tables, 1-250, default 20). An explicit `pageSize` is
-   for deliberately small, fixed widgets (see the dashboard summary lists in
+   `useState` for it.
+
+   `DataTable` supports two built-in enhancements:
+
+   - **`id` prop** — pass a unique table identifier (e.g. `"orders-list"`) to
+     enable column visibility settings persisted in localStorage. A settings
+     gear button appears in the toolbar.
+   - **`searchable` + `getSearchValue` props** — enable client-side search
+     within the table. `getSearchValue(row, columnId)` extracts searchable text
+     from a row for each column. A search input and column filter button appear
+     in the footer.
+
+   Use both together when the table needs in-table search (e.g. the orders
+   table at `/dashboard/orders`). For tables where search is purely server-side
+   (driven by the hook's `query`/`setQuery`), omit `searchable`.
+
+   **Column definitions** for complex tables should be extracted to a feature
+   component file (`features/<name>/components/<resource>-table-columns.tsx`)
+   as a hook returning `DataTableColumn<T>[]`. See `useOrderColumns()` in
+   `features/orders/components/order-table-columns.tsx` for the canonical
+   example. This keeps the page file focused on layout and hook wiring.
+
+   `DataTable`'s own footer already places pagination on the left and the CSV
+   button on the right (disabled when no `csv` prop is passed); don't rebuild
+   that layout per page. Don't pass a `pageSize` prop unless this table
+   genuinely needs a different size than the rest of the app — it already
+   defaults to the signed-in account's saved preference (Account settings →
+   Tables, 1-250, default 20). An explicit `pageSize` is for deliberately
+   small, fixed widgets (see the dashboard summary lists in
    `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
    setting.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
@@ -693,12 +736,19 @@ done; don't add a second `logAudit()` call in the route wrapper.
 
 ## Applying schema changes
 
-The DB connection string lives in `.env.development.local` (not `.env`), so load
-it explicitly when running DB scripts from the shell:
+The DB connection string lives in `.env.development.local` (not `.env`). The
+project uses `dotenv-cli` to load it when running DB scripts — the `db:push`,
+`db:seed`, etc. npm scripts already include `dotenv -e .env.development.local`:
 
 ```bash
-set -a && . ./.env.development.local && set +a && pnpm db:push
-set -a && . ./.env.development.local && set +a && pnpm db:seed
+pnpm db:push
+pnpm db:seed
+```
+
+If you need to run a raw command that requires the env, use `dotenv-cli`:
+
+```bash
+pnpm dotenv -e .env.development.local -- drizzle-kit push
 ```
 
 **When you add or change a column, update both schema files** —
