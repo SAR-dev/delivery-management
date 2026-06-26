@@ -18,7 +18,6 @@ import { PickupLocationModal } from "@/features/pickup-locations/components/pick
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 const COLLECTED_STATUSES = [
@@ -34,7 +33,7 @@ type FilterTab = "TO_COLLECT" | "COLLECTED"
 export default function RiderPickupQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const { orders, allOrders } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
   const { warehouses } = useWarehouses()
@@ -199,16 +198,13 @@ export default function RiderPickupQueuePage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="rider-pickup"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

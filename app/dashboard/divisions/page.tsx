@@ -16,7 +16,6 @@ import { pageContent } from "@/config/content"
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { SearchInput } from "@/components/search-input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,14 +28,8 @@ interface DivisionRow extends Division {
 export default function DivisionsPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const {
-    divisions,
-    query,
-    setQuery,
-    createDivision,
-    updateDivision,
-    deleteDivision,
-  } = useDivisions()
+  const { divisions, createDivision, updateDivision, deleteDivision } =
+    useDivisions()
   const { allWarehouses } = useWarehouses()
   const { allMerchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
@@ -222,17 +215,11 @@ export default function DivisionsPage() {
         </Button>
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search division name"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-divisions"
+            searchable
             columns={columns}
             data={rows}
             getRowKey={(d) => d.id}

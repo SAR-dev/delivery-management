@@ -18,7 +18,6 @@ import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
@@ -34,7 +33,7 @@ type FilterTab = "TO_DELIVER" | "COMPLETED"
 export default function RiderDeliveryQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const { orders, allOrders } = useOrders()
   const { warehouses } = useWarehouses()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -207,16 +206,13 @@ export default function RiderDeliveryQueuePage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="rider-delivery"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

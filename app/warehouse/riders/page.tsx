@@ -12,7 +12,6 @@ import { pageContent } from "@/config/content"
 import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatCardList } from "@/components/stat-card-list"
-import { SearchInput } from "@/components/search-input"
 import { DataTable } from "@/components/data-table"
 
 export default function WarehouseRidersPage() {
@@ -21,7 +20,7 @@ export default function WarehouseRidersPage() {
   // The riders API already scopes the roster to the signed-in Warehouse
   // Admin's hub (search composes with that scope server-side too), so
   // `riders`/`allRiders` here only ever contain this warehouse's riders.
-  const { riders, allRiders, query, setQuery } = useRiders()
+  const { riders, allRiders } = useRiders()
   const columns = useRiderColumns()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -76,17 +75,11 @@ export default function WarehouseRidersPage() {
         ]}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search name, phone, zone"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-riders"
+            searchable
             columns={columns}
             data={riders}
             getRowKey={(r) => r.id}

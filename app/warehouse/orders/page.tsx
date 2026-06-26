@@ -17,7 +17,6 @@ import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -34,7 +33,7 @@ const IN_PROGRESS_STATUSES: OrderStatus[] = [
 export default function WarehouseOrdersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const { orders, allOrders } = useOrders()
   const baseColumns = useOrderColumns()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
@@ -184,16 +183,13 @@ export default function WarehouseOrdersPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-orders"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

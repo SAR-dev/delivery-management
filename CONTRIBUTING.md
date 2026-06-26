@@ -25,7 +25,6 @@ features/<name>/
   hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
   transitions.ts                     orders only — the state machine
 components/                          generic, feature-agnostic UI only
-  search-input.tsx                   standalone search input with icon
 proxy.ts                             edge proxy — upload rate-limiting (matcher: /api/uploads)
 lib/
   db/index.ts                        Drizzle client — reads DB_PROVIDER, initialises pg or libsql
@@ -78,8 +77,8 @@ features/
 ```
 
 `components/` keeps **only generic, feature-agnostic** building blocks
-(`ui/**`, `data-table.tsx`, `search-input.tsx`, `page-header.tsx`,
-`status-badge.tsx`, `form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps
+(`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
+`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps
 cross-cutting concerns (`types.ts`, `constants.ts`, `db/**`, `validation.ts`,
 `pricing.ts`, the SWR `hooks/fetcher.ts` and `hooks/use-debounced-value.ts`,
 `hooks/use-data-error.ts`, auth glue, mailer, storage).
@@ -227,9 +226,9 @@ wrapped code path.
 
 There is **no global data context**. Each resource has a focused hook in
 `features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
-key, the typed data, loading/error state, any derived selectors, the
-mutation functions for that resource, and — for searchable resources — the
-`query` state described below.
+key, the typed data, loading/error state, any derived selectors, and the
+mutation functions for that resource. Hooks no longer need to export `query`/`setQuery`
+for page-level search — the `DataTable` handles search client-side.
 
 ```ts
 export function useMerchants() {
@@ -261,83 +260,68 @@ Rules:
 - The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
   which aggregates the error state of every resource key.
 
-### Search state lives in the hook, not the page
+### Search state lives in the DataTable, not the hook
 
-Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
-`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
-all seven hooks — copy `use-orders.ts` rather than improvising:
+The `DataTable` component has built-in client-side search. Every table now uses
+the `searchable` prop — the search input appears in the top-right toolbar above
+the table, with a column picker filter button (when `id` is also set) to
+choose which columns to search against.
 
-```ts
-import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+```tsx
+<DataTable
+  id="my-table" // enables column visibility + search column picker
+  searchable // enables the built-in search input
+  columns={columns}
+  data={filtered}
+  getRowKey={(r) => r.id}
+/>
+```
 
-const KEY = "/api/orders"
+When `getSearchValue` is **omitted**, `DataTable` falls back to each column's
+`sortValue` function to extract searchable text. Provide `getSearchValue` only
+when the searchable text differs from the sort value (e.g. combining multiple
+fields into one searchable string):
 
-export function useOrders() {
-  const { currentUser } = useAuth()
-  // 1. Base key — untouched. Every mutation and useDataError still dedupes
-  //    against this exact string; never repoint it at the search key.
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 2. Debounced query state, owned by the hook.
-  const [query, setQuery] = useState("")
-  const debouncedQuery = useDebouncedValue(query)
-
-  // 3. A second, parallel SWR call for the search results — only active once
-  //    there's a non-empty debounced query. Separate cache entry from KEY.
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 4. `orders` is search-aware; `allOrders` is always the full base list.
-  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allOrders = data ?? []
-
-  return {
-    orders,
-    allOrders,
-    query,
-    setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    // ...mutations, all still writing through the base `mutate`/`KEY`
-  }
-}
+```tsx
+<DataTable
+  id="orders-table"
+  searchable
+  getSearchValue={(o, columnId) => {
+    switch (columnId) {
+      case "order":
+        return o.code
+      case "recipient":
+        return `${o.recipientName} ${o.recipientPhone}`
+      case "city":
+        return o.deliveryCity
+      default:
+        return null
+    }
+  }}
+  columns={columns}
+  data={data}
+  getRowKey={(o) => o.id}
+/>
 ```
 
 Rules:
 
-- **Use `useDebouncedValue`** from `lib/hooks/use-debounced-value.ts` for
-  debouncing — never inline `useEffect` + `useState` debouncing in hooks.
-- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
-  route — it narrows what a role-scoped `where` already returns, never
-  bypasses it. Every resource's `GET` composes the search clause onto the
-  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
-  same order the role scoping is already applied — see Recipe E's template.
-- **Always export both `orders` and `allOrders`** (substitute the resource
-  name). Any derived value that should stay stable while the user searches —
-  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
-  `currentWarehouse`, cross-resource usage counts — must be computed from the
-  `allX` list, never from the search-aware one. Get this wrong and a stat card
-  silently shrinks to the size of the search box's matches.
-- **Mutations always target `KEY`**, the literal base-key string, not the
-  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
-  does this correctly — don't reroute it.
-- A page with a search `<Input>` destructures `query`/`setQuery` from the
-  hook; it never keeps its own `useState` for this. Tab/status filters stay
-  client-side `useMemo`s layered **on top of** the hook's `orders` (or
-  equivalent), not on `allOrders`.
+- **All tables get `id` and `searchable`.** Every `<DataTable>` in the
+  codebase uses both props. Column visibility is persisted in localStorage per
+  table `id`; the search column picker remembers which columns the user
+  selected.
+- **Column definitions** for complex tables should be extracted to a feature
+  component file (`features/<name>/components/<resource>-table-columns.tsx`)
+  as a hook returning `DataTableColumn<T>[]`. See `useOrderColumns()` in
+  `features/orders/components/order-table-columns.tsx` for the canonical
+  example.
+- **Tab/status filters stay client-side** `useMemo`s layered **on top of** the
+  hook's data, not on `allOrders`. The hook still exports both `orders` and
+  `allOrders` — stat cards and tab counts must always use `allOrders` so they
+  stay stable regardless of what the user searches.
+- **Mutations always target `KEY`**, the literal base-key string. The bound
+  `mutate` from the base `useSWR` call already does this correctly — don't
+  reroute it.
 
 ---
 
@@ -576,40 +560,34 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    ```
 3. Get data from the resource hook(s) — never fetch in the page directly.
 4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
-   from the hook and render the search `<Input>` (with a `Search` icon, see
-   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
-   `useState` for it.
+   `FormDialog`. Every `<DataTable>` must pass both `id` and `searchable`:
 
-   `DataTable` supports two built-in enhancements:
+   ```tsx
+   <DataTable
+     id="warehouse-orders"
+     searchable
+     columns={columns}
+     data={data}
+     getRowKey={(o) => o.id}
+   />
+   ```
 
-   - **`id` prop** — pass a unique table identifier (e.g. `"orders-list"`) to
-     enable column visibility settings persisted in localStorage. A settings
-     gear button appears in the toolbar.
-   - **`searchable` + `getSearchValue` props** — enable client-side search
-     within the table. `getSearchValue(row, columnId)` extracts searchable text
-     from a row for each column. A search input and column filter button appear
-     in the footer.
+   - **`id`** — a unique string that enables column visibility settings
+     (persisted to localStorage) and shows a settings gear in the toolbar.
+   - **`searchable`** — enables the built-in search input in the top-right
+     toolbar. When `getSearchValue` is omitted, columns are searched using
+     their `sortValue`. Pass `getSearchValue` only when the searchable text
+     differs from the sort value.
 
-   Use both together when the table needs in-table search (e.g. the orders
-   table at `/dashboard/orders`). For tables where search is purely server-side
-   (driven by the hook's `query`/`setQuery`), omit `searchable`.
+   `DataTable`'s toolbar places the search input on the top-right and the
+   settings gear + CSV download in the footer. Don't rebuild that layout per
+   page. Don't pass a `pageSize` prop unless this table genuinely needs a
+   different size than the rest of the app — it already defaults to the
+   signed-in account's saved preference (Account settings → Tables, 1-250,
+   default 20). An explicit `pageSize` is for deliberately small, fixed
+   widgets (see the dashboard summary lists in `app/rider/page.tsx`,
+   `pageSize={5}`), not a substitute for the account setting.
 
-   **Column definitions** for complex tables should be extracted to a feature
-   component file (`features/<name>/components/<resource>-table-columns.tsx`)
-   as a hook returning `DataTableColumn<T>[]`. See `useOrderColumns()` in
-   `features/orders/components/order-table-columns.tsx` for the canonical
-   example. This keeps the page file focused on layout and hook wiring.
-
-   `DataTable`'s own footer already places pagination on the left and the CSV
-   button on the right (disabled when no `csv` prop is passed); don't rebuild
-   that layout per page. Don't pass a `pageSize` prop unless this table
-   genuinely needs a different size than the rest of the app — it already
-   defaults to the signed-in account's saved preference (Account settings →
-   Tables, 1-250, default 20). An explicit `pageSize` is for deliberately
-   small, fixed widgets (see the dashboard summary lists in
-   `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
-   setting.
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.

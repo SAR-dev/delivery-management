@@ -16,11 +16,10 @@ import { CreateRiderDialog } from "@/features/riders/dialogs/create-rider-dialog
 import { EditRiderDialog } from "@/features/riders/dialogs/edit-rider-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatCardList } from "@/components/stat-card-list"
-import { SearchInput } from "@/components/search-input"
 import { DataTable } from "@/components/data-table"
 
 export default function RidersPage() {
-  const { riders, allRiders, query, setQuery } = useRiders()
+  const { riders, allRiders } = useRiders()
   const columns = useRiderColumns({ showWarehouse: true })
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -73,17 +72,11 @@ export default function RidersPage() {
         ]}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search name, phone, zone, task type, warehouse"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-riders"
+            searchable
             columns={columns}
             data={riders}
             getRowKey={(r) => r.id}

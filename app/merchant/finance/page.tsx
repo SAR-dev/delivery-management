@@ -53,6 +53,42 @@ export default function MerchantFinancePage() {
   const isActive = currentMerchant?.status === "ACTIVE"
   const canRequest = isActive && merchantPayableOrders.length > 0
 
+  function getPayableSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "tracking":
+        return o.code
+      case "recipient":
+        return `${o.recipientName} ${o.deliveryCity}`
+      case "delivered":
+        return o.deliveredAt ?? null
+      case "productCost":
+        return String(o.productCost)
+      default:
+        return null
+    }
+  }
+
+  function getPayoutSearchValue(
+    p: {
+      code: string
+      payoutMethod: string
+      payoutDetails: string
+      status: string
+    },
+    columnId: string,
+  ): string | null {
+    switch (columnId) {
+      case "code":
+        return p.code
+      case "method":
+        return `${p.payoutMethod} ${p.payoutDetails}`
+      case "status":
+        return p.status
+      default:
+        return null
+    }
+  }
+
   const payableColumns: DataTableColumn<Order>[] = [
     {
       id: "tracking",
@@ -182,6 +218,9 @@ export default function MerchantFinancePage() {
             </div>
           ) : (
             <DataTable
+              id="merchant-payable-orders"
+              searchable
+              getSearchValue={getPayableSearchValue}
               columns={payableColumns}
               data={merchantPayableOrders}
               getRowKey={(o) => o.id}
@@ -233,6 +272,9 @@ export default function MerchantFinancePage() {
             </div>
           ) : (
             <DataTable
+              id="merchant-payout-requests"
+              searchable
+              getSearchValue={getPayoutSearchValue}
               columns={requestColumns}
               data={merchantPayoutRequests}
               getRowKey={(p) => p.id}

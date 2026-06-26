@@ -19,14 +19,13 @@ import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { SearchInput } from "@/components/search-input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const { orders, allOrders } = useOrders()
   const baseColumns = useOrderColumns()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -151,17 +150,14 @@ export default function OrdersPage() {
             <TabsTrigger value="ALL">All</TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city, warehouse, merchant"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       {/* Table */}
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-orders"
+            searchable
             columns={columns}
             data={filtered}
             getRowKey={(o) => o.id}

@@ -12,7 +12,6 @@ import { pageContent } from "@/config/content"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
@@ -32,8 +31,6 @@ export default function PayoutsPage() {
   const {
     payoutRequests,
     allPayoutRequests,
-    query,
-    setQuery,
     approvePayout,
     rejectPayout,
     markPayoutPaid,
@@ -213,16 +210,13 @@ export default function PayoutsPage() {
             <TabsTrigger value="HISTORY">History ({totalHistory})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search request code or merchant"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-payouts"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(p) => p.id}

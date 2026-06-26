@@ -17,7 +17,6 @@ import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dis
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -26,7 +25,7 @@ type FilterTab = "READY" | "DISPATCHED"
 export default function WarehouseDispatchPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const { orders, allOrders } = useOrders()
   const { merchants } = useMerchants()
   const { riders, warehouseDeliveryRiders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("READY")
@@ -248,16 +247,13 @@ export default function WarehouseDispatchPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-dispatch"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

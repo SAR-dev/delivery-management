@@ -86,7 +86,8 @@ interface DataTableProps<T> {
    * and column picker appear in the toolbar. Requires `getSearchValue`. */
   searchable?: boolean
   /** Function to extract searchable text from a row for a given column.
-   * Required when `searchable` is true. Return null/undefined to skip. */
+   * When omitted, falls back to `sortValue` for each column. Return
+   * null/undefined to skip. */
   getSearchValue?: (row: T, columnId: string) => string | null | undefined
   /** Rows per page. Pass 0 to disable pagination. Defaults to the signed-in
    * account's saved rows-per-page preference (Account settings), or 20 if
@@ -323,14 +324,27 @@ export function DataTable<T>({
   }, [effectivePageSize, pageSize])
 
   const filtered = React.useMemo(() => {
-    if (!trimmedSearch || !searchable || !getSearchValue) return data
+    if (!trimmedSearch || !searchable) return data
     return data.filter((row) =>
       searchColumnIds.some((cid) => {
-        const val = getSearchValue(row, cid)
+        let val: string | null | undefined
+        if (getSearchValue) {
+          val = getSearchValue(row, cid)
+        } else {
+          const col = columns.find((c) => c.id === cid)
+          val = col?.sortValue ? String(col.sortValue(row) ?? "") : null
+        }
         return val != null && String(val).toLowerCase().includes(trimmedSearch)
       }),
     )
-  }, [data, trimmedSearch, searchable, getSearchValue, searchColumnIds])
+  }, [
+    data,
+    trimmedSearch,
+    searchable,
+    getSearchValue,
+    searchColumnIds,
+    columns,
+  ])
 
   const sorted = React.useMemo(() => {
     if (!sortId) return filtered
@@ -403,6 +417,38 @@ export function DataTable<T>({
 
   return (
     <div className={cn("flex flex-col", className)}>
+      {searchable ? (
+        <div className="flex items-center justify-end gap-2 px-4 pb-3">
+          <div className="relative">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setPage(1)
+              }}
+              className="h-8 w-48 pl-9 text-sm sm:w-64"
+            />
+          </div>
+          {id ? (
+            <Button
+              type="button"
+              variant={
+                searchColumnIds.length < allSearchableIds.length
+                  ? "secondary"
+                  : "outline"
+              }
+              size="icon"
+              className="size-8"
+              onClick={() => setFilterOpen(true)}
+              aria-label="Filter search columns"
+            >
+              <Filter className="size-4" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <Table>
         <TableHeader>
           <TableRow>
@@ -544,36 +590,6 @@ export function DataTable<T>({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {searchable ? (
-              <div className="relative">
-                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    setPage(1)
-                  }}
-                  className="h-8 w-48 pl-9 text-sm sm:w-64"
-                />
-              </div>
-            ) : null}
-            {searchable && id ? (
-              <Button
-                type="button"
-                variant={
-                  searchColumnIds.length < allSearchableIds.length
-                    ? "secondary"
-                    : "outline"
-                }
-                size="icon"
-                className="size-8"
-                onClick={() => setFilterOpen(true)}
-                aria-label="Filter search columns"
-              >
-                <Filter className="size-4" />
-              </Button>
-            ) : null}
             {id ? (
               <Button
                 type="button"

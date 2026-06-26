@@ -39,6 +39,31 @@ export default function WarehouseIntakePage() {
   const warehouseName = (id?: string | null) =>
     id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
+  function getOrderSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return o.code
+      case "rider":
+        return rider(o.pickupRiderId)?.name ?? null
+      case "parcel":
+        return `${o.parcelWeightKg} KG ${o.deliveryType}`
+      case "warehouse":
+        return warehouseName(o.warehouseId)
+      case "city":
+        return o.deliveryCity
+      case "collectible":
+        return String(o.totalCollectible)
+      case "notes":
+        return (
+          [o.merchantNote, o.receiverNote].filter(Boolean).join(" ") || null
+        )
+      case "status":
+        return o.status
+      default:
+        return null
+    }
+  }
+
   // Parcels that have been picked up and are heading to a warehouse. In this
   // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
   const incoming = useMemo(
@@ -241,6 +266,9 @@ export default function WarehouseIntakePage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-intake"
+            searchable
+            getSearchValue={getOrderSearchValue}
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

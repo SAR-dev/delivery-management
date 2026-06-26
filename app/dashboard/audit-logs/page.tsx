@@ -7,7 +7,6 @@ import { RoleBadge } from "@/components/role-badge"
 import type { AuditLog } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { SearchInput } from "@/components/search-input"
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -20,7 +19,7 @@ function formatTimestamp(value: string) {
 }
 
 export default function AuditLogsPage() {
-  const { auditLogs, query, setQuery, isLoading } = useAuditLogs()
+  const { auditLogs, isLoading } = useAuditLogs()
 
   const columns: DataTableColumn<AuditLog>[] = [
     {
@@ -82,17 +81,11 @@ export default function AuditLogsPage() {
         description={pageContent.dashboard.auditLogs.description}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search actor, action, entity, description"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-audit-logs"
+            searchable
             columns={columns}
             data={auditLogs}
             getRowKey={(l) => l.id}

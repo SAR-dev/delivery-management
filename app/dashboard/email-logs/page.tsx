@@ -15,7 +15,6 @@ import type { EmailLog } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { SearchInput } from "@/components/search-input"
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -28,7 +27,7 @@ function formatTimestamp(value: string) {
 }
 
 export default function EmailLogsPage() {
-  const { emailLogs, query, setQuery, isLoading, markAsSent } = useEmailLogs()
+  const { emailLogs, isLoading, markAsSent } = useEmailLogs()
   const [busy, setBusy] = useState<string | null>(null)
 
   async function handleMarkAsSent(log: EmailLog) {
@@ -140,17 +139,11 @@ export default function EmailLogsPage() {
         description={pageContent.dashboard.emailLogs.description}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search recipient, subject, or error"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-email-logs"
+            searchable
             columns={columns}
             data={emailLogs}
             getRowKey={(l) => l.id}

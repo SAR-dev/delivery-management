@@ -14,7 +14,6 @@ import { RoleBadge } from "@/components/role-badge"
 import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { Switch } from "@/components/ui/switch"
 import {
   Select,
@@ -94,8 +93,6 @@ export default function TeamPage() {
   const {
     team,
     allTeam,
-    query,
-    setQuery,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
@@ -245,14 +242,6 @@ export default function TeamPage() {
         <CreateAccountDialog />
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search name, email, phone"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Tabs defaultValue="admins">
         <TabsList>
           <TabsTrigger value="admins">Admins ({totalAdmins})</TabsTrigger>
@@ -266,6 +255,8 @@ export default function TeamPage() {
           <Card>
             <CardContent className="p-0">
               <DataTable
+                id="dashboard-team-admins"
+                searchable
                 columns={adminColumns}
                 data={admins}
                 getRowKey={(u) => u.id}
@@ -281,6 +272,8 @@ export default function TeamPage() {
           <Card>
             <CardContent className="p-0">
               <DataTable
+                id="dashboard-team-warehouse-admins"
+                searchable
                 columns={warehouseColumns}
                 data={warehouseAdmins}
                 getRowKey={(u) => u.id}

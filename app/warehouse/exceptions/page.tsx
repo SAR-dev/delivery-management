@@ -18,7 +18,6 @@ import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -27,8 +26,7 @@ type FilterTab = "NEEDS_ACTION" | "RESOLVED"
 export default function WarehouseExceptionsPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders, warehouseFailedOrders, query, setQuery } =
-    useOrders()
+  const { orders, allOrders, warehouseFailedOrders } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("NEEDS_ACTION")
@@ -251,16 +249,13 @@ export default function WarehouseExceptionsPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-exceptions"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

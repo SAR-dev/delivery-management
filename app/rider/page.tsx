@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react"
 import {
+  CheckCircle2,
+  Navigation,
   Package,
   PackageCheck,
-  Navigation,
-  CheckCircle2,
-  Truck,
   PartyPopper,
   Phone,
+  Truck,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -109,6 +109,49 @@ export default function RiderTodoPage() {
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+
+  function getPickupSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return o.code
+      case "merchant":
+        return merchantName(o.merchantId)
+      case "pickup":
+        return pickup(o.pickupLocationId)?.label ?? null
+      case "contact":
+        return merchant(o.merchantId)?.phone ?? null
+      default:
+        return null
+    }
+  }
+
+  function getStartSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return `${o.code} ${o.recipientName}`
+      case "destination":
+        return `${o.deliveryCity} ${o.deliveryAddress}`
+      case "contact":
+        return o.recipientPhone
+      default:
+        return null
+    }
+  }
+
+  function getDeliverSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return `${o.code} ${o.recipientName}`
+      case "destination":
+        return `${o.deliveryCity} ${o.deliveryAddress}`
+      case "contact":
+        return o.recipientPhone
+      case "collectible":
+        return String(o.totalCollectible)
+      default:
+        return null
+    }
+  }
 
   const myPickups = useMemo(
     () =>
@@ -380,6 +423,9 @@ export default function RiderTodoPage() {
             viewAllHref="/rider/pickup"
           >
             <DataTable
+              id="rider-pickups"
+              searchable
+              getSearchValue={getPickupSearchValue}
               columns={pickupColumns}
               data={toPickup}
               getRowKey={(o) => o.id}
@@ -393,6 +439,9 @@ export default function RiderTodoPage() {
               doesn't need its own "View queue" link. */}
           <TaskSection title="Start delivery run" count={toStart.length}>
             <DataTable
+              id="rider-start-delivery"
+              searchable
+              getSearchValue={getStartSearchValue}
               columns={startColumns}
               data={toStart}
               getRowKey={(o) => o.id}
@@ -408,6 +457,9 @@ export default function RiderTodoPage() {
             viewAllHref="/rider/delivery"
           >
             <DataTable
+              id="rider-deliver"
+              searchable
+              getSearchValue={getDeliverSearchValue}
               columns={deliverColumns}
               data={toDeliver}
               getRowKey={(o) => o.id}

@@ -23,7 +23,6 @@ import { OrderStatusBadge } from "@/features/orders/components/order-status-badg
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -32,14 +31,8 @@ type FilterTab = "UNSETTLED" | "SETTLED"
 export default function WarehouseReconciliationPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const {
-    orders,
-    allOrders,
-    warehouseUnsettledOrders,
-    settleOrderCod,
-    query,
-    setQuery,
-  } = useOrders()
+  const { orders, allOrders, warehouseUnsettledOrders, settleOrderCod } =
+    useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("UNSETTLED")
@@ -289,16 +282,13 @@ export default function WarehouseReconciliationPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search code, recipient, phone, city"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-reconciliation"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}

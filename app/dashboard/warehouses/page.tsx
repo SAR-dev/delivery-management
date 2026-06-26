@@ -16,7 +16,6 @@ import { pageContent } from "@/config/content"
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { SearchInput } from "@/components/search-input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -51,14 +50,8 @@ const emptyForm: WarehouseForm = {
 export default function WarehousesPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const {
-    warehouses,
-    query,
-    setQuery,
-    createWarehouse,
-    updateWarehouse,
-    deleteWarehouse,
-  } = useWarehouses()
+  const { warehouses, createWarehouse, updateWarehouse, deleteWarehouse } =
+    useWarehouses()
   const { divisions } = useDivisions()
   const { allOrders } = useOrders()
   const { allRiders } = useRiders()
@@ -296,17 +289,11 @@ export default function WarehousesPage() {
         </Button>
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <SearchInput
-          placeholder="Search name, address, city, division"
-          value={query}
-          onChange={setQuery}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-warehouses"
+            searchable
             columns={columns}
             data={rows}
             getRowKey={(w) => w.id}

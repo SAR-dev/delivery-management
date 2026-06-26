@@ -22,7 +22,6 @@ import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
-import { SearchInput } from "@/components/search-input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   DropdownMenu,
@@ -39,8 +38,6 @@ export default function MerchantsPage() {
   const {
     merchants,
     allMerchants,
-    query,
-    setQuery,
     approveMerchant,
     suspendMerchant,
     reactivateMerchant,
@@ -258,17 +255,14 @@ export default function MerchantsPage() {
             <TabsTrigger value="SUSPENDED">Suspended</TabsTrigger>
           </TabsList>
         </Tabs>
-        <SearchInput
-          placeholder="Search business, owner, email"
-          value={query}
-          onChange={setQuery}
-        />
       </div>
 
       {/* Table */}
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-merchants"
+            searchable
             columns={columns}
             data={filtered}
             getRowKey={(m) => m.id}
