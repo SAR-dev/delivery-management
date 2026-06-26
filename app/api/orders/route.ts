@@ -165,43 +165,47 @@ export async function POST(req: Request) {
   const securityMoney = calcSecurityMoney(configRow, productCost)
   const totalCollectible = productCost + deliveryCharge + securityMoney
 
-  // MAX(code) is a DB-level operation, avoiding collisions under concurrent
-  // inserts that the client-side reduce over in-memory state couldn't prevent.
-  const [{ maxCode }] = await db
-    .select({ maxCode: sql<string>`max(${order.code})` })
-    .from(order)
-  const maxSeq = maxCode
-    ? Number.parseInt(maxCode.replace(/^PF-0*/, ""), 10)
-    : 100258
-  const seq = (Number.isFinite(maxSeq) ? maxSeq : 100258) + 1
-  const code = `PF-${String(seq).padStart(6, "0")}`
+  // MAX(code) read + insert must happen inside a single transaction, matching
+  // the bulk route's pattern — otherwise two concurrent single-order
+  // submissions can read the same MAX(code) and generate the same PF-XXXXXX
+  // code (race condition).
+  const [newOrder] = await db.transaction(async (tx: any) => {
+    const [{ maxCode }] = await tx
+      .select({ maxCode: sql<string>`max(${order.code})` })
+      .from(order)
+    const maxSeq = maxCode
+      ? Number.parseInt(maxCode.replace(/^PF-0*/, ""), 10)
+      : 100258
+    const seq = (Number.isFinite(maxSeq) ? maxSeq : 100258) + 1
+    const code = `PF-${String(seq).padStart(6, "0")}`
 
-  const [newOrder] = await db
-    .insert(order)
-    .values({
-      code,
-      merchantId: me.merchantId,
-      pickupLocationId,
-      recipientName,
-      recipientPhone,
-      deliveryAddress,
-      deliveryCity,
-      deliveryDivisionId,
-      deliveryMapLink: normalizedMapLink,
-      deliveryImageLinks: normalizedImageLinks.length
-        ? normalizedImageLinks
-        : null,
-      parcelWeightKg,
-      deliveryType: deliveryType ?? "STANDARD",
-      productCost,
-      deliveryCharge,
-      securityMoney,
-      totalCollectible,
-      status: "PENDING",
-      deliveryAttempts: 0,
-      merchantNote: merchantNote?.trim() || null,
-    })
-    .returning()
+    return tx
+      .insert(order)
+      .values({
+        code,
+        merchantId: me.merchantId,
+        pickupLocationId,
+        recipientName,
+        recipientPhone,
+        deliveryAddress,
+        deliveryCity,
+        deliveryDivisionId,
+        deliveryMapLink: normalizedMapLink,
+        deliveryImageLinks: normalizedImageLinks.length
+          ? normalizedImageLinks
+          : null,
+        parcelWeightKg,
+        deliveryType: deliveryType ?? "STANDARD",
+        productCost,
+        deliveryCharge,
+        securityMoney,
+        totalCollectible,
+        status: "PENDING",
+        deliveryAttempts: 0,
+        merchantNote: merchantNote?.trim() || null,
+      })
+      .returning()
+  })
 
   return NextResponse.json(newOrder, { status: 201 })
 }

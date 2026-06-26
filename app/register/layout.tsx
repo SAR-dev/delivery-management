@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "Create Merchant Account",
   description:
     "Register your business on ParcelFlow and start booking deliveries across Bangladesh. First 100 merchants get 10% off forever.",
+  alternates: {
+    canonical: "/register",
+  },
   openGraph: {
     title: "Create Merchant Account – ParcelFlow",
     description:

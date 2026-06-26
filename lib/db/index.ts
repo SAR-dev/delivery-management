@@ -7,16 +7,27 @@
  *   DB_PROVIDER=postgres  (default) → pg + drizzle-orm/node-postgres
  *   DB_PROVIDER=turso               → @libsql/client + drizzle-orm/libsql
  *
- * The `db` export is typed as `any` at the module boundary because the two
- * Drizzle instances are generic over different schemas/dialects. All query
- * call-sites already infer types from schema imports, so this doesn't
- * affect end-to-end type safety in practice.
+ * `db` is typed as `NodePgDatabase<typeof pgSchema>` — the postgres instance's
+ * real type — rather than `any`. Application code only ever imports table
+ * refs/types from `./schema.ts`, which is a static re-export of
+ * `schema.postgres` (see that file's header comment), so this is the type
+ * every real call site actually needs.
+ *
+ * The Turso branch is genuinely a `LibSQLDatabase<typeof sqliteSchema>` at
+ * runtime, not a `NodePgDatabase`. Since `schema.turso` is documented as the
+ * same logical shape as `schema.postgres` (same table/column names, same
+ * inferred row shapes), a single intentional cast at its assignment site
+ * substitutes it as the postgres type. This keeps the `any` confined to one
+ * documented line instead of leaking through every query in the codebase.
  *
  * `pool` is only set when using postgres; it is null for Turso.
  * Better Auth uses `pool` directly on postgres, and the drizzle adapter on Turso.
  */
 
-let db: any
+import type { NodePgDatabase } from "drizzle-orm/node-postgres"
+import type * as pgSchema from "./schema.postgres"
+
+let db: NodePgDatabase<typeof pgSchema>
 let pool: import("pg").Pool | null = null
 
 export const dbProvider = (
@@ -53,7 +64,9 @@ if (dbProvider === "postgres") {
     url: process.env.TURSO_DATABASE_URL!,
     authToken: process.env.TURSO_AUTH_TOKEN,
   })
-  db = drizzle(client, { schema })
+  // Genuinely a LibSQLDatabase<typeof schema.turso> at runtime — see header
+  // comment for why this single cast is intentional rather than `any`.
+  db = drizzle(client, { schema }) as unknown as NodePgDatabase<typeof pgSchema>
 }
 
 export { db, pool }

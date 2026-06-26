@@ -52,6 +52,9 @@ export const metadata: Metadata = {
     title: siteConfig.name,
     description: siteConfig.description,
   },
+  alternates: {
+    canonical: siteConfig.siteUrl,
+  },
   robots: {
     index: true,
     follow: true,

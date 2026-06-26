@@ -28,15 +28,16 @@ export interface SendMailOptions_ {
   onRetry?: (attempt: number, error: Error) => void
 }
 
-function createTransporter() {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  })
-}
+// Module-level singleton — one SMTP connection pool shared across all calls.
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+  connectionTimeout: 5_000, // 5s to establish the TCP connection
+  socketTimeout: 10_000, // 10s of inactivity before giving up
+})
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -69,8 +70,6 @@ export async function sendMail(
   options: SendMailOptions_ = {},
 ): Promise<void> {
   const { maxRetries = 3, baseDelayMs = 1000, onRetry } = options
-
-  const transporter = createTransporter()
 
   const mailOptions: SendMailOptions = {
     from: `"Delivery Management" <${process.env.GMAIL_USER}>`,

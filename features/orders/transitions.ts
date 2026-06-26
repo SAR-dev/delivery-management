@@ -1,7 +1,13 @@
 import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { merchant, order, pickupLocation, rider, warehouse, } from "@/lib/db/schema"
+import {
+  merchant,
+  order,
+  pickupLocation,
+  rider,
+  warehouse,
+} from "@/lib/db/schema"
 import {
   orderApproveSchema,
   orderCancelSchema,

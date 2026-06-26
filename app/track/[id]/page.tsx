@@ -258,13 +258,19 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const code = decodeURIComponent(id).toUpperCase()
+  const data = await fetchOrderData(code)
+
+  const statusLabel = data
+    ? STATUS_COPY[data.order.status].headline
+    : "Not found"
+  const merchant = data?.merchant?.businessName
+    ? ` · ${data.merchant.businessName}`
+    : ""
+
   return {
-    title: `Tracking ${code}`,
-    description: `Live delivery status for parcel ${code} on ParcelFlow.`,
-    robots: {
-      index: false,
-      follow: false,
-    },
+    title: `${code} – ${statusLabel}`,
+    description: `Live delivery status for parcel ${code}${merchant} on ParcelFlow.`,
+    robots: { index: false, follow: false },
   }
 }
 

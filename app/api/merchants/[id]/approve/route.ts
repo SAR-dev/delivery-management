@@ -60,7 +60,7 @@ export async function PATCH(
         <p>Hi ${updated.ownerName},</p>
         <p>Great news! Your business <strong>${updated.businessName}</strong> has been approved and your merchant account is now active.</p>
         <p>You can now log in and start creating orders.</p>
-        <a href="${process.env.BETTER_AUTH_PRD_URL ?? process.env.BETTER_AUTH_DEV_URL ?? ""}">Log in to ${siteData.name}</a>
+        <a href="${process.env.BETTER_AUTH_URL ?? ""}">Log in to ${siteData.name}</a>
         <p>— The Delivery Management Team</p>
       `,
     },

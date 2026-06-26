@@ -83,17 +83,20 @@ export function validateEnv(): void {
       minLength(e, "BETTER_AUTH_SECRET", 32, "Auth secret key")
     }
 
-    const env = oneOf(
+    required(e, "BETTER_AUTH_URL", "App base URL")
+
+    // A deploy with NEXT_PUBLIC_ENV=development in production would silently
+    // disable Vercel Analytics and keep localhost in trustedOrigins, so make
+    // sure that var is explicitly validated rather than left to its fallback.
+    const nodeEnv = oneOf(
       e,
       "NEXT_PUBLIC_ENV",
       ["development", "production"],
       "development",
     )
-    if (env === "production") {
-      required(
-        e,
-        "BETTER_AUTH_PRD_URL",
-        "Production app base URL (BETTER_AUTH_PRD_URL)",
+    if (nodeEnv === "production" && !process.env.NEXT_PUBLIC_SITE_URL) {
+      console.warn(
+        "[env] NEXT_PUBLIC_SITE_URL is unset in production — falling back to BETTER_AUTH_URL",
       )
     }
 

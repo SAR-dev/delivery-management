@@ -1,3 +1,5 @@
+const MAX_LIMIT = 100
+
 export function parsePagination(req: Request): {
   limit?: number
   offset?: number
@@ -11,7 +13,10 @@ export function parsePagination(req: Request): {
     offsetRaw !== null ? Number.parseInt(offsetRaw, 10) : Number.NaN
 
   return {
-    limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+    limit:
+      Number.isFinite(limit) && limit > 0
+        ? Math.min(limit, MAX_LIMIT)
+        : undefined,
     offset: Number.isFinite(offset) && offset >= 0 ? offset : undefined,
   }
 }

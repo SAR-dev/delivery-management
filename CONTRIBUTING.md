@@ -203,10 +203,12 @@ just orders — see the matching shape in `app/api/payouts/[id]/approve/route.ts
 and `.../paid/route.ts`. When you add a new endpoint that reads a row, checks
 its status, and conditionally writes to it, wrap the read + guard + write in
 one `db.transaction()` with `.for("update")` on the initial read. A plain
-`db.transaction()` with no lock (as in Recipe B's bulk-insert sequence-number
-read, or the payout-request/payout-reject multi-table writes) is enough when
-the only risk is multiple _inserts_ racing on a derived value, not a
-stale-read guard on a row that already exists.
+`db.transaction()` with no lock (as in `app/api/orders/route.ts`'s single-order
+`POST` and `app/api/orders/bulk/route.ts`'s bulk insert, both of which read
+`MAX(code)` and insert inside the same transaction, or the
+payout-request/payout-reject multi-table writes) is enough when the only risk
+is multiple _inserts_ racing on a derived value, not a stale-read guard on a
+row that already exists.
 
 **Mocked `db` in tests**: if a spec hand-mocks `@/lib/db` (see
 `transitions.spec.ts`), the mock's `transaction` must run the callback against

@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: "Track Your Parcel",
   description:
     "Enter your ParcelFlow tracking code to get live delivery status updates — from pickup to doorstep.",
+  alternates: {
+    canonical: "/track",
+  },
   openGraph: {
     title: "Track Your Parcel – ParcelFlow",
     description: "Get real-time delivery updates for your ParcelFlow shipment.",
