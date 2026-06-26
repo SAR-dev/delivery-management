@@ -1,1 +1,0 @@
-ALTER TABLE "profile" ADD COLUMN "tableRowsPerPage" integer DEFAULT 20 NOT NULL;

@@ -1,5 +1,5 @@
 {
-  "id": "fb125aa2-0f24-4871-8117-69981cf03bf6",
+  "id": "1fa1ed74-805a-459a-972f-552936a99df2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -95,12 +95,267 @@
           "name": "account_userId_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_log": {
+      "name": "audit_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "actorId": {
+          "name": "actorId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actorName": {
+          "name": "actorName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actorRole": {
+          "name": "actorRole",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entityType": {
+          "name": "entityType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entityId": {
+          "name": "entityId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.division": {
+      "name": "division",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "division_name_unique": {
+          "name": "division_name_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_log": {
+      "name": "email_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "markedSentBy": {
+          "name": "markedSentBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "markedSentAt": {
+          "name": "markedSentAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.failed_mail": {
+      "name": "failed_mail",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "to": {
+          "name": "to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "html": {
+          "name": "html",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failedAt": {
+          "name": "failedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -146,6 +401,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -262,6 +523,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "deliveryDivisionId": {
+          "name": "deliveryDivisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryMapLink": {
+          "name": "deliveryMapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deliveryImageLinks": {
+          "name": "deliveryImageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
         "parcelWeightKg": {
           "name": "parcelWeightKg",
           "type": "double precision",
@@ -340,6 +619,12 @@
         "pickedUpAt": {
           "name": "pickedUpAt",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pickupProofRefs": {
+          "name": "pickupProofRefs",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": false
         },
@@ -446,6 +731,36 @@
           "primaryKey": false,
           "notNull": false
         },
+        "cancelledAt": {
+          "name": "cancelledAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelledBy": {
+          "name": "cancelledBy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelReason": {
+          "name": "cancelReason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchantNote": {
+          "name": "merchantNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receiverNote": {
+          "name": "receiverNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "codSettledAt": {
           "name": "codSettledAt",
           "type": "timestamp with time zone",
@@ -471,8 +786,12 @@
           "name": "order_merchantId_merchant_id_fk",
           "tableFrom": "order",
           "tableTo": "merchant",
-          "columnsFrom": ["merchantId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "merchantId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -480,8 +799,12 @@
           "name": "order_pickupLocationId_pickup_location_id_fk",
           "tableFrom": "order",
           "tableTo": "pickup_location",
-          "columnsFrom": ["pickupLocationId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "pickupLocationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -489,8 +812,12 @@
           "name": "order_pickupRiderId_rider_id_fk",
           "tableFrom": "order",
           "tableTo": "rider",
-          "columnsFrom": ["pickupRiderId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "pickupRiderId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -498,8 +825,12 @@
           "name": "order_warehouseId_warehouse_id_fk",
           "tableFrom": "order",
           "tableTo": "warehouse",
-          "columnsFrom": ["warehouseId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "warehouseId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -507,8 +838,12 @@
           "name": "order_deliveryRiderId_rider_id_fk",
           "tableFrom": "order",
           "tableTo": "rider",
-          "columnsFrom": ["deliveryRiderId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "deliveryRiderId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -516,8 +851,12 @@
           "name": "order_payoutRequestId_payout_request_id_fk",
           "tableFrom": "order",
           "tableTo": "payout_request",
-          "columnsFrom": ["payoutRequestId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "payoutRequestId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -527,7 +866,9 @@
         "order_code_unique": {
           "name": "order_code_unique",
           "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": [
+            "code"
+          ]
         }
       },
       "policies": {},
@@ -625,8 +966,12 @@
           "name": "payout_request_merchantId_merchant_id_fk",
           "tableFrom": "payout_request",
           "tableTo": "merchant",
-          "columnsFrom": ["merchantId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "merchantId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -636,7 +981,9 @@
         "payout_request_code_unique": {
           "name": "payout_request_code_unique",
           "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": [
+            "code"
+          ]
         }
       },
       "policies": {},
@@ -670,6 +1017,24 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mapLink": {
+          "name": "mapLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "imageLinks": {
+          "name": "imageLinks",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -678,8 +1043,12 @@
           "name": "pickup_location_merchantId_merchant_id_fk",
           "tableFrom": "pickup_location",
           "tableTo": "merchant",
-          "columnsFrom": ["merchantId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "merchantId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -727,6 +1096,13 @@
           "notNull": true,
           "default": false
         },
+        "tableRowsPerPage": {
+          "name": "tableRowsPerPage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
         "warehouseId": {
           "name": "warehouseId",
           "type": "text",
@@ -759,8 +1135,12 @@
           "name": "profile_userId_user_id_fk",
           "tableFrom": "profile",
           "tableTo": "user",
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -806,11 +1186,18 @@
           "notNull": true,
           "default": true
         },
+        "taskType": {
+          "name": "taskType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DELIVERY'"
+        },
         "warehouseId": {
           "name": "warehouseId",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         }
       },
       "indexes": {},
@@ -819,9 +1206,13 @@
           "name": "rider_warehouseId_warehouse_id_fk",
           "tableFrom": "rider",
           "tableTo": "warehouse",
-          "columnsFrom": ["warehouseId"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
+          "columnsFrom": [
+            "warehouseId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -945,8 +1336,12 @@
           "name": "session_userId_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": ["userId"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -956,7 +1351,9 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": ["token"]
+          "columns": [
+            "token"
+          ]
         }
       },
       "policies": {},
@@ -1044,7 +1441,9 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": ["email"]
+          "columns": [
+            "email"
+          ]
         }
       },
       "policies": {},
@@ -1129,6 +1528,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "divisionId": {
+          "name": "divisionId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "managedBy": {
           "name": "managedBy",

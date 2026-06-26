@@ -14,6 +14,50 @@ CREATE TABLE "account" (
 	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "audit_log" (
+	"id" text PRIMARY KEY NOT NULL,
+	"actorId" text,
+	"actorName" text NOT NULL,
+	"actorRole" text NOT NULL,
+	"action" text NOT NULL,
+	"entityType" text NOT NULL,
+	"entityId" text,
+	"description" text NOT NULL,
+	"metadata" jsonb,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "division" (
+	"id" text PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"isActive" boolean DEFAULT true NOT NULL,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "division_name_unique" UNIQUE("name")
+);
+--> statement-breakpoint
+CREATE TABLE "email_log" (
+	"id" text PRIMARY KEY NOT NULL,
+	"to" text NOT NULL,
+	"subject" text NOT NULL,
+	"status" text NOT NULL,
+	"attempts" integer NOT NULL,
+	"error" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"markedSentBy" text,
+	"markedSentAt" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "failed_mail" (
+	"id" text PRIMARY KEY NOT NULL,
+	"to" text NOT NULL,
+	"subject" text NOT NULL,
+	"html" text,
+	"text" text,
+	"error" text NOT NULL,
+	"attempts" integer NOT NULL,
+	"failedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "merchant" (
 	"id" text PRIMARY KEY NOT NULL,
 	"businessName" text NOT NULL,
@@ -21,6 +65,7 @@ CREATE TABLE "merchant" (
 	"email" text NOT NULL,
 	"phone" text NOT NULL,
 	"address" text NOT NULL,
+	"divisionId" text,
 	"status" text DEFAULT 'PENDING' NOT NULL,
 	"baseRate" double precision DEFAULT 0 NOT NULL,
 	"extraRatePerKg" double precision DEFAULT 0 NOT NULL,
@@ -40,6 +85,9 @@ CREATE TABLE "order" (
 	"recipientPhone" text NOT NULL,
 	"deliveryAddress" text NOT NULL,
 	"deliveryCity" text NOT NULL,
+	"deliveryDivisionId" text,
+	"deliveryMapLink" text,
+	"deliveryImageLinks" text[],
 	"parcelWeightKg" double precision NOT NULL,
 	"deliveryType" text DEFAULT 'STANDARD' NOT NULL,
 	"productCost" double precision NOT NULL,
@@ -53,6 +101,7 @@ CREATE TABLE "order" (
 	"pickupRiderId" text,
 	"assignedAt" timestamp with time zone,
 	"pickedUpAt" timestamp with time zone,
+	"pickupProofRefs" text[],
 	"warehouseId" text,
 	"receivedAtWarehouseAt" timestamp with time zone,
 	"receivedByWarehouse" text,
@@ -70,6 +119,11 @@ CREATE TABLE "order" (
 	"failedResolvedBy" text,
 	"returnedAt" timestamp with time zone,
 	"returnReason" text,
+	"cancelledAt" timestamp with time zone,
+	"cancelledBy" text,
+	"cancelReason" text,
+	"merchantNote" text,
+	"receiverNote" text,
 	"codSettledAt" timestamp with time zone,
 	"codSettledBy" text,
 	"payoutRequestId" text,
@@ -97,7 +151,10 @@ CREATE TABLE "pickup_location" (
 	"id" text PRIMARY KEY NOT NULL,
 	"merchantId" text NOT NULL,
 	"label" text NOT NULL,
-	"address" text NOT NULL
+	"address" text NOT NULL,
+	"divisionId" text,
+	"mapLink" text,
+	"imageLinks" text[]
 );
 --> statement-breakpoint
 CREATE TABLE "profile" (
@@ -106,6 +163,7 @@ CREATE TABLE "profile" (
 	"phone" text DEFAULT '' NOT NULL,
 	"isActive" boolean DEFAULT true NOT NULL,
 	"canManagePricing" boolean DEFAULT false NOT NULL,
+	"tableRowsPerPage" integer DEFAULT 20 NOT NULL,
 	"warehouseId" text,
 	"merchantId" text,
 	"riderId" text,
@@ -118,7 +176,8 @@ CREATE TABLE "rider" (
 	"phone" text NOT NULL,
 	"zone" text NOT NULL,
 	"isActive" boolean DEFAULT true NOT NULL,
-	"warehouseId" text
+	"taskType" text DEFAULT 'DELIVERY' NOT NULL,
+	"warehouseId" text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "security_config" (
@@ -171,6 +230,7 @@ CREATE TABLE "warehouse" (
 	"name" text NOT NULL,
 	"address" text NOT NULL,
 	"city" text NOT NULL,
+	"divisionId" text,
 	"managedBy" text,
 	"isActive" boolean DEFAULT true NOT NULL
 );
@@ -185,5 +245,5 @@ ALTER TABLE "order" ADD CONSTRAINT "order_payoutRequestId_payout_request_id_fk" 
 ALTER TABLE "payout_request" ADD CONSTRAINT "payout_request_merchantId_merchant_id_fk" FOREIGN KEY ("merchantId") REFERENCES "public"."merchant"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pickup_location" ADD CONSTRAINT "pickup_location_merchantId_merchant_id_fk" FOREIGN KEY ("merchantId") REFERENCES "public"."merchant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile" ADD CONSTRAINT "profile_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "rider" ADD CONSTRAINT "rider_warehouseId_warehouse_id_fk" FOREIGN KEY ("warehouseId") REFERENCES "public"."warehouse"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "rider" ADD CONSTRAINT "rider_warehouseId_warehouse_id_fk" FOREIGN KEY ("warehouseId") REFERENCES "public"."warehouse"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
