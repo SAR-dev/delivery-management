@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { order, payoutRequest } from "@/lib/db/schema"
+import { merchant, order, payoutRequest } from "@/lib/db/schema"
 import { parseBody, payoutCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, isNull, sql } from "drizzle-orm"
+import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -10,9 +10,24 @@ export async function GET(req: Request) {
   if (!me) return NextResponse.json(null, { status: 401 })
 
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  const searchClause = search
-    ? ilike(payoutRequest.code, `%${search}%`)
-    : undefined
+  let searchClause
+  if (search) {
+    const likeQ = `%${search}%`
+    const conditions = [ilike(payoutRequest.code, likeQ)]
+    // Also search by merchant business name.
+    const [{ count: merchantMatchCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(merchant)
+      .where(ilike(merchant.businessName, likeQ))
+    if (merchantMatchCount > 0) {
+      const merchantIds = db
+        .select({ id: merchant.id })
+        .from(merchant)
+        .where(ilike(merchant.businessName, likeQ))
+      conditions.push(inArray(payoutRequest.merchantId, merchantIds))
+    }
+    searchClause = or(...conditions)
+  }
 
   if (me.role === "MERCHANT" && me.merchantId) {
     const where = searchClause

@@ -2,8 +2,8 @@ import { requireSession } from "@/lib/api-auth"
 import { auth } from "@/lib/auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { profile, rider } from "@/lib/db/schema"
-import { and, eq, ilike, or } from "drizzle-orm"
+import { profile, rider, warehouse } from "@/lib/db/schema"
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { parseBody, riderCreateSchema } from "@/lib/validation"
 import { NextResponse } from "next/server"
 
@@ -12,13 +12,29 @@ export async function GET(req: Request) {
   if (!me) return NextResponse.json(null, { status: 401 })
 
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  const searchClause = search
-    ? or(
-        ilike(rider.name, `%${search}%`),
-        ilike(rider.phone, `%${search}%`),
-        ilike(rider.zone, `%${search}%`),
-      )
-    : undefined
+  let searchClause
+  if (search) {
+    const likeQ = `%${search}%`
+    const conditions = [
+      ilike(rider.name, likeQ),
+      ilike(rider.phone, likeQ),
+      ilike(rider.zone, likeQ),
+      ilike(rider.taskType, likeQ),
+    ]
+    // Also search by warehouse name.
+    const [{ count: warehouseMatchCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(warehouse)
+      .where(ilike(warehouse.name, likeQ))
+    if (warehouseMatchCount > 0) {
+      const warehouseIds = db
+        .select({ id: warehouse.id })
+        .from(warehouse)
+        .where(ilike(warehouse.name, likeQ))
+      conditions.push(inArray(rider.warehouseId, warehouseIds))
+    }
+    searchClause = or(...conditions)
+  }
 
   // Warehouse Admins only manage the riders based at their own hub. Admins and
   // Super Admins see the full roster.

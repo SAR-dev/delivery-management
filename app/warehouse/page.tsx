@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
+import { Bike, Boxes, Clock, PackageOpen, PackagePlus } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -24,7 +24,7 @@ type FilterTab = "INCOMING" | "RECEIVED"
 
 export default function WarehouseIntakePage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
+  const { currentWarehouse, warehouses } = useWarehouses()
   const { orders } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
@@ -36,6 +36,8 @@ export default function WarehouseIntakePage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   // Parcels that have been picked up and are heading to a warehouse. In this
   // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
@@ -106,8 +108,17 @@ export default function WarehouseIntakePage() {
       ),
     },
     {
-      id: "destination",
-      header: "Destination",
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (

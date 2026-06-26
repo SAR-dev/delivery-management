@@ -2,6 +2,7 @@
   "name": "delivery-management",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "rimraf .next && next dev",
     "build": "next build",

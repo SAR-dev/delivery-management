@@ -2,26 +2,17 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import {
-  Banknote,
-  Check,
-  Clock,
-  Loader2,
-  Search,
-  Wallet,
-  X,
-} from "lucide-react"
+import { Banknote, Check, Clock, Loader2, Wallet, X } from "lucide-react"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
+import { usePayoutRequestColumns } from "@/features/payouts/components/payout-table-columns"
 import { formatTk } from "@/lib/pricing"
 import type { PayoutRequest } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
@@ -47,14 +38,11 @@ export default function PayoutsPage() {
     rejectPayout,
     markPayoutPaid,
   } = usePayouts()
-  const { merchants } = useMerchants()
+  const baseColumns = usePayoutRequestColumns({ showMerchantName: true })
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [busy, setBusy] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<PayoutRequest | null>(null)
   const [rejectReason, setRejectReason] = useState("")
-
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
 
   // Search narrows what's displayed in the table; stats and tab counts
   // always reflect the full request set.
@@ -134,90 +122,7 @@ export default function PayoutsPage() {
   }
 
   const columns: DataTableColumn<PayoutRequest>[] = [
-    {
-      id: "request",
-      header: "Request",
-      sortable: true,
-      sortValue: (p) => p.code,
-      cell: (p) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {p.code}
-          </span>
-          <span className="font-medium">{merchantName(p.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "method",
-      header: "Method",
-      sortable: true,
-      sortValue: (p) => p.payoutMethod,
-      cell: (p) => (
-        <div className="flex flex-col">
-          <span>{p.payoutMethod}</span>
-          <span className="text-muted-foreground text-xs">
-            {p.payoutDetails}
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "orders",
-      header: "Orders",
-      align: "center",
-      sortable: true,
-      sortValue: (p) => p.orderIds.length,
-      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
-    },
-    {
-      id: "requested",
-      header: "Requested",
-      sortable: true,
-      sortValue: (p) => p.requestedAt,
-      cellClassName: "text-sm text-muted-foreground",
-      cell: (p) =>
-        new Date(p.requestedAt).toLocaleDateString("en-US", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }),
-    },
-    {
-      id: "amount",
-      header: "Amount",
-      align: "right",
-      sortable: true,
-      sortValue: (p) => p.amount,
-      cell: (p) => (
-        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (p) => p.status,
-      cell: (p) => (
-        <div className="flex flex-col gap-1">
-          <PayoutStatusBadge status={p.status} />
-          {p.status === "REJECTED" && p.rejectReason ? (
-            <span className="text-destructive max-w-48 text-xs">
-              {p.rejectReason}
-            </span>
-          ) : null}
-          {p.status === "PAID" && p.paidAt ? (
-            <span className="text-chart-2 text-xs">
-              Paid{" "}
-              {new Date(p.paidAt).toLocaleDateString("en-US", {
-                day: "numeric",
-                month: "short",
-              })}
-            </span>
-          ) : null}
-        </div>
-      ),
-    },
+    ...baseColumns,
     {
       id: "actions",
       header: "",
@@ -308,15 +213,11 @@ export default function PayoutsPage() {
             <TabsTrigger value="HISTORY">History ({totalHistory})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search request code"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search request code or merchant"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

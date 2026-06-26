@@ -1,35 +1,25 @@
 "use client"
 
-import Link from "next/link"
 import { useMemo, useState } from "react"
 import {
   Ban,
-  Bike,
   CheckCircle2,
   Clock,
   Package,
-  Search,
   ShieldCheck,
   Truck,
 } from "lucide-react"
 import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import { cn } from "@/lib/utils"
-import { formatTk } from "@/lib/pricing"
+import { useOrderColumns } from "@/features/orders/components/order-table-columns"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
 import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { SearchInput } from "@/components/search-input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -37,21 +27,12 @@ type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
 export default function OrdersPage() {
   const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const { pickupLocations } = usePickupLocations()
+  const baseColumns = useOrderColumns()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
-
-  const merchantName = (id: string) =>
-    merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
-  const riderName = (id?: string | null) =>
-    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
-  const pickupLocation = (id: string) =>
-    pickupLocations.find((p) => p.id === id) ?? null
 
   // Stats always reflect the full order set, not the current search.
   const counts = useMemo(
@@ -80,113 +61,7 @@ export default function OrdersPage() {
   }
 
   const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <Link
-            href={`/dashboard/orders/${o.id}`}
-            className="text-primary font-medium hover:underline"
-          >
-            {o.code}
-          </Link>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} ·{" "}
-            <AddressModal
-              order={o}
-              className="underline decoration-dotted underline-offset-4"
-            >
-              {o.deliveryCity}
-            </AddressModal>
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => merchantName(o.merchantId),
-    },
-    {
-      id: "pickup",
-      header: "Pickup location",
-      sortable: true,
-      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickupLocation(o.pickupLocationId)
-        if (!p) return <span className="text-muted-foreground text-sm">—</span>
-        return (
-          <PickupLocationModal location={p}>
-            <div className="flex flex-col">
-              <span className="underline decoration-dotted underline-offset-4">
-                {p.label}
-              </span>
-              <span className="text-muted-foreground text-xs">{p.address}</span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "weight",
-      header: "Weight",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.parcelWeightKg,
-      cell: (o) => {
-        const merchant = merchants.find((m) => m.id === o.merchantId)
-        const exceedsWeight = merchant
-          ? o.parcelWeightKg > merchant.maxWeightKg
-          : false
-        return (
-          <span
-            className={cn(
-              "tabular-nums",
-              exceedsWeight && "text-destructive font-medium",
-            )}
-          >
-            {o.parcelWeightKg} KG
-          </span>
-        )
-      },
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "rider",
-      header: "Rider",
-      sortable: true,
-      sortValue: (o) => riderName(o.pickupRiderId),
-      cell: (o) =>
-        o.pickupRiderId ? (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="text-muted-foreground size-4" />
-            {riderName(o.pickupRiderId)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-sm">—</span>
-        ),
-    },
+    ...baseColumns,
     {
       id: "actions",
       header: "",
@@ -276,15 +151,11 @@ export default function OrdersPage() {
             <TabsTrigger value="ALL">All</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search code, recipient, phone, city, warehouse, merchant"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       {/* Table */}

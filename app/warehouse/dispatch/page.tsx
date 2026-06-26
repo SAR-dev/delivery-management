@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Bike, PackageOpen, Search, Send, Truck } from "lucide-react"
+import { Bike, PackageOpen, Send, Truck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -16,8 +16,8 @@ import { AddressModal } from "@/features/orders/components/address-modal"
 import { WarehouseDispatchDialog } from "@/features/orders/dialogs/warehouse-dispatch-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -25,7 +25,7 @@ type FilterTab = "READY" | "DISPATCHED"
 
 export default function WarehouseDispatchPage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
+  const { currentWarehouse, warehouses } = useWarehouses()
   const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { riders, warehouseDeliveryRiders } = useRiders()
@@ -37,6 +37,8 @@ export default function WarehouseDispatchPage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
   // counts come from the unfiltered `allOrders`; the table-facing versions
@@ -143,8 +145,17 @@ export default function WarehouseDispatchPage() {
       ),
     },
     {
-      id: "destination",
-      header: "Destination",
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
@@ -237,15 +248,11 @@ export default function WarehouseDispatchPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search code, recipient, phone, city"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

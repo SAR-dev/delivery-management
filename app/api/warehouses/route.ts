@@ -1,9 +1,9 @@
 import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { warehouse } from "@/lib/db/schema"
+import { division, warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, or } from "drizzle-orm"
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -14,13 +14,24 @@ export async function GET(req: Request) {
   let q = db.select().from(warehouse).$dynamic()
   if (search) {
     const likeQ = `%${search}%`
-    q = q.where(
-      or(
-        ilike(warehouse.name, likeQ),
-        ilike(warehouse.address, likeQ),
-        ilike(warehouse.city, likeQ),
-      ),
-    )
+    const conditions = [
+      ilike(warehouse.name, likeQ),
+      ilike(warehouse.address, likeQ),
+      ilike(warehouse.city, likeQ),
+    ]
+    // Also search by division name.
+    const [{ count: divisionMatchCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(division)
+      .where(ilike(division.name, likeQ))
+    if (divisionMatchCount > 0) {
+      const divisionIds = db
+        .select({ id: division.id })
+        .from(division)
+        .where(ilike(division.name, likeQ))
+      conditions.push(inArray(warehouse.divisionId, divisionIds))
+    }
+    q = q.where(or(...conditions))
   }
 
   const rows = await q

@@ -1,12 +1,13 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { PackageCheck, Search } from "lucide-react"
+import { PackageCheck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
@@ -16,8 +17,8 @@ import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-di
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 const COLLECTED_STATUSES = [
@@ -36,6 +37,7 @@ export default function RiderPickupQueuePage() {
   const { orders, allOrders, query, setQuery } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
+  const { warehouses } = useWarehouses()
   const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -43,6 +45,8 @@ export default function RiderPickupQueuePage() {
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   // All orders assigned to this rider for pickup. Tab counts use the
   // unfiltered list; the table-facing versions below use the
@@ -133,9 +137,25 @@ export default function RiderPickupQueuePage() {
       header: "Parcel",
       cell: (o) => (
         <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+          {o.parcelWeightKg} KG · {o.deliveryType}
         </span>
       ),
+    },
+    {
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => <span className="text-sm">{o.deliveryCity}</span>,
     },
     {
       id: "status",
@@ -179,15 +199,11 @@ export default function RiderPickupQueuePage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search code, recipient, phone, city"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

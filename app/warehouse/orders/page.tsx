@@ -1,25 +1,23 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Ban, Boxes, CheckCircle2, Clock, Search, Truck, X } from "lucide-react"
+import { Ban, Boxes, CheckCircle2, Clock, Truck, X } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useOrderColumns } from "@/features/orders/components/order-table-columns"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import type { Order, OrderStatus } from "@/lib/types"
-import { formatTk } from "@/lib/pricing"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
 import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
 import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
 
@@ -37,6 +35,7 @@ export default function WarehouseOrdersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
   const { orders, allOrders, query, setQuery } = useOrders()
+  const baseColumns = useOrderColumns()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("ALL")
@@ -90,67 +89,7 @@ export default function WarehouseOrdersPage() {
   }
 
   const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "destination",
-      header: "Destination",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) =>
-        o.deliveryRiderId ? (
-          <span className="text-sm">{rider(o.deliveryRiderId)?.name}</span>
-        ) : (
-          <span className="text-muted-foreground text-sm">Unassigned</span>
-        ),
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
+    ...baseColumns,
     {
       id: "actions",
       header: "",
@@ -245,15 +184,11 @@ export default function WarehouseOrdersPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search code, recipient, phone, city"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

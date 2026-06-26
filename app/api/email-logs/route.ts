@@ -18,7 +18,11 @@ export async function GET(req: Request) {
   const where = search
     ? (() => {
         const likeQ = `%${search}%`
-        return or(ilike(emailLog.to, likeQ), ilike(emailLog.subject, likeQ))
+        return or(
+          ilike(emailLog.to, likeQ),
+          ilike(emailLog.subject, likeQ),
+          ilike(emailLog.error, likeQ),
+        )
       })()
     : undefined
 

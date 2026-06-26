@@ -8,6 +8,9 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Download,
+  Filter,
+  Search,
+  Settings,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -18,6 +21,7 @@ import {
 } from "@/lib/constants"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -26,6 +30,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 
 type Align = "left" | "right" | "center"
 
@@ -66,6 +79,15 @@ interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
   getRowKey: (row: T, index: number) => string
+  /** Unique table identifier. When provided, column visibility is persisted
+   * in localStorage and a settings button appears in the toolbar. */
+  id?: string
+  /** Enables client-side search within the table. When true, a search input
+   * and column picker appear in the toolbar. Requires `getSearchValue`. */
+  searchable?: boolean
+  /** Function to extract searchable text from a row for a given column.
+   * Required when `searchable` is true. Return null/undefined to skip. */
+  getSearchValue?: (row: T, columnId: string) => string | null | undefined
   /** Rows per page. Pass 0 to disable pagination. Defaults to the signed-in
    * account's saved rows-per-page preference (Account settings), or 20 if
    * unset/unauthenticated. An explicit prop always wins over the account
@@ -97,6 +119,64 @@ const justifyClass: Record<Align, string> = {
   center: "justify-center",
 }
 
+const MIN_VISIBLE_COLUMNS = 2
+
+function storageKey(id: string) {
+  return `datatable-columns:${id}`
+}
+
+function readVisibleFromStorage(id: string): string[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(storageKey(id))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed
+    }
+  } catch {
+    // corrupted value — ignore
+  }
+  return null
+}
+
+function writeVisibleToStorage(id: string, visible: string[]) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(storageKey(id), JSON.stringify(visible))
+  } catch {
+    // storage full — silently ignore
+  }
+}
+
+function searchColumnsKey(id: string) {
+  return `datatable-search-columns:${id}`
+}
+
+function readSearchColumnsFromStorage(id: string): string[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(searchColumnsKey(id))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed
+    }
+  } catch {
+    // corrupted — ignore
+  }
+  return null
+}
+
+function writeSearchColumnsToStorage(id: string, columns: string[]) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(searchColumnsKey(id), JSON.stringify(columns))
+  } catch {
+    // storage full — silently ignore
+  }
+}
+
 /** Clamps a possibly-missing/invalid rows-per-page value to [1, 250],
  * falling back to `fallback` (itself assumed already in range) when the
  * input is missing, not an integer, or out of bounds. `0` is left as-is
@@ -119,6 +199,9 @@ export function DataTable<T>({
   columns,
   data,
   getRowKey,
+  id,
+  searchable,
+  getSearchValue,
   pageSize,
   pageSizeOptions,
   initialSortId,
@@ -150,6 +233,82 @@ export function DataTable<T>({
   const [page, setPage] = React.useState(1)
   const paginated = size > 0
 
+  // ---- Column visibility ----
+  const allColumnIds = React.useMemo(() => columns.map((c) => c.id), [columns])
+
+  const [visibleColumnIds, setVisibleColumnIds] = React.useState<string[]>(
+    () => {
+      if (!id) return allColumnIds
+      const saved = readVisibleFromStorage(id)
+      if (saved) {
+        // Filter to only IDs that still exist in the current columns array.
+        const valid = saved.filter((cid) => allColumnIds.includes(cid))
+        // Ensure at least MIN_VISIBLE_COLUMNS are present.
+        if (valid.length >= MIN_VISIBLE_COLUMNS) return valid
+      }
+      return allColumnIds
+    },
+  )
+
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+
+  // Validate visible IDs against current columns — handles added/removed
+  // columns without needing a setState-in-effect.
+  const filteredColumns = React.useMemo(() => {
+    const valid = visibleColumnIds.filter((cid) => allColumnIds.includes(cid))
+    if (valid.length >= MIN_VISIBLE_COLUMNS) {
+      return columns.filter((c) => valid.includes(c.id))
+    }
+    // Fallback: columns changed drastically, show all.
+    return columns
+  }, [columns, visibleColumnIds, allColumnIds])
+
+  function toggleColumn(columnId: string) {
+    setVisibleColumnIds((prev) => {
+      const isOn = prev.includes(columnId)
+      if (isOn && prev.length <= MIN_VISIBLE_COLUMNS) return prev
+      const next = isOn
+        ? prev.filter((cid) => cid !== columnId)
+        : [...prev, columnId]
+      if (id) writeVisibleToStorage(id, next)
+      return next
+    })
+  }
+
+  // ---- Client-side search ----
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [filterOpen, setFilterOpen] = React.useState(false)
+
+  // All searchable column IDs (columns that have no explicit header or are text)
+  const allSearchableIds = React.useMemo(
+    () => columns.map((c) => c.id),
+    [columns],
+  )
+
+  const [searchColumnIds, setSearchColumnIds] = React.useState<string[]>(() => {
+    if (!id || !searchable) return allSearchableIds
+    const saved = readSearchColumnsFromStorage(id)
+    if (saved) {
+      const valid = saved.filter((cid) => allSearchableIds.includes(cid))
+      if (valid.length > 0) return valid
+    }
+    return allSearchableIds
+  })
+
+  function toggleSearchColumn(columnId: string) {
+    setSearchColumnIds((prev) => {
+      const isOn = prev.includes(columnId)
+      if (isOn && prev.length <= 1) return prev
+      const next = isOn
+        ? prev.filter((cid) => cid !== columnId)
+        : [...prev, columnId]
+      if (id) writeSearchColumnsToStorage(id, next)
+      return next
+    })
+  }
+
+  const trimmedSearch = searchQuery.trim().toLowerCase()
+
   // The account's preference loads asynchronously (it comes from the same
   // session bootstrap as `currentUser`), so it's often not ready yet on first
   // render. Adopt it once it arrives — but only when the caller didn't pass
@@ -163,7 +322,15 @@ export function DataTable<T>({
     }
   }, [effectivePageSize, pageSize])
 
-  const filtered = React.useMemo(() => data, [data])
+  const filtered = React.useMemo(() => {
+    if (!trimmedSearch || !searchable || !getSearchValue) return data
+    return data.filter((row) =>
+      searchColumnIds.some((cid) => {
+        const val = getSearchValue(row, cid)
+        return val != null && String(val).toLowerCase().includes(trimmedSearch)
+      }),
+    )
+  }, [data, trimmedSearch, searchable, getSearchValue, searchColumnIds])
 
   const sorted = React.useMemo(() => {
     if (!sortId) return filtered
@@ -239,7 +406,7 @@ export function DataTable<T>({
       <Table>
         <TableHeader>
           <TableRow>
-            {columns.map((col) => {
+            {filteredColumns.map((col) => {
               const align = col.align ?? "left"
               const isSorted = sortId === col.id
               const canSort = Boolean(col.sortable && col.sortValue)
@@ -288,7 +455,7 @@ export function DataTable<T>({
           {visible.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={columns.length}
+                colSpan={filteredColumns.length}
                 className="text-muted-foreground py-10 text-center text-sm"
               >
                 {emptyMessage}
@@ -301,7 +468,7 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={onRowClick ? "cursor-pointer" : undefined}
               >
-                {columns.map((col) => {
+                {filteredColumns.map((col) => {
                   const align = col.align ?? "left"
                   return (
                     <TableCell
@@ -318,67 +485,211 @@ export function DataTable<T>({
         </TableBody>
       </Table>
 
-      {paginated ? (
+      {paginated || id ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-muted-foreground tabular-nums">
-              {from}–{to} of {sorted.length}
-            </span>
-            {pageSizeOptions && pageSizeOptions.length > 0 ? (
-              <label className="flex items-center gap-1.5">
-                <span className="sr-only">Rows per page</span>
-                <select
-                  value={size}
+            {paginated ? (
+              <>
+                <span className="text-muted-foreground tabular-nums">
+                  {from}–{to} of {sorted.length}
+                </span>
+                {pageSizeOptions && pageSizeOptions.length > 0 ? (
+                  <label className="flex items-center gap-1.5">
+                    <span className="sr-only">Rows per page</span>
+                    <select
+                      value={size}
+                      onChange={(e) => {
+                        userChangedSize.current = true
+                        setSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
+                    >
+                      {pageSizeOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt} / page
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <span className="text-muted-foreground tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </>
+            ) : (
+              <span className="text-muted-foreground tabular-nums">
+                {sorted.length} record{sorted.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {searchable ? (
+              <div className="relative">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                <Input
+                  placeholder="Search..."
+                  value={searchQuery}
                   onChange={(e) => {
-                    userChangedSize.current = true
-                    setSize(Number(e.target.value))
+                    setSearchQuery(e.target.value)
                     setPage(1)
                   }}
-                  className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
-                >
-                  {pageSizeOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt} / page
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  className="h-8 w-48 pl-9 text-sm sm:w-64"
+                />
+              </div>
             ) : null}
-            <span className="text-muted-foreground tabular-nums">
-              Page {page} of {totalPages}
-            </span>
+            {searchable && id ? (
+              <Button
+                type="button"
+                variant={
+                  searchColumnIds.length < allSearchableIds.length
+                    ? "secondary"
+                    : "outline"
+                }
+                size="icon"
+                className="size-8"
+                onClick={() => setFilterOpen(true)}
+                aria-label="Filter search columns"
+              >
+                <Filter className="size-4" />
+              </Button>
+            ) : null}
+            {id ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-8"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Table settings"
+              >
+                <Settings className="size-4" />
+              </Button>
+            ) : null}
             <Button
+              type="button"
               variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              aria-label="Previous page"
+              onClick={handleDownloadCsv}
+              disabled={!csv}
+              className="gap-1.5"
             >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              aria-label="Next page"
-            >
-              <ChevronRight className="size-4" />
+              <Download className="size-4" />
+              Download CSV
             </Button>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDownloadCsv}
-            disabled={!csv}
-            className="gap-1.5"
-          >
-            <Download className="size-4" />
-            Download CSV
-          </Button>
         </div>
+      ) : null}
+
+      {id ? (
+        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Table columns</DialogTitle>
+              <DialogDescription>
+                Choose which columns to display. At least {MIN_VISIBLE_COLUMNS}{" "}
+                must remain visible.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1">
+              {columns.map((col) => {
+                const isVisible = visibleColumnIds.includes(col.id)
+                const isDisabled =
+                  isVisible && visibleColumnIds.length <= MIN_VISIBLE_COLUMNS
+                return (
+                  <label
+                    key={col.id}
+                    className={cn(
+                      "flex items-center justify-between gap-4 rounded-md px-2 py-1.5 text-sm",
+                      isDisabled
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-muted/50 cursor-pointer",
+                    )}
+                  >
+                    <span className="truncate">
+                      {typeof col.header === "string" ? col.header : col.id}
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={isVisible}
+                      disabled={isDisabled}
+                      onCheckedChange={() => toggleColumn(col.id)}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {searchable && id ? (
+        <Dialog open={filterOpen} onOpenChange={setFilterOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Search columns</DialogTitle>
+              <DialogDescription>
+                Choose which columns to search. At least 1 must remain selected.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1">
+              {columns.map((col) => {
+                const isSearchable = searchColumnIds.includes(col.id)
+                const isDisabled = isSearchable && searchColumnIds.length <= 1
+                return (
+                  <label
+                    key={col.id}
+                    className={cn(
+                      "flex items-center justify-between gap-4 rounded-md px-2 py-1.5 text-sm",
+                      isDisabled
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-muted/50 cursor-pointer",
+                    )}
+                  >
+                    <span className="truncate">
+                      {typeof col.header === "string" ? col.header : col.id}
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={isSearchable}
+                      disabled={isDisabled}
+                      onCheckedChange={() => toggleSearchColumn(col.id)}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setFilterOpen(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   )

@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, Navigation, Search } from "lucide-react"
+import { CheckCircle2, Navigation } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { formatTk } from "@/lib/pricing"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
@@ -16,8 +17,8 @@ import { DeliveryAttemptDialog } from "@/features/orders/dialogs/delivery-attemp
 import { OutForDeliveryDialog } from "@/features/orders/dialogs/out-for-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 const TO_DELIVER_STATUSES = ["IN_TRANSIT", "OUT_FOR_DELIVERY"]
@@ -34,11 +35,15 @@ export default function RiderDeliveryQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
   const { orders, allOrders, query, setQuery } = useOrders()
+  const { warehouses } = useWarehouses()
   const [tab, setTab] = useState<FilterTab>("TO_DELIVER")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [startTarget, setStartTarget] = useState<Order | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
+
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   // All orders dispatched to this rider for delivery. Tab counts use the
   // unfiltered list; the table-facing versions below use the
@@ -110,8 +115,17 @@ export default function RiderDeliveryQueuePage() {
       ),
     },
     {
-      id: "destination",
-      header: "Destination",
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
@@ -193,15 +207,11 @@ export default function RiderDeliveryQueuePage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search code, recipient, phone, city"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

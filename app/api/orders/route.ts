@@ -1,10 +1,16 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { division, merchant, order, securityConfig } from "@/lib/db/schema"
+import {
+  division,
+  merchant,
+  order,
+  securityConfig,
+  warehouse,
+} from "@/lib/db/schema"
 import { parsePagination } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { and, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -48,12 +54,37 @@ export async function GET(req: Request) {
   const search = new URL(req.url).searchParams.get("q")?.trim()
   if (search) {
     const likeQ = `%${search}%`
-    const searchClause = or(
+    const conditions = [
       ilike(order.code, likeQ),
       ilike(order.recipientName, likeQ),
       ilike(order.recipientPhone, likeQ),
       ilike(order.deliveryCity, likeQ),
-    )
+    ]
+    // Also search by merchant business name.
+    const [{ count: merchantMatchCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(merchant)
+      .where(ilike(merchant.businessName, likeQ))
+    if (merchantMatchCount > 0) {
+      const merchantIds = db
+        .select({ id: merchant.id })
+        .from(merchant)
+        .where(ilike(merchant.businessName, likeQ))
+      conditions.push(inArray(order.merchantId, merchantIds))
+    }
+    // Also search by warehouse name and city.
+    const [{ count: warehouseMatchCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(warehouse)
+      .where(or(ilike(warehouse.name, likeQ), ilike(warehouse.city, likeQ)))
+    if (warehouseMatchCount > 0) {
+      const warehouseIds = db
+        .select({ id: warehouse.id })
+        .from(warehouse)
+        .where(or(ilike(warehouse.name, likeQ), ilike(warehouse.city, likeQ)))
+      conditions.push(inArray(order.warehouseId, warehouseIds))
+    }
+    const searchClause = or(...conditions)
     where = where ? and(where, searchClause) : searchClause
   }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { CheckCheck, Loader2, Search } from "lucide-react"
+import { CheckCheck, Loader2 } from "lucide-react"
 import { useEmailLogs } from "@/features/email-logs/hooks/use-email-logs"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
@@ -14,8 +14,8 @@ import {
 import type { EmailLog } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { SearchInput } from "@/components/search-input"
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -141,15 +141,11 @@ export default function EmailLogsPage() {
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search recipient or subject"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search recipient, subject, or error"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Card>

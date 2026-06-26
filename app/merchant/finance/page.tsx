@@ -2,22 +2,21 @@
 
 import { useState } from "react"
 import {
-  Wallet,
   Banknote,
-  Clock,
   CheckCircle2,
+  Clock,
   Coins,
   Package,
-  AlertCircle,
+  Wallet,
 } from "lucide-react"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
+import { usePayoutRequestColumns } from "@/features/payouts/components/payout-table-columns"
 import { formatTk } from "@/lib/pricing"
-import type { Order, PayoutRequest } from "@/lib/types"
+import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { PayoutStatusBadge } from "@/features/payouts/components/payout-status-badge"
 import { PayoutRequestDialog } from "@/features/payouts/dialogs/payout-request-dialog"
 import { TrackingCell } from "@/features/orders/components/tracking-cell"
 import { AddressModal } from "@/features/orders/components/address-modal"
@@ -36,6 +35,7 @@ export default function MerchantFinancePage() {
   const { currentMerchant } = useMerchants()
   const { merchantPayableOrders } = useOrders()
   const { merchantPayoutRequests } = usePayouts()
+  const requestColumns = usePayoutRequestColumns()
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const available = merchantPayableOrders.reduce(
@@ -101,76 +101,6 @@ export default function MerchantFinancePage() {
         <span className="font-medium tabular-nums">
           {formatTk(o.productCost)}
         </span>
-      ),
-    },
-  ]
-
-  const requestColumns: DataTableColumn<PayoutRequest>[] = [
-    {
-      id: "code",
-      header: "Request",
-      sortable: true,
-      sortValue: (p) => p.code,
-      cellClassName: "font-mono text-xs",
-      cell: (p) => p.code,
-    },
-    {
-      id: "method",
-      header: "Method",
-      sortable: true,
-      sortValue: (p) => p.payoutMethod,
-      cell: (p) => (
-        <div className="leading-tight">
-          <p>{p.payoutMethod}</p>
-          <p className="text-muted-foreground text-xs">{p.payoutDetails}</p>
-        </div>
-      ),
-    },
-    {
-      id: "orders",
-      header: "Orders",
-      align: "center",
-      sortable: true,
-      sortValue: (p) => p.orderIds.length,
-      cell: (p) => <span className="tabular-nums">{p.orderIds.length}</span>,
-    },
-    {
-      id: "requested",
-      header: "Requested",
-      sortable: true,
-      sortValue: (p) => p.requestedAt,
-      cellClassName: "text-sm text-muted-foreground",
-      cell: (p) =>
-        new Date(p.requestedAt).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        }),
-    },
-    {
-      id: "amount",
-      header: "Amount",
-      align: "right",
-      sortable: true,
-      sortValue: (p) => p.amount,
-      cell: (p) => (
-        <span className="font-semibold tabular-nums">{formatTk(p.amount)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (p) => p.status,
-      cell: (p) => (
-        <div className="flex flex-col gap-1">
-          <PayoutStatusBadge status={p.status} />
-          {p.status === "REJECTED" && p.rejectReason ? (
-            <span className="text-destructive flex max-w-48 items-start gap-1 text-xs">
-              <AlertCircle className="mt-0.5 size-3 shrink-0" />
-              {p.rejectReason}
-            </span>
-          ) : null}
-        </div>
       ),
     },
   ]

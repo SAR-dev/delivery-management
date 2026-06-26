@@ -7,7 +7,6 @@ import {
   Clock,
   MoreHorizontal,
   RotateCcw,
-  Search,
   ShieldCheck,
   Store,
   Tag,
@@ -22,8 +21,8 @@ import { MerchantStatusBadge } from "@/features/merchants/components/merchant-st
 import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { SearchInput } from "@/components/search-input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   DropdownMenu,
@@ -259,15 +258,11 @@ export default function MerchantsPage() {
             <TabsTrigger value="SUSPENDED">Suspended</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search business, owner, email"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search business, owner, email"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       {/* Table */}

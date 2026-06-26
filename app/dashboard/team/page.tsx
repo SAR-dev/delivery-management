@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Search } from "lucide-react"
+
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useTeam } from "@/features/team/hooks/use-team"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -13,8 +13,8 @@ import { pageContent } from "@/config/content"
 import { RoleBadge } from "@/components/role-badge"
 import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SearchInput } from "@/components/search-input"
 import { Switch } from "@/components/ui/switch"
 import {
   Select,
@@ -246,15 +246,11 @@ export default function TeamPage() {
       </PageHeader>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search name, email, phone"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          placeholder="Search name, email, phone"
+          value={query}
+          onChange={setQuery}
+        />
       </div>
 
       <Tabs defaultValue="admins">

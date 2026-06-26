@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
 import type { Role, User, Warehouse } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
 
 const KEY = "/api/team"
 const WAREHOUSES_KEY = "/api/warehouses"
@@ -34,12 +35,7 @@ export function useTeam() {
   // subscription above is untouched — mutations keep writing to it — while
   // search results live in a separate, parallel SWR entry.
   const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
+  const debouncedQuery = useDebouncedValue(query)
 
   const trimmedQuery = debouncedQuery.trim()
   const searchKey =

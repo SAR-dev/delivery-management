@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import useSWR from "swr"
 import type { AuditLog } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
 
 const KEY = "/api/audit-logs"
 
@@ -19,11 +20,7 @@ export function useAuditLogs() {
   )
 
   const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
+  const debouncedQuery = useDebouncedValue(query)
 
   const trimmedQuery = debouncedQuery.trim()
   const searchKey =

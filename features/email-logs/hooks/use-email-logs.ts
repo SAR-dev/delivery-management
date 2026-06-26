@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import useSWR from "swr"
 import type { EmailLog } from "@/lib/types"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
 
 const KEY = "/api/email-logs"
 
@@ -21,11 +22,7 @@ export function useEmailLogs() {
   )
 
   const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
+  const debouncedQuery = useDebouncedValue(query)
 
   const trimmedQuery = debouncedQuery.trim()
   const searchKey =
