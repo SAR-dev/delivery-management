@@ -1,4 +1,4 @@
-// Edge middleware — runs before every matched request.
+// Edge proxy — runs before every matched request.
 //
 // Responsibilities:
 //   1. Rate-limit the upload endpoint to prevent flood attacks.
@@ -48,7 +48,7 @@ function uploadRateLimit(ip: string): boolean {
 
 // ---------------------------------------------------------------------------
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   if (req.method === "POST" && req.nextUrl.pathname === "/api/uploads") {
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"
