@@ -1,11 +1,22 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Package, Search, ArrowRight } from "lucide-react"
+import { ArrowRight, Package, Search } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 
-export const metadata = {
-  title: "Track your parcel – ParcelFlow",
-  description: "Enter your tracking code to get live delivery updates.",
+export const metadata: Metadata = {
+  title: "Track Your Parcel",
+  description:
+    "Enter your ParcelFlow tracking code to get live delivery status updates — from pickup to doorstep.",
+  openGraph: {
+    title: "Track Your Parcel – ParcelFlow",
+    description: "Get real-time delivery updates for your ParcelFlow shipment.",
+    url: "/track",
+  },
+  twitter: {
+    title: "Track Your Parcel – ParcelFlow",
+    description: "Get real-time delivery updates for your ParcelFlow shipment.",
+  },
 }
 
 interface Props {

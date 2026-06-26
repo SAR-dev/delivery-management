@@ -13,6 +13,8 @@ export interface SiteConfig {
   tagline: string
   /** Used as the default <meta name="description"> for the app. */
   description: string
+  /** Canonical origin, used for metadataBase and OG URLs. */
+  siteUrl: string
   /** The brand mark as an inline-SVG React component. */
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
 }
@@ -21,6 +23,7 @@ export const siteConfig: SiteConfig = {
   name: siteData.name,
   tagline: siteData.tagline,
   description: siteData.description,
+  siteUrl: siteData.siteUrl,
   icon: ParcelIcon,
 }
 

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -12,6 +13,23 @@ import {
 import { siteConfig, SiteIcon } from "@/config/site"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
+
+export const metadata: Metadata = {
+  title: "Ship Anything. Track Everything.",
+  description:
+    "ParcelFlow is a B2B courier platform built for Bangladeshi merchants. Register your business, book deliveries, and follow every parcel in real time — all from one place.",
+  openGraph: {
+    title: "Ship Anything. Track Everything. – ParcelFlow",
+    description:
+      "B2B courier platform for Bangladeshi merchants. Real-time tracking, flexible pickup, and transparent pricing.",
+    url: "/landing",
+  },
+  twitter: {
+    title: "Ship Anything. Track Everything. – ParcelFlow",
+    description:
+      "B2B courier platform for Bangladeshi merchants. Real-time tracking, flexible pickup, and transparent pricing.",
+  },
+}
 
 // ─── Merchant count at which the early-bird deal closes ───────────────────────
 const EARLY_BIRD_CAP = 100

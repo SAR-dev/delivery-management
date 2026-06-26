@@ -16,7 +16,11 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: siteConfig.name,
+  metadataBase: new URL(siteConfig.siteUrl),
+  title: {
+    default: siteConfig.name,
+    template: `%s – ${siteConfig.name}`,
+  },
   description: siteConfig.description,
   generator: "sarn.top",
   icons: {
@@ -35,6 +39,22 @@ export const metadata: Metadata = {
       },
     ],
     apple: "/apple-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    siteName: siteConfig.name,
+    title: siteConfig.name,
+    description: siteConfig.description,
+    url: siteConfig.siteUrl,
+  },
+  twitter: {
+    card: "summary",
+    title: siteConfig.name,
+    description: siteConfig.description,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 }
 

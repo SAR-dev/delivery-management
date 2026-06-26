@@ -1,6 +1,7 @@
 {
   "name": "ParcelFlow",
   "tagline": "B2B Courier Delivery Platform",
-  "description": "Platform for the ParcelFlow B2B delivery network.",
+  "description": "ParcelFlow is a B2B courier platform for Bangladeshi merchants. Book deliveries, track parcels in real time, and manage your entire logistics operation from one place.",
+  "siteUrl": "https://parcelflow.sarn.top",
   "icon": "ShieldCheck"
 }

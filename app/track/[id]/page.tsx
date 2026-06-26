@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Fragment } from "react"
 import Link from "next/link"
 import {
@@ -254,10 +255,16 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-export async function generateMetadata({ params }: Props) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
+  const code = decodeURIComponent(id).toUpperCase()
   return {
-    title: `Tracking ${decodeURIComponent(id)} – ParcelFlow`,
+    title: `Tracking ${code}`,
+    description: `Live delivery status for parcel ${code} on ParcelFlow.`,
+    robots: {
+      index: false,
+      follow: false,
+    },
   }
 }
 
