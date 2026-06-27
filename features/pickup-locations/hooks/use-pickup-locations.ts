@@ -3,6 +3,7 @@
 import { useCallback } from "react"
 import useSWR from "swr"
 import type { PickupLocation } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
 
@@ -18,16 +19,20 @@ interface PickupLocationInput {
 
 type Result = { ok: boolean; error?: string }
 
-// Pickup locations (merchant shops) resource.
 export function usePickupLocations() {
   const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<PickupLocation[]>(
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<PickupLocation>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
 
-  const pickupLocations = data ?? []
+  const pickupLocations = response?.data ?? []
 
   const createPickupLocation = useCallback(
     async (input: PickupLocationInput): Promise<Result> => {
@@ -40,7 +45,7 @@ export function usePickupLocations() {
       if (!res.ok) {
         return { ok: false, error: data?.error ?? "Could not add the shop." }
       }
-      await mutate((prev) => [...(prev ?? []), data], { revalidate: false })
+      await mutate()
       return { ok: true }
     },
     [mutate],
@@ -57,10 +62,7 @@ export function usePickupLocations() {
       if (!res.ok) {
         return { ok: false, error: data?.error ?? "Could not update the shop." }
       }
-      await mutate(
-        (prev) => (prev ?? []).map((p) => (p.id === id ? data : p)),
-        { revalidate: false },
-      )
+      await mutate()
       return { ok: true }
     },
     [mutate],
@@ -73,9 +75,7 @@ export function usePickupLocations() {
       if (!res.ok) {
         return { ok: false, error: data?.error ?? "Could not remove the shop." }
       }
-      await mutate((prev) => (prev ?? []).filter((p) => p.id !== id), {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true }
     },
     [mutate],

@@ -3,6 +3,7 @@ import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { parseBody } from "@/lib/validation"
@@ -16,9 +17,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -33,8 +34,7 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current) return notFound()
   if (current.role !== "WAREHOUSE_ADMIN") {
     return NextResponse.json(
       { error: "Only WAREHOUSE_ADMIN users can be assigned a warehouse" },

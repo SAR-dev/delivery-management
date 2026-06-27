@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react"
 import {
+  CheckCircle2,
+  Navigation,
   Package,
   PackageCheck,
-  Navigation,
-  CheckCircle2,
-  Truck,
   PartyPopper,
   Phone,
+  Truck,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -95,7 +95,7 @@ function TaskSection({
 export default function RiderTodoPage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders } = useOrders()
+  const { allOrders, isLoading } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
 
@@ -110,22 +110,64 @@ export default function RiderTodoPage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
 
+  function getPickupSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return o.code
+      case "merchant":
+        return merchantName(o.merchantId)
+      case "pickup":
+        return pickup(o.pickupLocationId)?.label ?? null
+      case "contact":
+        return merchant(o.merchantId)?.phone ?? null
+      default:
+        return null
+    }
+  }
+
+  function getStartSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return `${o.code} ${o.recipientName}`
+      case "destination":
+        return `${o.deliveryCity} ${o.deliveryAddress}`
+      case "contact":
+        return o.recipientPhone
+      default:
+        return null
+    }
+  }
+
+  function getDeliverSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return `${o.code} ${o.recipientName}`
+      case "destination":
+        return `${o.deliveryCity} ${o.deliveryAddress}`
+      case "contact":
+        return o.recipientPhone
+      case "collectible":
+        return String(o.totalCollectible)
+      default:
+        return null
+    }
+  }
+
   const myPickups = useMemo(
     () =>
       currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
         : [],
-    [orders, currentRider],
+    [allOrders, currentRider],
   )
   const myDeliveries = useMemo(
     () =>
       currentRider
-        ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
+        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
         : [],
-    [orders, currentRider],
+    [allOrders, currentRider],
   )
 
-  // Three concrete to-do groups, each needing one action from the rider.
   const toPickup = myPickups.filter((o) => o.status === "APPROVED")
   const toStart = myDeliveries.filter((o) => o.status === "IN_TRANSIT")
   const toDeliver = myDeliveries.filter((o) => o.status === "OUT_FOR_DELIVERY")
@@ -152,7 +194,6 @@ export default function RiderTodoPage() {
     setDeliveryDialogOpen(true)
   }
 
-  // Pickup needs merchant info only — no recipient details yet.
   const pickupColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -210,7 +251,6 @@ export default function RiderTodoPage() {
     },
   ]
 
-  // IN_TRANSIT: parcel already handed over — just start the route.
   const startColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -261,7 +301,6 @@ export default function RiderTodoPage() {
     },
   ]
 
-  // Delivery needs recipient info + the amount to collect.
   const deliverColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -380,11 +419,15 @@ export default function RiderTodoPage() {
             viewAllHref="/rider/pickup"
           >
             <DataTable
+              id="rider-pickups"
+              searchable
+              getSearchValue={getPickupSearchValue}
               columns={pickupColumns}
               data={toPickup}
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="No pickups waiting."
             />
           </TaskSection>
@@ -393,11 +436,15 @@ export default function RiderTodoPage() {
               doesn't need its own "View queue" link. */}
           <TaskSection title="Start delivery run" count={toStart.length}>
             <DataTable
+              id="rider-start-delivery"
+              searchable
+              getSearchValue={getStartSearchValue}
               columns={startColumns}
               data={toStart}
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="Nothing dispatched to you yet."
             />
           </TaskSection>
@@ -408,11 +455,15 @@ export default function RiderTodoPage() {
             viewAllHref="/rider/delivery"
           >
             <DataTable
+              id="rider-deliver"
+              searchable
+              getSearchValue={getDeliverSearchValue}
               columns={deliverColumns}
               data={toDeliver}
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="Nothing out for delivery right now."
             />
           </TaskSection>

@@ -1,13 +1,12 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Ban,
   CheckCircle2,
   Clock,
   MoreHorizontal,
   RotateCcw,
-  Search,
   ShieldCheck,
   Store,
   Tag,
@@ -22,7 +21,6 @@ import { MerchantStatusBadge } from "@/features/merchants/components/merchant-st
 import { PricingDialog } from "@/features/merchants/dialogs/pricing-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -33,15 +31,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { StatCardList } from "@/components/stat-card-list"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 
 type FilterTab = "ALL" | MerchantStatus
+
+const TAB_STATUSES: Record<FilterTab, string[] | undefined> = {
+  ALL: undefined,
+  PENDING: ["PENDING"],
+  ACTIVE: ["ACTIVE"],
+  SUSPENDED: ["SUSPENDED"],
+}
 
 export default function MerchantsPage() {
   const {
     merchants,
     allMerchants,
+    total,
+    page: _page,
+    setPage,
+    isLoading,
+    limit: _limit,
+    setLimit,
     query,
     setQuery,
+    setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     approveMerchant,
     suspendMerchant,
     reactivateMerchant,
@@ -49,8 +65,18 @@ export default function MerchantsPage() {
   const [tab, setTab] = useState<FilterTab>("ALL")
   const [pricingMerchant, setPricingMerchant] = useState<Merchant | null>(null)
   const [pricingOpen, setPricingOpen] = useState(false)
+  const [confirmMerchant, setConfirmMerchant] = useState<Merchant | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    "approve" | "suspend" | "reactivate" | null
+  >(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
-  // Stats always reflect the full merchant set, not the current search.
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
+
   const counts = useMemo(
     () => ({
       total: allMerchants.length,
@@ -61,22 +87,42 @@ export default function MerchantsPage() {
     [allMerchants],
   )
 
-  // Search is server-side now (see useMerchants); the tab status filter
-  // stays client-side, layered on top of the already-search-narrowed
-  // `merchants`.
-  const filtered = useMemo(
-    () => merchants.filter((m) => tab === "ALL" || m.status === tab),
-    [merchants, tab],
-  )
-
   function openPricing(merchant: Merchant) {
     setPricingMerchant(merchant)
     setPricingOpen(true)
   }
 
-  function handleApprove(merchant: Merchant) {
-    approveMerchant(merchant.id)
-    toast.success(`${merchant.businessName} approved. Assign a base rate next.`)
+  function openConfirm(
+    merchant: Merchant,
+    action: "approve" | "suspend" | "reactivate",
+  ) {
+    setConfirmMerchant(merchant)
+    setConfirmAction(action)
+    setConfirmOpen(true)
+  }
+
+  async function handleConfirm() {
+    if (!confirmMerchant || !confirmAction) return
+    setConfirmLoading(true)
+    try {
+      if (confirmAction === "approve") {
+        await approveMerchant(confirmMerchant.id)
+        toast.success(
+          `${confirmMerchant.businessName} approved. Assign a base rate next.`,
+        )
+      } else if (confirmAction === "suspend") {
+        await suspendMerchant(confirmMerchant.id)
+        toast.success(`${confirmMerchant.businessName} suspended.`)
+      } else if (confirmAction === "reactivate") {
+        await reactivateMerchant(confirmMerchant.id)
+        toast.success(`${confirmMerchant.businessName} reactivated.`)
+      }
+      setConfirmOpen(false)
+    } finally {
+      setConfirmLoading(false)
+      setConfirmMerchant(null)
+      setConfirmAction(null)
+    }
   }
 
   const columns: DataTableColumn<Merchant>[] = [
@@ -153,7 +199,7 @@ export default function MerchantsPage() {
       cell: (m) => (
         <div className="flex items-center justify-end gap-2">
           {m.status === "PENDING" ? (
-            <Button size="sm" onClick={() => handleApprove(m)}>
+            <Button size="sm" onClick={() => openConfirm(m, "approve")}>
               <ShieldCheck className="size-4" />
               Approve
             </Button>
@@ -176,19 +222,14 @@ export default function MerchantsPage() {
                 Set pricing
               </DropdownMenuItem>
               {m.status === "PENDING" ? (
-                <DropdownMenuItem onClick={() => handleApprove(m)}>
+                <DropdownMenuItem onClick={() => openConfirm(m, "approve")}>
                   <ShieldCheck className="size-4" />
                   Approve merchant
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
               {m.status === "SUSPENDED" ? (
-                <DropdownMenuItem
-                  onClick={() => {
-                    reactivateMerchant(m.id)
-                    toast.success(`${m.businessName} reactivated.`)
-                  }}
-                >
+                <DropdownMenuItem onClick={() => openConfirm(m, "reactivate")}>
                   <RotateCcw className="size-4" />
                   Reactivate
                 </DropdownMenuItem>
@@ -196,10 +237,7 @@ export default function MerchantsPage() {
                 <DropdownMenuItem
                   variant="destructive"
                   disabled={m.status === "PENDING"}
-                  onClick={() => {
-                    suspendMerchant(m.id)
-                    toast.success(`${m.businessName} suspended.`)
-                  }}
+                  onClick={() => openConfirm(m, "suspend")}
                 >
                   <Ban className="size-4" />
                   Suspend
@@ -219,7 +257,6 @@ export default function MerchantsPage() {
         description={pageContent.dashboard.merchants.description}
       />
 
-      {/* Stats */}
       <StatCardList
         columns={4}
         items={[
@@ -249,7 +286,6 @@ export default function MerchantsPage() {
         ]}
       />
 
-      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
           <TabsList>
@@ -259,26 +295,52 @@ export default function MerchantsPage() {
             <TabsTrigger value="SUSPENDED">Suspended</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search business, owner, email"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-merchants"
+            searchable
             columns={columns}
-            data={filtered}
+            data={merchants}
             getRowKey={(m) => m.id}
             initialSortId="business"
             emptyMessage="No merchants match the current filters."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
+            csvData={allMerchants}
+            csv={{
+              filename: "merchants",
+              headers: [
+                "Business",
+                "Owner",
+                "Email",
+                "Phone",
+                "Status",
+                "Base rate",
+                "Per KG",
+              ],
+              parser: (m) => [
+                m.businessName,
+                m.ownerName,
+                m.email,
+                m.phone,
+                m.status,
+                m.baseRate,
+                m.extraRatePerKg,
+              ],
+            }}
           />
         </CardContent>
       </Card>
@@ -287,6 +349,35 @@ export default function MerchantsPage() {
         merchant={pricingMerchant}
         open={pricingOpen}
         onOpenChange={setPricingOpen}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        loading={confirmLoading}
+        title={
+          confirmAction === "approve"
+            ? "Approve merchant"
+            : confirmAction === "suspend"
+              ? "Suspend merchant"
+              : "Reactivate merchant"
+        }
+        description={
+          confirmAction === "approve"
+            ? `Approve ${confirmMerchant?.businessName}? They will be able to create orders.`
+            : confirmAction === "suspend"
+              ? `Suspend ${confirmMerchant?.businessName}? They will no longer be able to create orders.`
+              : `Reactivate ${confirmMerchant?.businessName}? They will regain access.`
+        }
+        confirmLabel={
+          confirmAction === "approve"
+            ? "Approve"
+            : confirmAction === "suspend"
+              ? "Suspend"
+              : "Reactivate"
+        }
+        variant={confirmAction === "suspend" ? "destructive" : "default"}
+        onConfirm={handleConfirm}
       />
     </div>
   )

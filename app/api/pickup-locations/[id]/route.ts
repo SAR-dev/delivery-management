@@ -1,4 +1,11 @@
 import { requireSession } from "@/lib/api-auth"
+import {
+  badRequest,
+  conflict,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { division, merchant, order, pickupLocation } from "@/lib/db/schema"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
@@ -9,12 +16,10 @@ import { NextResponse } from "next/server"
 // either the row or a NextResponse error to short-circuit the handler.
 async function loadOwned(id: string) {
   const me = await requireSession()
-  if (!me) return { error: NextResponse.json(null, { status: 401 }) } as const
+  if (!me) return { error: unauthorized() } as const
 
   if (me.role !== "MERCHANT" || !me.merchantId) {
-    return {
-      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
-    } as const
+    return { error: forbidden() } as const
   }
 
   const [row] = await db
@@ -29,9 +34,7 @@ async function loadOwned(id: string) {
     .limit(1)
 
   if (!row) {
-    return {
-      error: NextResponse.json({ error: "Not found" }, { status: 404 }),
-    } as const
+    return { error: notFound() } as const
   }
 
   return { row } as const
@@ -60,12 +63,8 @@ export async function PATCH(
     .limit(1)
   const divisionId = merchantRow?.divisionId ?? null
   if (!divisionId) {
-    return NextResponse.json(
-      {
-        error:
-          "Set your business's division in your profile before updating a shop.",
-      },
-      { status: 400 },
+    return badRequest(
+      "Set your business's division in your profile before updating a shop.",
     )
   }
 
@@ -75,11 +74,8 @@ export async function PATCH(
     .where(and(eq(division.id, divisionId), eq(division.isActive, true)))
     .limit(1)
   if (!div) {
-    return NextResponse.json(
-      {
-        error: "Your business's division is no longer active. Contact support.",
-      },
-      { status: 400 },
+    return badRequest(
+      "Your business's division is no longer active. Contact support.",
     )
   }
 
@@ -119,12 +115,8 @@ export async function DELETE(
     .limit(1)
 
   if (referencing) {
-    return NextResponse.json(
-      {
-        error:
-          "This shop has orders linked to it and cannot be removed. You can edit its details instead.",
-      },
-      { status: 409 },
+    return conflict(
+      "This shop has orders linked to it and cannot be removed. You can edit its details instead.",
     )
   }
 

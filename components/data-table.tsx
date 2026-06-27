@@ -8,6 +8,9 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Download,
+  Filter,
+  Search,
+  Settings,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -18,6 +21,8 @@ import {
 } from "@/lib/constants"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -26,6 +31,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 
 type Align = "left" | "right" | "center"
 
@@ -48,11 +62,16 @@ export interface DataTableColumn<T> {
   cellClassName?: string
 }
 
-/** Enables a "Download CSV" toolbar button. `parser` is required — CSV
- * export only activates when the caller supplies a way to flatten a row. */
+/** Enables a "Download CSV" toolbar button. `parser` is required for
+ * client-side export; `downloadUrl` enables server-side streaming. */
 export interface DataTableCsv<T> {
-  /** Converts one row into an array of cell values, in column order. */
-  parser: (row: T) => (string | number | null | undefined)[]
+  /** Server-side CSV download URL. When provided, triggers a browser
+   * download instead of client-side generation. Takes precedence over
+   * `parser`. */
+  downloadUrl?: string
+  /** Converts one row into an array of cell values, in column order.
+   * Required when `downloadUrl` is not set. */
+  parser?: (row: T) => (string | number | null | undefined)[]
   /** Header row labels, in the same order as `parser`'s output. */
   headers?: string[]
   /** Filename without extension. Defaults to "export". */
@@ -66,6 +85,16 @@ interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
   getRowKey: (row: T, index: number) => string
+  /** Unique table identifier. When provided, column visibility is persisted
+   * in localStorage and a settings button appears in the toolbar. */
+  id?: string
+  /** Enables client-side search within the table. When true, a search input
+   * and column picker appear in the toolbar. Requires `getSearchValue`. */
+  searchable?: boolean
+  /** Function to extract searchable text from a row for a given column.
+   * When omitted, falls back to `sortValue` for each column. Return
+   * null/undefined to skip. */
+  getSearchValue?: (row: T, columnId: string) => string | null | undefined
   /** Rows per page. Pass 0 to disable pagination. Defaults to the signed-in
    * account's saved rows-per-page preference (Account settings), or 20 if
    * unset/unauthenticated. An explicit prop always wins over the account
@@ -81,6 +110,28 @@ interface DataTableProps<T> {
   className?: string
   /** Enables a "Download CSV" button in the toolbar. */
   csv?: DataTableCsv<T>
+  /** Full dataset for CSV export when using server-side pagination.
+   * When provided, `scope: "all"` exports from this array instead of
+   * the paginated `data`. */
+  csvData?: T[]
+  /** Enable server-side pagination mode. Data is already the current page;
+   * filtering, sorting, and pagination are handled by the parent. */
+  serverPaginated?: boolean
+  /** Total row count from the API (required when serverPaginated is true). */
+  total?: number
+  /** Show loading state. */
+  loading?: boolean
+  /** Controlled search query (server mode). */
+  query?: string
+  /** Called when the user types in the search box (server mode). */
+  onQueryChange?: (query: string) => void
+  /** Controlled sort state (server mode). */
+  serverSortId?: string
+  serverSortDir?: SortDir
+  /** Called when the user clicks a sortable column header (server mode). */
+  onSortChange?: (sortId: string, sortDir: SortDir) => void
+  /** Called when the user changes page or page size (server mode). */
+  onPageChange?: (page: number, limit: number) => void
 }
 
 type SortDir = "asc" | "desc"
@@ -95,6 +146,64 @@ const justifyClass: Record<Align, string> = {
   left: "justify-start",
   right: "justify-end",
   center: "justify-center",
+}
+
+const MIN_VISIBLE_COLUMNS = 2
+
+function storageKey(id: string) {
+  return `datatable-columns:${id}`
+}
+
+function readVisibleFromStorage(id: string): string[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(storageKey(id))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed
+    }
+  } catch {
+    // ignored
+  }
+  return null
+}
+
+function writeVisibleToStorage(id: string, visible: string[]) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(storageKey(id), JSON.stringify(visible))
+  } catch {
+    // ignored
+  }
+}
+
+function searchColumnsKey(id: string) {
+  return `datatable-search-columns:${id}`
+}
+
+function readSearchColumnsFromStorage(id: string): string[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(searchColumnsKey(id))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed
+    }
+  } catch {
+    // ignored
+  }
+  return null
+}
+
+function writeSearchColumnsToStorage(id: string, columns: string[]) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(searchColumnsKey(id), JSON.stringify(columns))
+  } catch {
+    // ignored
+  }
 }
 
 /** Clamps a possibly-missing/invalid rows-per-page value to [1, 250],
@@ -119,6 +228,9 @@ export function DataTable<T>({
   columns,
   data,
   getRowKey,
+  id,
+  searchable,
+  getSearchValue,
   pageSize,
   pageSizeOptions,
   initialSortId,
@@ -127,6 +239,16 @@ export function DataTable<T>({
   onRowClick,
   className,
   csv,
+  csvData,
+  serverPaginated = false,
+  total: serverTotal,
+  loading = false,
+  query: controlledQuery,
+  onQueryChange,
+  serverSortId,
+  serverSortDir,
+  onSortChange,
+  onPageChange,
 }: DataTableProps<T>) {
   const { currentUser } = useAuth()
 
@@ -150,6 +272,78 @@ export function DataTable<T>({
   const [page, setPage] = React.useState(1)
   const paginated = size > 0
 
+  const allColumnIds = React.useMemo(() => columns.map((c) => c.id), [columns])
+
+  const [visibleColumnIds, setVisibleColumnIds] = React.useState<string[]>(
+    () => {
+      if (!id) return allColumnIds
+      const saved = readVisibleFromStorage(id)
+      if (saved) {
+        // Filter to only IDs that still exist in the current columns array.
+        const valid = saved.filter((cid) => allColumnIds.includes(cid))
+        // Ensure at least MIN_VISIBLE_COLUMNS are present.
+        if (valid.length >= MIN_VISIBLE_COLUMNS) return valid
+      }
+      return allColumnIds
+    },
+  )
+
+  const [settingsOpen, setSettingsOpen] = React.useState(false)
+
+  const filteredColumns = React.useMemo(() => {
+    const valid = visibleColumnIds.filter((cid) => allColumnIds.includes(cid))
+    if (valid.length >= MIN_VISIBLE_COLUMNS) {
+      return columns.filter((c) => valid.includes(c.id))
+    }
+    return columns
+  }, [columns, visibleColumnIds, allColumnIds])
+
+  function toggleColumn(columnId: string) {
+    setVisibleColumnIds((prev) => {
+      const isOn = prev.includes(columnId)
+      if (isOn && prev.length <= MIN_VISIBLE_COLUMNS) return prev
+      const next = isOn
+        ? prev.filter((cid) => cid !== columnId)
+        : [...prev, columnId]
+      if (id) writeVisibleToStorage(id, next)
+      return next
+    })
+  }
+
+  // ---- Client-side search ----
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [filterOpen, setFilterOpen] = React.useState(false)
+
+  // All searchable column IDs (columns that have no explicit header or are text)
+  const allSearchableIds = React.useMemo(
+    () => columns.map((c) => c.id),
+    [columns],
+  )
+
+  const [searchColumnIds, setSearchColumnIds] = React.useState<string[]>(() => {
+    if (!id || !searchable) return allSearchableIds
+    const saved = readSearchColumnsFromStorage(id)
+    if (saved) {
+      const valid = saved.filter((cid) => allSearchableIds.includes(cid))
+      if (valid.length > 0) return valid
+    }
+    return allSearchableIds
+  })
+
+  function toggleSearchColumn(columnId: string) {
+    setSearchColumnIds((prev) => {
+      const isOn = prev.includes(columnId)
+      if (isOn && prev.length <= 1) return prev
+      const next = isOn
+        ? prev.filter((cid) => cid !== columnId)
+        : [...prev, columnId]
+      if (id) writeSearchColumnsToStorage(id, next)
+      return next
+    })
+  }
+
+  const trimmedSearch = searchQuery.trim().toLowerCase()
+
   // The account's preference loads asynchronously (it comes from the same
   // session bootstrap as `currentUser`), so it's often not ready yet on first
   // render. Adopt it once it arrives — but only when the caller didn't pass
@@ -163,9 +357,33 @@ export function DataTable<T>({
     }
   }, [effectivePageSize, pageSize])
 
-  const filtered = React.useMemo(() => data, [data])
+  const filtered = React.useMemo(() => {
+    if (serverPaginated) return data
+    if (!trimmedSearch || !searchable) return data
+    return data.filter((row) =>
+      searchColumnIds.some((cid) => {
+        let val: string | null | undefined
+        if (getSearchValue) {
+          val = getSearchValue(row, cid)
+        } else {
+          const col = columns.find((c) => c.id === cid)
+          val = col?.sortValue ? String(col.sortValue(row) ?? "") : null
+        }
+        return val != null && String(val).toLowerCase().includes(trimmedSearch)
+      }),
+    )
+  }, [
+    data,
+    trimmedSearch,
+    searchable,
+    getSearchValue,
+    searchColumnIds,
+    columns,
+    serverPaginated,
+  ])
 
   const sorted = React.useMemo(() => {
+    if (serverPaginated) return data
     if (!sortId) return filtered
     const col = columns.find((c) => c.id === sortId)
     if (!col?.sortValue) return filtered
@@ -189,10 +407,15 @@ export function DataTable<T>({
       return sortDir === "asc" ? result : -result
     })
     return copy
-  }, [filtered, columns, sortId, sortDir])
+  }, [filtered, columns, sortId, sortDir, serverPaginated, data])
 
   const totalPages = paginated
-    ? Math.max(1, Math.ceil(sorted.length / size))
+    ? Math.max(
+        1,
+        Math.ceil(
+          (serverPaginated ? (serverTotal ?? 0) : sorted.length) / size,
+        ),
+      )
     : 1
 
   // Clamp page during render — avoids the extra render cycle that
@@ -201,16 +424,31 @@ export function DataTable<T>({
   const currentPage = Math.min(Math.max(1, page), totalPages)
 
   const visible = React.useMemo(() => {
+    if (serverPaginated) return data
     if (!paginated) return sorted
     const start = (currentPage - 1) * size
     return sorted.slice(start, start + size)
-  }, [sorted, currentPage, size, paginated])
+  }, [sorted, currentPage, size, paginated, serverPaginated, data])
 
   function toggleSort(col: DataTableColumn<T>) {
     if (!col.sortable || !col.sortValue) return
+    if (serverPaginated && onSortChange) {
+      const currentId = serverSortId
+      const currentDir = serverSortDir ?? "asc"
+      if (currentId !== col.id) {
+        onSortChange(col.id, "asc")
+      } else if (currentDir === "asc") {
+        onSortChange(col.id, "desc")
+      } else {
+        onSortChange("", "asc")
+      }
+      setPage(1)
+      return
+    }
     if (sortId !== col.id) {
       setSortId(col.id)
       setSortDir("asc")
+      setPage(1)
       return
     }
     // Cycle: asc -> desc -> unsorted
@@ -220,28 +458,75 @@ export function DataTable<T>({
       setSortId(null)
       setSortDir("asc")
     }
+    setPage(1)
   }
 
   function handleDownloadCsv() {
     if (!csv) return
-    const rows = csv.scope === "page" ? visible : sorted
-    const content = toCsv(rows.map(csv.parser), csv.headers)
+    if (csv.downloadUrl) {
+      window.open(csv.downloadUrl, "_blank")
+      return
+    }
+    if (!csv.parser) return
+    const source = csvData ?? (csv.scope === "page" ? visible : sorted)
+    const content = toCsv(source.map(csv.parser), csv.headers)
     downloadCsv(csv.filename ?? "export", content)
   }
 
-  const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
+  const displayTotal = serverPaginated ? (serverTotal ?? 0) : sorted.length
+  const from = displayTotal === 0 ? 0 : (currentPage - 1) * size + 1
   const to = paginated
-    ? Math.min(currentPage * size, sorted.length)
-    : sorted.length
+    ? Math.min(currentPage * size, displayTotal)
+    : displayTotal
 
   return (
     <div className={cn("flex flex-col", className)}>
+      {searchable ? (
+        <div className="flex items-center justify-end gap-2 px-4 pb-3">
+          <div className="relative">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              placeholder="Search..."
+              value={serverPaginated ? (controlledQuery ?? "") : searchQuery}
+              onChange={(e) => {
+                if (serverPaginated) {
+                  onQueryChange?.(e.target.value)
+                } else {
+                  setSearchQuery(e.target.value)
+                  setPage(1)
+                }
+              }}
+              className="h-8 w-48 pl-9 text-sm sm:w-64"
+            />
+          </div>
+          {id ? (
+            <Button
+              type="button"
+              variant={
+                searchColumnIds.length < allSearchableIds.length
+                  ? "secondary"
+                  : "outline"
+              }
+              size="icon"
+              className="size-8"
+              onClick={() => setFilterOpen(true)}
+              aria-label="Filter search columns"
+            >
+              <Filter className="size-4" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <Table>
         <TableHeader>
           <TableRow>
-            {columns.map((col) => {
+            {filteredColumns.map((col) => {
               const align = col.align ?? "left"
-              const isSorted = sortId === col.id
+              const effectiveSortId = serverPaginated ? serverSortId : sortId
+              const effectiveSortDir = serverPaginated
+                ? (serverSortDir ?? "asc")
+                : sortDir
+              const isSorted = effectiveSortId === col.id
               const canSort = Boolean(col.sortable && col.sortValue)
               return (
                 <TableHead
@@ -249,7 +534,7 @@ export function DataTable<T>({
                   className={cn(alignClass[align], col.headClassName)}
                   aria-sort={
                     isSorted
-                      ? sortDir === "asc"
+                      ? effectiveSortDir === "asc"
                         ? "ascending"
                         : "descending"
                       : undefined
@@ -267,7 +552,7 @@ export function DataTable<T>({
                     >
                       {col.header}
                       {isSorted ? (
-                        sortDir === "asc" ? (
+                        effectiveSortDir === "asc" ? (
                           <ChevronUp className="size-3.5" />
                         ) : (
                           <ChevronDown className="size-3.5" />
@@ -285,10 +570,29 @@ export function DataTable<T>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {visible.length === 0 ? (
+          {loading ? (
+            Array.from({ length: size || 5 }).map((_, rowIndex) => (
+              <TableRow key={`skeleton-${rowIndex}`}>
+                {filteredColumns.map((col, colIndex) => (
+                  <TableCell key={col.id}>
+                    <Skeleton
+                      className={cn(
+                        "h-4",
+                        colIndex === 0
+                          ? "w-3/4"
+                          : colIndex === filteredColumns.length - 1
+                            ? "w-1/2"
+                            : "w-full",
+                      )}
+                    />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : visible.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={columns.length}
+                colSpan={filteredColumns.length}
                 className="text-muted-foreground py-10 text-center text-sm"
               >
                 {emptyMessage}
@@ -301,7 +605,7 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={onRowClick ? "cursor-pointer" : undefined}
               >
-                {columns.map((col) => {
+                {filteredColumns.map((col) => {
                   const align = col.align ?? "left"
                   return (
                     <TableCell
@@ -318,67 +622,201 @@ export function DataTable<T>({
         </TableBody>
       </Table>
 
-      {paginated ? (
+      {paginated || id ? (
         <div className="border-border flex flex-col gap-3 border-t px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-muted-foreground tabular-nums">
-              {from}–{to} of {sorted.length}
-            </span>
-            {pageSizeOptions && pageSizeOptions.length > 0 ? (
-              <label className="flex items-center gap-1.5">
-                <span className="sr-only">Rows per page</span>
-                <select
-                  value={size}
-                  onChange={(e) => {
-                    userChangedSize.current = true
-                    setSize(Number(e.target.value))
-                    setPage(1)
+            {paginated ? (
+              <>
+                <span className="text-muted-foreground tabular-nums">
+                  {from}–{to} of{" "}
+                  {serverPaginated ? (serverTotal ?? 0) : sorted.length}
+                </span>
+                {pageSizeOptions && pageSizeOptions.length > 0 ? (
+                  <label className="flex items-center gap-1.5">
+                    <span className="sr-only">Rows per page</span>
+                    <select
+                      value={size}
+                      onChange={(e) => {
+                        const newSize = Number(e.target.value)
+                        if (serverPaginated && onPageChange) {
+                          onPageChange(1, newSize)
+                        } else {
+                          userChangedSize.current = true
+                          setSize(newSize)
+                          setPage(1)
+                        }
+                      }}
+                      className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
+                    >
+                      {pageSizeOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt} / page
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <span className="text-muted-foreground tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => {
+                    const newPage = Math.max(1, page - 1)
+                    if (serverPaginated && onPageChange) {
+                      onPageChange(newPage, size)
+                    } else {
+                      setPage(newPage)
+                    }
                   }}
-                  className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
+                  disabled={currentPage <= 1}
+                  aria-label="Previous page"
                 >
-                  {pageSizeOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt} / page
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => {
+                    const newPage = Math.min(totalPages, page + 1)
+                    if (serverPaginated && onPageChange) {
+                      onPageChange(newPage, size)
+                    } else {
+                      setPage(newPage)
+                    }
+                  }}
+                  disabled={currentPage >= totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </>
+            ) : (
+              <span className="text-muted-foreground tabular-nums">
+                {displayTotal} record{displayTotal === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {id ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-8"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Table settings"
+              >
+                <Settings className="size-4" />
+              </Button>
             ) : null}
-            <span className="text-muted-foreground tabular-nums">
-              Page {page} of {totalPages}
-            </span>
             <Button
+              type="button"
               variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              aria-label="Previous page"
+              onClick={handleDownloadCsv}
+              disabled={!csv || (!csv.downloadUrl && !csv.parser)}
+              className="gap-1.5"
             >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              aria-label="Next page"
-            >
-              <ChevronRight className="size-4" />
+              <Download className="size-4" />
+              Download CSV
             </Button>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDownloadCsv}
-            disabled={!csv}
-            className="gap-1.5"
-          >
-            <Download className="size-4" />
-            Download CSV
-          </Button>
         </div>
+      ) : null}
+
+      {id ? (
+        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Table columns</DialogTitle>
+              <DialogDescription>
+                Choose which columns to display. At least {MIN_VISIBLE_COLUMNS}{" "}
+                must remain visible.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1">
+              {columns.map((col) => {
+                const isVisible = visibleColumnIds.includes(col.id)
+                const isDisabled =
+                  isVisible && visibleColumnIds.length <= MIN_VISIBLE_COLUMNS
+                return (
+                  <label
+                    key={col.id}
+                    className={cn(
+                      "flex items-center justify-between gap-4 rounded-md px-2 py-1.5 text-sm",
+                      isDisabled
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-muted/50 cursor-pointer",
+                    )}
+                  >
+                    <span className="truncate">
+                      {typeof col.header === "string" ? col.header : col.id}
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={isVisible}
+                      disabled={isDisabled}
+                      onCheckedChange={() => toggleColumn(col.id)}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {searchable && id ? (
+        <Dialog open={filterOpen} onOpenChange={setFilterOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Search columns</DialogTitle>
+              <DialogDescription>
+                Choose which columns to search. At least 1 must remain selected.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1">
+              {columns.map((col) => {
+                const isSearchable = searchColumnIds.includes(col.id)
+                const isDisabled = isSearchable && searchColumnIds.length <= 1
+                return (
+                  <label
+                    key={col.id}
+                    className={cn(
+                      "flex items-center justify-between gap-4 rounded-md px-2 py-1.5 text-sm",
+                      isDisabled
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-muted/50 cursor-pointer",
+                    )}
+                  >
+                    <span className="truncate">
+                      {typeof col.header === "string" ? col.header : col.id}
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={isSearchable}
+                      disabled={isDisabled}
+                      onCheckedChange={() => toggleSearchColumn(col.id)}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setFilterOpen(false)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   )

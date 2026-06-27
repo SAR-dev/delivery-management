@@ -1,44 +1,131 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
-import { order, payoutRequest } from "@/lib/db/schema"
+import { merchant, order, payoutRequest } from "@/lib/db/schema"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { parseBody, payoutCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, isNull, sql } from "drizzle-orm"
+import { forbidden, unauthorized } from "@/lib/api-response"
+import {
+  paginateResponse,
+  parsePagination,
+  parseSort,
+  parseStatusFilter,
+} from "@/lib/pagination"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
+  const { limit, offset } = parsePagination(req)
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  const searchClause = search
-    ? ilike(payoutRequest.code, `%${search}%`)
-    : undefined
-
-  if (me.role === "MERCHANT" && me.merchantId) {
-    const where = searchClause
-      ? and(eq(payoutRequest.merchantId, me.merchantId), searchClause)
-      : eq(payoutRequest.merchantId, me.merchantId)
-    const rows = await db.select().from(payoutRequest).where(where)
-    return NextResponse.json(rows)
+  let searchClause
+  if (search) {
+    const likeQ = `%${search}%`
+    const conditions = [ilike(payoutRequest.code, likeQ)]
+    // Also search by merchant business name.
+    const merchantIds = db
+      .select({ id: merchant.id })
+      .from(merchant)
+      .where(ilike(merchant.businessName, likeQ))
+    conditions.push(inArray(payoutRequest.merchantId, merchantIds))
+    searchClause = or(...conditions)
   }
 
-  if (me.role !== "SUPER_ADMIN") return NextResponse.json([])
+  const statuses = parseStatusFilter(req)
 
-  const rows = searchClause
-    ? await db.select().from(payoutRequest).where(searchClause)
-    : await db.select().from(payoutRequest)
-  return NextResponse.json(rows)
+  if (me.role === "MERCHANT" && me.merchantId) {
+    let where = eq(payoutRequest.merchantId, me.merchantId)
+    if (searchClause) where = and(where, searchClause)!
+    if (statuses.length > 0)
+      where = and(where, inArray(payoutRequest.status, statuses as any))!
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(payoutRequest)
+      .where(where)
+
+    let q = db.select().from(payoutRequest).where(where).$dynamic()
+
+    const sortColumnMap = {
+      request: payoutRequest.code,
+      method: payoutRequest.payoutMethod,
+      requested: payoutRequest.requestedAt,
+      amount: payoutRequest.amount,
+      status: payoutRequest.status,
+    }
+    const sort = parseSort(req, sortColumnMap)
+    if (sort) {
+      q =
+        sort.direction === "asc"
+          ? q.orderBy(asc(sort.column))
+          : q.orderBy(desc(sort.column))
+    }
+
+    if (limit !== undefined) q = q.limit(limit)
+    if (offset !== undefined) q = q.offset(offset)
+
+    const rows = await q
+    return NextResponse.json(paginateResponse(rows, count, limit, offset))
+  }
+
+  if (me.role !== "SUPER_ADMIN")
+    return NextResponse.json(paginateResponse([], 0))
+
+  let where = searchClause
+  if (statuses.length > 0) {
+    const statusClause = inArray(payoutRequest.status, statuses as any)
+    where = where ? and(where, statusClause) : statusClause
+  }
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(payoutRequest)
+    .where(where)
+
+  let q = db.select().from(payoutRequest).$dynamic()
+  if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    request: payoutRequest.code,
+    method: payoutRequest.payoutMethod,
+    requested: payoutRequest.requestedAt,
+    amount: payoutRequest.amount,
+    status: payoutRequest.status,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "MERCHANT" || !me.merchantId) {
-    return NextResponse.json(
-      { error: "Only merchants can request payouts" },
-      { status: 403 },
-    )
+    return forbidden("Only merchants can request payouts")
   }
+
+  const limited = rateLimit(`payouts:${getClientIp(req)}`, 10, 60)
+  if (limited) return limited
 
   const parsed = await parseBody(req, payoutCreateSchema)
   if (parsed.error) return parsed.error
@@ -63,7 +150,10 @@ export async function POST(req: Request) {
     )
   }
 
-  const amount = payableOrders.reduce((sum, o) => sum + o.productCost, 0)
+  const amount = payableOrders.reduce(
+    (sum: number, o: { productCost: number }) => sum + o.productCost,
+    0,
+  )
 
   const [{ maxCode }] = await db
     .select({ maxCode: sql<string>`max(code)` })
@@ -81,7 +171,7 @@ export async function POST(req: Request) {
       .values({
         code,
         merchantId: me.merchantId!,
-        orderIds: payableOrders.map((o) => o.id),
+        orderIds: payableOrders.map((o: { id: string }) => o.id),
         amount,
         status: "PENDING",
         payoutMethod: payoutMethod.trim(),

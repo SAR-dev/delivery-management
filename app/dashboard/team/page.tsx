@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Search } from "lucide-react"
+import { Loader2 } from "lucide-react"
+
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useTeam } from "@/features/team/hooks/use-team"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -13,7 +14,6 @@ import { pageContent } from "@/config/content"
 import { RoleBadge } from "@/components/role-badge"
 import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dialog"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -32,20 +32,27 @@ const UNASSIGNED = "__unassigned__"
 function StatusToggle({
   user,
   onToggle,
+  loading,
 }: {
   user: User
   onToggle: () => void
+  loading?: boolean
 }) {
   return (
     <div className="flex items-center gap-2">
       <Switch
         checked={user.isActive}
+        disabled={loading}
         onCheckedChange={onToggle}
         aria-label={`Toggle active state for ${user.name}`}
       />
-      <span className="text-muted-foreground text-xs">
-        {user.isActive ? "Active" : "Disabled"}
-      </span>
+      {loading ? (
+        <Loader2 className="text-muted-foreground size-3 animate-spin" />
+      ) : (
+        <span className="text-muted-foreground text-xs">
+          {user.isActive ? "Active" : "Disabled"}
+        </span>
+      )}
     </div>
   )
 }
@@ -94,16 +101,26 @@ export default function TeamPage() {
   const {
     team,
     allTeam,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
     query,
     setQuery,
+    role: _role,
+    setRole,
+    sortId,
+    sortDir,
+    onSortChange,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
+    isLoading,
   } = useTeam()
   const { warehouses } = useWarehouses()
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
-  // Managing Admin accounts is a Super Admin-only capability. Admins who reach
-  // this route directly are redirected back to their console overview.
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
     if (currentUser && !isSuperAdmin) {
@@ -111,31 +128,44 @@ export default function TeamPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
+  useEffect(() => {
+    setRole("ADMIN")
+  }, [setRole])
+
+  const TAB_ROLES: Record<string, string | undefined> = {
+    admins: "ADMIN",
+    warehouse: "WAREHOUSE_ADMIN",
+  }
+
+  function handleTabChange(value: string) {
+    setRole(TAB_ROLES[value])
+    setPage(1)
+  }
+
   function warehouseName(id?: string | null) {
     if (!id) return "Unassigned"
     return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
   }
 
-  // Table contents are search-narrowed; tab counts always reflect the full
-  // roster so they don't shrink to zero just because a search has no matches
-  // in that role.
-  const admins = team.filter((u) => u.role === "ADMIN")
-  const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
   const totalAdmins = allTeam.filter((u) => u.role === "ADMIN").length
   const totalWarehouseAdmins = allTeam.filter(
     (u) => u.role === "WAREHOUSE_ADMIN",
   ).length
 
-  function handleToggleActive(user: User) {
-    toggleAccountActive(user.id)
+  async function handleToggleActive(user: User) {
+    setTogglingId(user.id)
+    await toggleAccountActive(user.id)
     toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
+    setTogglingId(null)
   }
 
-  function handleTogglePricing(user: User) {
-    togglePricingPermission(user.id)
+  async function handleTogglePricing(user: User) {
+    setTogglingId(user.id)
+    await togglePricingPermission(user.id)
     toast.success(
       `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
     )
+    setTogglingId(null)
   }
 
   async function handleChangeWarehouse(user: User, warehouseId: string | null) {
@@ -186,7 +216,11 @@ export default function TeamPage() {
     sortValue: (u) => (u.isActive ? 1 : 0),
     cell: (u) => (
       <div className="flex justify-end">
-        <StatusToggle user={u} onToggle={() => handleToggleActive(u)} />
+        <StatusToggle
+          user={u}
+          onToggle={() => handleToggleActive(u)}
+          loading={togglingId === u.id}
+        />
       </div>
     ),
   }
@@ -203,12 +237,17 @@ export default function TeamPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={Boolean(u.canManagePricing)}
+            disabled={togglingId === u.id}
             onCheckedChange={() => handleTogglePricing(u)}
             aria-label={`Toggle pricing permission for ${u.name}`}
           />
-          <span className="text-muted-foreground text-xs">
-            {u.canManagePricing ? "Granted" : "Denied"}
-          </span>
+          {togglingId === u.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <span className="text-muted-foreground text-xs">
+              {u.canManagePricing ? "Granted" : "Denied"}
+            </span>
+          )}
         </div>
       ),
     },
@@ -221,8 +260,6 @@ export default function TeamPage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (u) => warehouseName(u.warehouseId),
       cell: (u) => (
         <WarehouseSelect
           user={u}
@@ -245,19 +282,7 @@ export default function TeamPage() {
         <CreateAccountDialog />
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search name, email, phone"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
-      <Tabs defaultValue="admins">
+      <Tabs defaultValue="admins" onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="admins">Admins ({totalAdmins})</TabsTrigger>
           <TabsTrigger value="warehouse">
@@ -265,31 +290,57 @@ export default function TeamPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Admins */}
         <TabsContent value="admins" className="mt-4">
           <Card>
             <CardContent className="p-0">
               <DataTable
+                id="dashboard-team-admins"
+                searchable
                 columns={adminColumns}
-                data={admins}
+                data={team}
                 getRowKey={(u) => u.id}
                 initialSortId="name"
                 emptyMessage="No Admin accounts yet. Create one to get started."
+                loading={isLoading}
+                serverPaginated
+                total={total}
+                query={query}
+                onQueryChange={setQuery}
+                onPageChange={(p, l) => {
+                  setPage(p)
+                  setLimit(l)
+                }}
+                serverSortId={sortId}
+                serverSortDir={sortDir}
+                onSortChange={onSortChange}
               />
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Warehouse Admins */}
         <TabsContent value="warehouse" className="mt-4">
           <Card>
             <CardContent className="p-0">
               <DataTable
+                id="dashboard-team-warehouse-admins"
+                searchable
                 columns={warehouseColumns}
-                data={warehouseAdmins}
+                data={team}
                 getRowKey={(u) => u.id}
                 initialSortId="name"
                 emptyMessage="No Warehouse Admin accounts yet."
+                loading={isLoading}
+                serverPaginated
+                total={total}
+                query={query}
+                onQueryChange={setQuery}
+                onPageChange={(p, l) => {
+                  setPage(p)
+                  setLimit(l)
+                }}
+                serverSortId={sortId}
+                serverSortDir={sortDir}
+                onSortChange={onSortChange}
               />
             </CardContent>
           </Card>

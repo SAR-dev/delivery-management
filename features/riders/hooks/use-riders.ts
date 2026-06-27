@@ -1,11 +1,14 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import useSWR from "swr"
 import type { Rider, RiderTaskType } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+import { DEFAULT_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 const KEY = "/api/riders"
 
@@ -27,63 +30,80 @@ interface RiderUpdateInput {
   isActive?: boolean
 }
 
-// Riders that can run deliveries (DELIVERY or BOTH).
 const canDeliver = (r: Rider) =>
   r.taskType === "DELIVERY" || r.taskType === "BOTH"
 
-// Riders resource. Exposes the full roster, the current rider's own profile,
-// and the delivery riders based at the current Warehouse Admin's hub (derived
-// from the warehouses cache, shared via SWR — no extra fetch).
+function buildUrl(
+  base: string,
+  params: {
+    limit?: number
+    offset?: number
+    q?: string
+    sortId?: string
+    sortDir?: string
+  },
+) {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set("limit", String(params.limit))
+  if (params.offset != null) sp.set("offset", String(params.offset))
+  if (params.q) sp.set("q", params.q)
+  if (params.sortId) sp.set("sort", params.sortId)
+  if (params.sortDir) sp.set("sortDir", params.sortDir)
+  const qs = sp.toString()
+  return qs ? `${base}?${qs}` : base
+}
+
 export function useRiders() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
-  const { data, error, isLoading, mutate } = useSWR<Rider[]>(
+
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [sortId, setSortId] = useState<string>("")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const debouncedQuery = useDebouncedValue(query)
+
+  const trimmedQuery = debouncedQuery.trim()
+  const offset = (page - 1) * limit
+  const url = buildUrl(KEY, {
+    limit,
+    offset,
+    q: trimmedQuery || undefined,
+    sortId: sortId || undefined,
+    sortDir: sortId ? sortDir : undefined,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Rider>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const riders = response?.data ?? []
+  const total = response?.total ?? 0
+
+  const { data: allResponse } = useSWR<PaginatedResponse<Rider>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
+  const allRiders = allResponse?.data ?? []
 
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Rider[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const riders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allRiders = data ?? []
-
-  // The rider profile for the logged-in rider user (if any) — always derived
-  // from the unfiltered list so it's never lost mid-search.
   const currentRider =
     currentUser?.role === "RIDER" && currentUser.riderId
       ? (allRiders.find((r) => r.id === currentUser.riderId) ?? null)
       : null
 
-  // Every rider based at the logged-in admin's warehouse (any status / task
-  // type) — used by the warehouse rider-management screen. Derived from the
-  // unfiltered list; search narrows the page's own `riders`, not this.
   const warehouseRiders = currentWarehouse
     ? allRiders.filter((r) => r.warehouseId === currentWarehouse.id)
     : []
 
-  // Active, delivery-capable riders at the admin's warehouse — the pool the
-  // dispatch desk can assign parcels to.
   const warehouseDeliveryRiders = currentWarehouse
     ? allRiders.filter(
         (r) =>
@@ -99,8 +119,7 @@ export function useRiders() {
         body: JSON.stringify(input),
       })
       if (!res.ok) return
-      const newRider = await res.json()
-      await mutate((prev) => [newRider, ...(prev ?? [])], { revalidate: false })
+      await mutate()
     },
     [mutate],
   )
@@ -113,11 +132,7 @@ export function useRiders() {
         body: JSON.stringify(input),
       })
       if (!res.ok) return
-      const updated = await res.json()
-      await mutate(
-        (prev) => (prev ?? []).map((r) => (r.id === id ? updated : r)),
-        { revalidate: false },
-      )
+      await mutate()
     },
     [mutate],
   )
@@ -126,27 +141,37 @@ export function useRiders() {
     async (id: string) => {
       const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
       if (!res.ok) return
-      const updated = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((r) =>
-            r.id === id ? { ...r, isActive: updated.isActive } : r,
-          ),
-        { revalidate: false },
-      )
+      await mutate()
     },
     [mutate],
+  )
+
+  const onSortChange = useCallback(
+    (newSortId: string, newSortDir: "asc" | "desc") => {
+      setSortId(newSortId)
+      setSortDir(newSortDir)
+      setPage(1)
+    },
+    [],
   )
 
   return {
     riders,
     allRiders,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     currentRider,
     warehouseRiders,
     warehouseDeliveryRiders,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    isLoading,
     error,
     mutate,
     createRider,

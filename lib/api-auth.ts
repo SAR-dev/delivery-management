@@ -3,8 +3,9 @@ import { db } from "@/lib/db"
 import { profile } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { headers } from "next/headers"
+import { cache } from "react"
 
-export async function requireSession() {
+export const requireSession = cache(async () => {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) return null
 
@@ -17,4 +18,4 @@ export async function requireSession() {
   if (!row) return null
 
   return { ...row, userId: session.user.id, name: session.user.name }
-}
+})

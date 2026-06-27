@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react"
+import {
+  Loader2,
+  MapPin,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -19,6 +26,13 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 interface DivisionRow extends Division {
@@ -30,11 +44,21 @@ export default function DivisionsPage() {
   const { currentUser } = useAuth()
   const {
     divisions,
+    allDivisions: _allDivisions,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     createDivision,
     updateDivision,
     deleteDivision,
+    isLoading,
   } = useDivisions()
   const { allWarehouses } = useWarehouses()
   const { allMerchants } = useMerchants()
@@ -48,12 +72,12 @@ export default function DivisionsPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
-  // Dialog state.
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Division | null>(null)
   const [deleting, setDeleting] = useState<DivisionRow | null>(null)
   const [name, setName] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Count how many records reference each division so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
@@ -108,16 +132,19 @@ export default function DivisionsPage() {
   }
 
   async function handleToggleActive(division: Division) {
+    setTogglingId(division.id)
     const res = await updateDivision(division.id, {
       isActive: !division.isActive,
     })
     if (!res.ok) {
       toast.error(res.error ?? "Could not update the division.")
+      setTogglingId(null)
       return
     }
     toast.success(
       `${division.name} ${division.isActive ? "disabled" : "enabled"}.`,
     )
+    setTogglingId(null)
   }
 
   async function handleDelete() {
@@ -168,40 +195,52 @@ export default function DivisionsPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={d.isActive}
+            disabled={togglingId === d.id}
             onCheckedChange={() => handleToggleActive(d)}
             aria-label={`Toggle active state for ${d.name}`}
           />
-          <Badge variant={d.isActive ? "default" : "secondary"}>
-            {d.isActive ? "Active" : "Disabled"}
-          </Badge>
+          {togglingId === d.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <Badge variant={d.isActive ? "default" : "secondary"}>
+              {d.isActive ? "Active" : "Disabled"}
+            </Badge>
+          )}
         </div>
       ),
     },
     {
       id: "actions",
-      header: "Actions",
+      header: "",
       align: "right",
+      headClassName: "w-12",
       cell: (d) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => openEdit(d)}
-            aria-label={`Rename ${d.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleting(d)}
-            aria-label={`Delete ${d.name}`}
-            disabled={d.usageCount > 0}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Actions</span>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => openEdit(d)}>
+                <Pencil className="size-4" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={d.usageCount > 0}
+                onClick={() => setDeleting(d)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -221,26 +260,28 @@ export default function DivisionsPage() {
         </Button>
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search division name"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-divisions"
+            searchable
             columns={columns}
             data={rows}
             getRowKey={(d) => d.id}
             initialSortId="name"
             emptyMessage="No divisions yet. Add one to get started."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

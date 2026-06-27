@@ -1,18 +1,18 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import useSWR from "swr"
 import type { CreateOrderInput, Order } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { ApiError, jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+import { DEFAULT_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 const KEY = "/api/orders"
 
-// Maps each order-lifecycle PATCH path to the status the order is expected to
-// land in, so the UI can update optimistically before the server responds.
-// Paths that don't change status (e.g. "settle-cod") are handled separately.
 const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
   approve: "APPROVED",
   "picked-up": "PICKED_UP",
@@ -28,6 +28,28 @@ const OPTIMISTIC_STATUS: Record<string, Order["status"]> = {
 
 type Result = { ok: boolean; error?: string }
 
+function buildUrl(
+  base: string,
+  params: {
+    limit?: number
+    offset?: number
+    q?: string
+    statuses?: string[]
+    sortId?: string
+    sortDir?: string
+  },
+) {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set("limit", String(params.limit))
+  if (params.offset != null) sp.set("offset", String(params.offset))
+  if (params.q) sp.set("q", params.q)
+  if (params.statuses?.length) sp.set("status", params.statuses.join(","))
+  if (params.sortId) sp.set("sort", params.sortId)
+  if (params.sortDir) sp.set("sortDir", params.sortDir)
+  const qs = sp.toString()
+  return qs ? `${base}?${qs}` : base
+}
+
 // Orders resource: the order list, merchant order creation, every rider/
 // warehouse status transition (applied optimistically with rollback), and the
 // warehouse/merchant-scoped views derived from the shared warehouses/merchants
@@ -36,41 +58,47 @@ export function useOrders() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
   const { currentMerchant } = useMerchants()
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [statuses, setStatuses] = useState<string[] | undefined>(undefined)
+  const [sortId, setSortId] = useState<string>("")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const debouncedQuery = useDebouncedValue(query)
+
+  const trimmedQuery = debouncedQuery.trim()
+  const offset = (page - 1) * limit
+  const url = buildUrl(KEY, {
+    limit,
+    offset,
+    q: trimmedQuery || undefined,
+    statuses,
+    sortId: sortId || undefined,
+    sortDir: sortId ? sortDir : undefined,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Order>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const orders = response?.data ?? []
+  const total = response?.total ?? 0
+
+  const { data: allResponse } = useSWR<PaginatedResponse<Order>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
+  const allOrders = allResponse?.data ?? []
 
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is left untouched (mutations and useDataError both
-  // dedupe against it) — search results are a separate, parallel SWR entry
-  // that only activates once a debounced, non-empty query exists.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allOrders = data ?? []
-
-  // FAILED_ATTEMPT parcels at the admin's warehouse awaiting a decision.
-  // Derived from the unfiltered list — these are fixed operational queues,
-  // not affected by what's currently being searched.
   const warehouseFailedOrders = currentWarehouse
     ? allOrders.filter(
         (o) =>
@@ -79,7 +107,6 @@ export function useOrders() {
       )
     : []
 
-  // DELIVERED parcels at the admin's warehouse whose COD is not yet settled.
   const warehouseUnsettledOrders = currentWarehouse
     ? allOrders.filter(
         (o) =>
@@ -89,7 +116,6 @@ export function useOrders() {
       )
     : []
 
-  // Delivered, COD-settled orders not locked to an active payout request.
   const merchantPayableOrders = currentMerchant
     ? allOrders.filter(
         (o) =>
@@ -100,10 +126,6 @@ export function useOrders() {
       )
     : []
 
-  // Shared helper for every order-lifecycle PATCH. We optimistically apply the
-  // expected status immediately so the UI feels instant, then reconcile with
-  // the authoritative server row on success — or roll back on failure (handled
-  // by SWR's rollbackOnError). The server still validates every transition.
   const patchOrder = useCallback(
     async (
       orderId: string,
@@ -112,27 +134,32 @@ export function useOrders() {
     ): Promise<Result> => {
       const optimisticStatus = OPTIMISTIC_STATUS[path]
 
-      const applyOptimistic = (list: Order[] = []) =>
-        list.map((o) => {
-          if (o.id !== orderId) return o
-          return {
-            ...o,
-            ...(optimisticStatus ? { status: optimisticStatus } : {}),
-            ...(path === "settle-cod"
-              ? { codSettledAt: new Date().toISOString() }
-              : {}),
-            ...(path === "approve" && body?.riderId
-              ? { pickupRiderId: body.riderId as string }
-              : {}),
-            ...(path === "dispatch" && body?.riderId
-              ? { deliveryRiderId: body.riderId as string }
-              : {}),
-          }
-        })
+      const applyOptimistic = (resp: PaginatedResponse<Order> | undefined) => {
+        const list = resp?.data ?? []
+        return {
+          ...resp,
+          data: list.map((o) => {
+            if (o.id !== orderId) return o
+            return {
+              ...o,
+              ...(optimisticStatus ? { status: optimisticStatus } : {}),
+              ...(path === "settle-cod"
+                ? { codSettledAt: new Date().toISOString() }
+                : {}),
+              ...(path === "approve" && body?.riderId
+                ? { pickupRiderId: body.riderId as string }
+                : {}),
+              ...(path === "dispatch" && body?.riderId
+                ? { deliveryRiderId: body.riderId as string }
+                : {}),
+            }
+          }),
+        } as PaginatedResponse<Order>
+      }
 
       try {
         await mutate(
-          async (current?: Order[]) => {
+          async (current?: PaginatedResponse<Order>) => {
             const res = await fetch(`/api/orders/${orderId}/${path}`, {
               method: "PATCH",
               ...(body
@@ -146,7 +173,12 @@ export function useOrders() {
             if (!res.ok) {
               throw new ApiError(resData?.error ?? "Action failed.")
             }
-            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
+            return {
+              ...current,
+              data: (current?.data ?? []).map((o) =>
+                o.id === orderId ? resData : o,
+              ),
+            } as PaginatedResponse<Order>
           },
           {
             optimisticData: applyOptimistic,
@@ -177,7 +209,7 @@ export function useOrders() {
       if (!res.ok) {
         return { ok: false, error: resData.error ?? "Failed to create order." }
       }
-      await mutate((prev) => [resData, ...(prev ?? [])], { revalidate: false })
+      await mutate()
       return { ok: true, order: resData }
     },
     [mutate],
@@ -196,9 +228,7 @@ export function useOrders() {
       if (!res.ok) {
         return { ok: false, error: resData.error ?? "Failed to create orders." }
       }
-      await mutate((prev) => [...resData, ...(prev ?? [])], {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true, orders: resData }
     },
     [mutate],
@@ -262,7 +292,7 @@ export function useOrders() {
     async (orderId: string, receiverNote: string): Promise<Result> => {
       try {
         await mutate(
-          async (current?: Order[]) => {
+          async (current?: PaginatedResponse<Order>) => {
             const res = await fetch(`/api/orders/${orderId}/receiver-note`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -272,11 +302,21 @@ export function useOrders() {
             if (!res.ok) {
               throw new ApiError(resData?.error ?? "Failed to save note.")
             }
-            return (current ?? []).map((o) => (o.id === orderId ? resData : o))
+            return {
+              ...current,
+              data: (current?.data ?? []).map((o) =>
+                o.id === orderId ? resData : o,
+              ),
+            } as PaginatedResponse<Order>
           },
           {
-            optimisticData: (list: Order[] = []) =>
-              list.map((o) => (o.id === orderId ? { ...o, receiverNote } : o)),
+            optimisticData: (resp: PaginatedResponse<Order> | undefined) =>
+              ({
+                ...resp,
+                data: (resp?.data ?? []).map((o) =>
+                  o.id === orderId ? { ...o, receiverNote } : o,
+                ),
+              }) as PaginatedResponse<Order>,
             rollbackOnError: true,
             populateCache: true,
             revalidate: false,
@@ -291,15 +331,34 @@ export function useOrders() {
     [mutate],
   )
 
+  const onSortChange = useCallback(
+    (newSortId: string, newSortDir: "asc" | "desc") => {
+      setSortId(newSortId)
+      setSortDir(newSortDir)
+      setPage(1)
+    },
+    [],
+  )
+
   return {
     orders,
     allOrders,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
     query,
     setQuery,
+    statuses,
+    setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     warehouseFailedOrders,
     warehouseUnsettledOrders,
     merchantPayableOrders,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    isLoading,
     error,
     mutate,
     createOrder,

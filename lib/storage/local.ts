@@ -8,10 +8,9 @@ import { dirname, join, normalize, sep } from "node:path"
 // Saves bytes under {folder}/{userId}/{filename} and returns a public URL.
 // This is the single storage backend used by app/api/uploads/route.ts.
 
-// Where uploaded files are written inside the container/host. Override with
-// UPLOADS_DIR if you want a different mount point.
-export const UPLOADS_DIR =
-  process.env.UPLOADS_DIR || join(process.cwd(), "uploads")
+// Where uploaded files are written inside the container/host.
+// Required when STORAGE_PROVIDER=local — validated at startup in env.ts.
+export const LOCAL_UPLOADS_DIR = process.env.LOCAL_UPLOADS_DIR!
 
 // Public path prefix files are served from (handled by
 // app/uploads/[...path]/route.ts). Must match that route's location.
@@ -20,7 +19,7 @@ export const UPLOADS_URL_PREFIX = "/uploads"
 export type LocalUploadResult = { path: string; publicUrl: string }
 
 /**
- * Writes a file to local disk under UPLOADS_DIR/{relativePath} and returns
+ * Writes a file to local disk under LOCAL_UPLOADS_DIR/{relativePath} and returns
  * the public URL it can be served from. relativePath should already be
  * sanitized (folder/userId/uuid.ext) by the caller — this function defends
  * against path traversal as a second layer, not the primary check.
@@ -29,11 +28,11 @@ export async function saveLocalFile(
   relativePath: string,
   buffer: Buffer,
 ): Promise<LocalUploadResult> {
-  const targetPath = normalize(join(UPLOADS_DIR, relativePath))
+  const targetPath = normalize(join(LOCAL_UPLOADS_DIR, relativePath))
 
-  // Defense in depth: refuse to write outside UPLOADS_DIR even if a caller
+  // Defense in depth: refuse to write outside LOCAL_UPLOADS_DIR even if a caller
   // passed a relativePath containing "..".
-  const root = normalize(UPLOADS_DIR + sep)
+  const root = normalize(LOCAL_UPLOADS_DIR + sep)
   if (!targetPath.startsWith(root)) {
     throw new Error("Refusing to write outside the uploads directory.")
   }

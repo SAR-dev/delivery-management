@@ -1,49 +1,76 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import useSWR from "swr"
+import { useCallback, useState } from "react"
+import useSWR, { useSWRConfig } from "swr"
 import type { Warehouse } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+import { DEFAULT_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 const KEY = "/api/warehouses"
 
-const byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
+const _byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
+
+function buildUrl(
+  base: string,
+  params: { limit?: number; offset?: number; q?: string; sortId?: string; sortDir?: string },
+) {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set("limit", String(params.limit))
+  if (params.offset != null) sp.set("offset", String(params.offset))
+  if (params.q) sp.set("q", params.q)
+  if (params.sortId) sp.set("sort", params.sortId)
+  if (params.sortDir) sp.set("sortDir", params.sortDir)
+  const qs = sp.toString()
+  return qs ? `${base}?${qs}` : base
+}
 
 // Warehouses resource. Create/update/delete keep the cache sorted by name to
 // match the old context, and expose the current Warehouse Admin's hub.
 export function useWarehouses() {
   const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<Warehouse[]>(
+  const { mutate: _globalMutate } = useSWRConfig()
+
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [sortId, setSortId] = useState<string>("")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const debouncedQuery = useDebouncedValue(query)
+
+  const trimmedQuery = debouncedQuery.trim()
+  const offset = (page - 1) * limit
+  const url = buildUrl(KEY, {
+    limit,
+    offset,
+    q: trimmedQuery || undefined,
+    sortId: sortId || undefined,
+    sortDir: sortId ? sortDir : undefined,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Warehouse>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const warehouses = response?.data ?? []
+  const total = response?.total ?? 0
+
+  // allWarehouses: fetch full list (no pagination) for cross-resource lookups
+  const { data: allResponse } = useSWR<PaginatedResponse<Warehouse>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allWarehouses = data ?? []
+  const allWarehouses = allResponse?.data ?? []
 
   // The warehouse managed by the logged-in Warehouse Admin (if any) — always
   // derived from the unfiltered list, since many other hooks depend on this
@@ -72,9 +99,7 @@ export function useWarehouses() {
           error: data?.error ?? "Could not create the warehouse.",
         }
       }
-      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true }
     },
     [mutate],
@@ -103,14 +128,11 @@ export function useWarehouses() {
           error: data?.error ?? "Could not update the warehouse.",
         }
       }
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((w) => (w.id === id ? data : w)).sort(byName),
-        { revalidate: false },
-      )
+      await mutate()
+      _globalMutate((key: string) => key === KEY)
       return { ok: true }
     },
-    [mutate],
+    [mutate, _globalMutate],
   )
 
   const deleteWarehouse = useCallback(
@@ -123,21 +145,36 @@ export function useWarehouses() {
           error: data?.error ?? "Could not delete the warehouse.",
         }
       }
-      await mutate((prev) => (prev ?? []).filter((w) => w.id !== id), {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true }
     },
     [mutate],
   )
 
+  const onSortChange = useCallback(
+    (newSortId: string, newSortDir: "asc" | "desc") => {
+      setSortId(newSortId)
+      setSortDir(newSortDir)
+      setPage(1)
+    },
+    [],
+  )
+
   return {
     warehouses,
     allWarehouses,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     currentWarehouse,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    isLoading,
     error,
     mutate,
     createWarehouse,

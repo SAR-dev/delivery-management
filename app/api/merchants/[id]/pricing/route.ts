@@ -3,6 +3,7 @@ import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
 import { merchantPricingSchema, parseBody } from "@/lib/validation"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -11,11 +12,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   const canWrite =
     me.role === "SUPER_ADMIN" || (me.role === "ADMIN" && me.canManagePricing)
-  if (!canWrite)
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canWrite) return forbidden()
 
   const { id } = await params
   const parsed = await parseBody(req, merchantPricingSchema)
@@ -28,8 +28,7 @@ export async function PATCH(
     .where(eq(merchant.id, id))
     .returning()
 
-  if (!updated)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!updated) return notFound()
 
   await logAudit({
     actor: { userId: me.userId, name: me.name, role: me.role },

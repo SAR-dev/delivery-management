@@ -59,7 +59,6 @@ export function ReceiverNoteWidget({
       </div>
 
       {isTerminal ? (
-        // Terminal: show note read-only
         <p className="text-sm leading-relaxed">{initialNote}</p>
       ) : (
         <>

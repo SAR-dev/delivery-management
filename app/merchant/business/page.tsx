@@ -56,8 +56,6 @@ export default function MerchantBusinessPage() {
     isLoading: merchantsLoading,
   } = useMerchants()
   const { divisions, isLoading: divisionsLoading } = useDivisions()
-  // Old context exposed a single isDataReady flag flipped once all resources
-  // had loaded. Here we gate on the two resources this page actually reads.
   const isDataReady = !merchantsLoading && !divisionsLoading
 
   const [businessName, setBusinessName] = useState(
@@ -70,8 +68,6 @@ export default function MerchantBusinessPage() {
     () => currentMerchant?.divisionId ?? "",
   )
   const [saving, setSaving] = useState(false)
-
-  // Populate form fields once currentMerchant is available (async after reload).
   useEffect(() => {
     if (!currentMerchant) return
     // eslint-disable-next-line react-hooks/set-state-in-effect

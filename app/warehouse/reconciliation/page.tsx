@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   HandCoins,
   Loader2,
-  Search,
   Wallet,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
@@ -23,36 +22,37 @@ import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 
 type FilterTab = "UNSETTLED" | "SETTLED"
 
 export default function WarehouseReconciliationPage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
+  const { currentWarehouse, warehouses } = useWarehouses()
   const {
     orders,
     allOrders,
     warehouseUnsettledOrders,
     settleOrderCod,
-    query,
-    setQuery,
+    isLoading,
   } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("UNSETTLED")
   const [settling, setSettling] = useState<string | null>(null)
+  const [confirmOrder, setConfirmOrder] = useState<Order | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
-  // Already derived from the unfiltered list (see useOrders), so stats/tab
-  // counts stay stable regardless of the current search.
   const unsettled = warehouseUnsettledOrders
 
   // Delivered parcels at this warehouse whose COD has been settled.
@@ -107,19 +107,27 @@ export default function WarehouseReconciliationPage() {
 
   const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
 
-  async function handleSettle(order: Order) {
-    setSettling(order.id)
+  function openConfirm(order: Order) {
+    setConfirmOrder(order)
+    setConfirmOpen(true)
+  }
+
+  async function handleConfirm() {
+    if (!confirmOrder) return
+    setSettling(confirmOrder.id)
     try {
-      const result = await settleOrderCod(order.id)
+      const result = await settleOrderCod(confirmOrder.id)
       if (result.ok) {
         toast.success(
-          `${order.code} settled. Product cost is now available for merchant payout.`,
+          `${confirmOrder.code} settled. Product cost is now available for merchant payout.`,
         )
       } else {
         toast.error(result.error ?? "Unable to settle this parcel.")
       }
     } finally {
       setSettling(null)
+      setConfirmOpen(false)
+      setConfirmOrder(null)
     }
   }
 
@@ -137,6 +145,22 @@ export default function WarehouseReconciliationPage() {
           <span className="font-medium">{merchantName(o.merchantId)}</span>
         </div>
       ),
+    },
+    {
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => <span className="text-sm">{o.deliveryCity}</span>,
     },
     {
       id: "rider",
@@ -210,7 +234,7 @@ export default function WarehouseReconciliationPage() {
         o.codSettledAt ? null : (
           <Button
             size="sm"
-            onClick={() => handleSettle(o)}
+            onClick={() => openConfirm(o)}
             disabled={settling === o.id}
           >
             {settling === o.id ? (
@@ -272,24 +296,18 @@ export default function WarehouseReconciliationPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-reconciliation"
+            searchable
             columns={columns}
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "UNSETTLED"
                 ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
@@ -298,6 +316,15 @@ export default function WarehouseReconciliationPage() {
           />
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Settle cash on delivery"
+        description={`Settle ${confirmOrder?.code} for ${formatTk(confirmOrder?.totalCollectible ?? 0)}? This marks the cash as collected and makes it available for merchant payout.`}
+        confirmLabel="Settle"
+        onConfirm={handleConfirm}
+      />
     </div>
   )
 }

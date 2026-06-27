@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
-  Truck,
-  MapPin,
-  Phone,
-  Package,
   Bike,
+  MapPin,
+  Package,
+  Phone,
+  Truck,
   Warehouse as WarehouseIcon,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -61,12 +61,12 @@ export function WarehouseDispatchDialog({
   const { assignDeliveryRider } = useOrders()
   const [riderId, setRiderId] = useState<string>("")
   const [submitting, setSubmitting] = useState(false)
-
-  // Reset the selection whenever a new order is opened.
+  const [openCount, setOpenCount] = useState(0)
+  const prevOpen = useRef(open)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (open) setRiderId("")
-  }, [open, order?.id])
+    if (open && !prevOpen.current) setOpenCount((c) => c + 1)
+    prevOpen.current = open
+  }, [open])
 
   if (!order) return null
 
@@ -95,6 +95,7 @@ export function WarehouseDispatchDialog({
 
   return (
     <FormDialog
+      key={`${order.id}-${openCount}`}
       open={open}
       onOpenChange={onOpenChange}
       title={`Dispatch ${order.code} for delivery`}

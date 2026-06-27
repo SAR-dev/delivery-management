@@ -1,59 +1,73 @@
 "use client"
 
-import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Ban,
-  Bike,
   CheckCircle2,
   Clock,
+  MoreHorizontal,
   Package,
-  Search,
   ShieldCheck,
   Truck,
 } from "lucide-react"
 import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useMerchants } from "@/features/merchants/hooks/use-merchants"
-import { useRiders } from "@/features/riders/hooks/use-riders"
-import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
-import { cn } from "@/lib/utils"
-import { formatTk } from "@/lib/pricing"
+import { useOrderColumns } from "@/features/orders/components/order-table-columns"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { AddressModal } from "@/features/orders/components/address-modal"
-import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dialog"
 import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
+const TAB_STATUSES: Record<FilterTab, string[] | undefined> = {
+  PENDING: ["PENDING"],
+  APPROVED: ["APPROVED"],
+  ALL: undefined,
+}
+
 export default function OrdersPage() {
-  const { orders, allOrders, query, setQuery } = useOrders()
-  const { merchants } = useMerchants()
-  const { riders } = useRiders()
-  const { pickupLocations } = usePickupLocations()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
+    isLoading,
+  } = useOrders()
+  const baseColumns = useOrderColumns()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  const merchantName = (id: string) =>
-    merchants.find((m) => m.id === id)?.businessName ?? "Unknown"
-  const riderName = (id?: string | null) =>
-    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
-  const pickupLocation = (id: string) =>
-    pickupLocations.find((p) => p.id === id) ?? null
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
-  // Stats always reflect the full order set, not the current search.
   const counts = useMemo(
     () => ({
       pending: allOrders.filter((o) => o.status === "PENDING").length,
@@ -67,126 +81,13 @@ export default function OrdersPage() {
     [allOrders],
   )
 
-  // Search is server-side now (see useOrders); the tab status filter stays
-  // client-side, layered on top of the already-search-narrowed `orders`.
-  const filtered = useMemo(
-    () => orders.filter((o) => tab === "ALL" || o.status === tab),
-    [orders, tab],
-  )
-
   function openApprove(order: Order) {
     setActiveOrder(order)
     setDialogOpen(true)
   }
 
   const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <Link
-            href={`/dashboard/orders/${o.id}`}
-            className="text-primary font-medium hover:underline"
-          >
-            {o.code}
-          </Link>
-          <span className="text-muted-foreground text-xs">
-            {o.recipientName} ·{" "}
-            <AddressModal
-              order={o}
-              className="underline decoration-dotted underline-offset-4"
-            >
-              {o.deliveryCity}
-            </AddressModal>
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "merchant",
-      header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
-      cell: (o) => merchantName(o.merchantId),
-    },
-    {
-      id: "pickup",
-      header: "Pickup location",
-      sortable: true,
-      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
-      cell: (o) => {
-        const p = pickupLocation(o.pickupLocationId)
-        if (!p) return <span className="text-muted-foreground text-sm">—</span>
-        return (
-          <PickupLocationModal location={p}>
-            <div className="flex flex-col">
-              <span className="underline decoration-dotted underline-offset-4">
-                {p.label}
-              </span>
-              <span className="text-muted-foreground text-xs">{p.address}</span>
-            </div>
-          </PickupLocationModal>
-        )
-      },
-    },
-    {
-      id: "weight",
-      header: "Weight",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.parcelWeightKg,
-      cell: (o) => {
-        const merchant = merchants.find((m) => m.id === o.merchantId)
-        const exceedsWeight = merchant
-          ? o.parcelWeightKg > merchant.maxWeightKg
-          : false
-        return (
-          <span
-            className={cn(
-              "tabular-nums",
-              exceedsWeight && "text-destructive font-medium",
-            )}
-          >
-            {o.parcelWeightKg} KG
-          </span>
-        )
-      },
-    },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
-    {
-      id: "rider",
-      header: "Rider",
-      sortable: true,
-      sortValue: (o) => riderName(o.pickupRiderId),
-      cell: (o) =>
-        o.pickupRiderId ? (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Bike className="text-muted-foreground size-4" />
-            {riderName(o.pickupRiderId)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-sm">—</span>
-        ),
-    },
+    ...baseColumns,
     {
       id: "actions",
       header: "",
@@ -203,27 +104,38 @@ export default function OrdersPage() {
         ].includes(o.status)
         if (!canApprove && !canCancel) return null
         return (
-          <div className="flex items-center justify-end gap-2">
-            {canApprove && (
-              <Button size="sm" onClick={() => openApprove(o)}>
-                <ShieldCheck className="size-4" />
-                Review
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => {
-                  setCancelTarget(o)
-                  setCancelOpen(true)
-                }}
-              >
-                <Ban className="size-3.5" />
-                Cancel
-              </Button>
-            )}
+          <div className="flex justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="ghost" size="icon">
+                    <MoreHorizontal className="size-4" />
+                    <span className="sr-only">Actions</span>
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-48">
+                {canApprove && (
+                  <DropdownMenuItem onClick={() => openApprove(o)}>
+                    <ShieldCheck className="size-4" />
+                    Review order
+                  </DropdownMenuItem>
+                )}
+                {canApprove && canCancel && <DropdownMenuSeparator />}
+                {canCancel && (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => {
+                      setCancelTarget(o)
+                      setCancelOpen(true)
+                    }}
+                  >
+                    <Ban className="size-4" />
+                    Cancel order
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )
       },
@@ -237,7 +149,6 @@ export default function OrdersPage() {
         description={pageContent.dashboard.orders.description}
       />
 
-      {/* Stats */}
       <StatCardList
         columns={4}
         items={[
@@ -267,7 +178,6 @@ export default function OrdersPage() {
         ]}
       />
 
-      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
           <TabsList>
@@ -276,26 +186,60 @@ export default function OrdersPage() {
             <TabsTrigger value="ALL">All</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-orders"
+            searchable
             columns={columns}
-            data={filtered}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
             emptyMessage="No orders match the current filters."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
+            csvData={allOrders}
+            csv={{
+              filename: "orders",
+              headers: [
+                "Tracking",
+                "Status",
+                "Recipient",
+                "Phone",
+                "City",
+                "Weight (KG)",
+                "Delivery type",
+                "Product cost",
+                "Delivery charge",
+                "Security money",
+                "Total collectible",
+              ],
+              parser: (o) => [
+                o.code,
+                o.status,
+                o.recipientName,
+                o.recipientPhone,
+                o.deliveryCity,
+                o.parcelWeightKg,
+                o.deliveryType,
+                o.productCost,
+                o.deliveryCharge,
+                o.securityMoney,
+                o.totalCollectible,
+              ],
+            }}
           />
         </CardContent>
       </Card>

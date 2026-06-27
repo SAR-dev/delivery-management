@@ -8,8 +8,6 @@ import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
 
 const KEY = "/api/security-config"
 
-// Security / money configuration (COD fee model) resource. A single row, so
-// the cache holds one object rather than a list.
 export function useSecurityConfig() {
   const { currentUser } = useAuth()
   const { data, error, isLoading, mutate } = useSWR<SecurityMoneyConfig>(

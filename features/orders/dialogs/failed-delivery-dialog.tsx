@@ -1,15 +1,15 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
+  AlertTriangle,
+  Bike,
+  MapPin,
+  Package,
+  Phone,
   RotateCcw,
   Undo2,
-  MapPin,
-  Phone,
-  Package,
-  Bike,
   User,
-  AlertTriangle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -59,15 +59,12 @@ export function FailedDeliveryDialog({
   const [decision, setDecision] = useState<Decision>("REATTEMPT")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
-
-  // Reset the form whenever a new order is opened.
+  const [openCount, setOpenCount] = useState(0)
+  const prevOpen = useRef(open)
   useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDecision("REATTEMPT")
-      setReason("")
-    }
-  }, [open, order?.id])
+    if (open && !prevOpen.current) setOpenCount((c) => c + 1)
+    prevOpen.current = open
+  }, [open])
 
   if (!order) return null
 
@@ -104,6 +101,7 @@ export function FailedDeliveryDialog({
 
   return (
     <FormDialog
+      key={`${order.id}-${openCount}`}
       open={open}
       onOpenChange={onOpenChange}
       title={`Resolve failed delivery — ${order.code}`}

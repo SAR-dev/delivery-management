@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { CheckCheck, Loader2, Search } from "lucide-react"
+import { CheckCheck, Loader2 } from "lucide-react"
 import { useEmailLogs } from "@/features/email-logs/hooks/use-email-logs"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
@@ -14,7 +14,6 @@ import {
 import type { EmailLog } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function formatTimestamp(value: string) {
@@ -28,7 +27,22 @@ function formatTimestamp(value: string) {
 }
 
 export default function EmailLogsPage() {
-  const { emailLogs, query, setQuery, isLoading, markAsSent } = useEmailLogs()
+  const {
+    emailLogs,
+    allEmailLogs,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
+    isLoading,
+    markAsSent,
+  } = useEmailLogs()
   const [busy, setBusy] = useState<string | null>(null)
 
   async function handleMarkAsSent(log: EmailLog) {
@@ -140,47 +154,44 @@ export default function EmailLogsPage() {
         description={pageContent.dashboard.emailLogs.description}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search recipient or subject"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            serverPaginated
+            id="dashboard-email-logs"
+            searchable
             columns={columns}
             data={emailLogs}
+            total={total}
+            loading={isLoading}
+            query={query}
+            onQueryChange={(q) => {
+              setQuery(q)
+              setPage(1)
+            }}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
             getRowKey={(l) => l.id}
             initialSortId="createdAt"
             initialSortDir="desc"
             emptyMessage={isLoading ? "Loading…" : "No email log entries yet."}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
+            csvData={allEmailLogs}
             csv={{
+              filename: "email-logs",
+              headers: ["When", "To", "Subject", "Status", "Attempts", "Error"],
               parser: (l) => [
-                formatTimestamp(l.createdAt),
+                new Date(l.createdAt).toLocaleString(),
                 l.to,
                 l.subject,
                 l.status,
                 l.attempts,
                 l.error ?? "",
-                l.markedSentBy ?? "",
               ],
-              headers: [
-                "When",
-                "To",
-                "Subject",
-                "Status",
-                "Attempts",
-                "Error",
-                "Marked sent by",
-              ],
-              filename: "email-logs",
             }}
           />
         </CardContent>

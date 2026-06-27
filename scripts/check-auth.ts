@@ -2,11 +2,11 @@ import "dotenv/config"
 import { pool } from "@/lib/db"
 
 async function main() {
-  const dbUrl = process.env.DATABASE_URL ?? ""
+  const dbUrl = process.env.POSTGRES_DATABASE_URL ?? ""
   const host = dbUrl.replace(/^.*@/, "").replace(/\/.*$/, "")
-  console.log("[check] DATABASE_URL host:", host)
+  console.log("[check] POSTGRES_DATABASE_URL host:", host)
 
-  const schemas = await pool.query(
+  const schemas = await pool!.query(
     `SELECT table_schema, count(*)::int AS n
      FROM information_schema.tables
      WHERE table_schema NOT IN ('pg_catalog','information_schema')
@@ -14,7 +14,7 @@ async function main() {
   )
   console.log("[check] schemas:", schemas.rows)
 
-  const users = await pool.query(
+  const users = await pool!.query(
     `SELECT u.email,
             p.role,
             (a.id IS NOT NULL) AS has_credential,
@@ -26,7 +26,7 @@ async function main() {
   )
   console.log("[check] superadmin row:", users.rows)
 
-  await pool.end()
+  await pool!.end()
 }
 
 main().catch((e) => {

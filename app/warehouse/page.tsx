@@ -1,14 +1,14 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { PackagePlus, PackageOpen, Bike, Boxes, Clock } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Bike, Boxes, Clock, PackageOpen, PackagePlus } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
+import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
@@ -22,10 +22,31 @@ import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "INCOMING" | "RECEIVED"
 
+const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
+  INCOMING: ["PICKED_UP"],
+  RECEIVED: ["IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"],
+}
+
 export default function WarehouseIntakePage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse } = useWarehouses()
-  const { orders } = useOrders()
+  const { currentWarehouse, warehouses } = useWarehouses()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("INCOMING")
@@ -36,19 +57,51 @@ export default function WarehouseIntakePage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
+
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
+
+  function getOrderSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "order":
+        return o.code
+      case "rider":
+        return rider(o.pickupRiderId)?.name ?? null
+      case "parcel":
+        return `${o.parcelWeightKg} KG ${o.deliveryType}`
+      case "warehouse":
+        return warehouseName(o.warehouseId)
+      case "city":
+        return o.deliveryCity
+      case "collectible":
+        return String(o.totalCollectible)
+      case "notes":
+        return (
+          [o.merchantNote, o.receiverNote].filter(Boolean).join(" ") || null
+        )
+      case "status":
+        return o.status
+      default:
+        return null
+    }
+  }
 
   // Parcels that have been picked up and are heading to a warehouse. In this
   // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
   const incoming = useMemo(
-    () => orders.filter((o) => o.status === "PICKED_UP"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "PICKED_UP"),
+    [allOrders],
   )
 
   // Parcels this warehouse has already received.
   const received = useMemo(
     () =>
       currentWarehouse
-        ? orders.filter(
+        ? allOrders.filter(
             (o) =>
               o.warehouseId === currentWarehouse.id &&
               [
@@ -59,10 +112,8 @@ export default function WarehouseIntakePage() {
               ].includes(o.status),
           )
         : [],
-    [orders, currentWarehouse],
+    [allOrders, currentWarehouse],
   )
-
-  const visible = tab === "INCOMING" ? incoming : received
 
   function openConfirm(order: Order) {
     setActiveOrder(order)
@@ -87,8 +138,6 @@ export default function WarehouseIntakePage() {
     {
       id: "rider",
       header: "Brought by",
-      sortable: true,
-      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
       cell: (o) => (
         <span className="flex items-center gap-1.5 text-sm">
           <Bike className="text-muted-foreground size-4" />
@@ -106,8 +155,15 @@ export default function WarehouseIntakePage() {
       ),
     },
     {
-      id: "destination",
-      header: "Destination",
+      id: "warehouse",
+      header: "Warehouse",
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
@@ -230,15 +286,30 @@ export default function WarehouseIntakePage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="warehouse-intake"
+            searchable
+            getSearchValue={getOrderSearchValue}
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "INCOMING"
                 ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
                 : "Nothing received yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

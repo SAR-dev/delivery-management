@@ -1,26 +1,36 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { division, merchant, pickupLocation } from "@/lib/db/schema"
+import { paginateResponse, parsePagination } from "@/lib/pagination"
 import { parseBody, pickupLocationSchema } from "@/lib/validation"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
   if (!me) return NextResponse.json(null, { status: 401 })
 
+  const { limit, offset } = parsePagination(req)
   const merchantId = new URL(req.url).searchParams.get("merchantId")
   const effectiveMerchantId =
     me.role === "MERCHANT" ? me.merchantId : merchantId
 
-  const rows = effectiveMerchantId
-    ? await db
-        .select()
-        .from(pickupLocation)
-        .where(eq(pickupLocation.merchantId, effectiveMerchantId))
-    : await db.select().from(pickupLocation)
+  const where = effectiveMerchantId
+    ? eq(pickupLocation.merchantId, effectiveMerchantId)
+    : undefined
 
-  return NextResponse.json(rows)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(pickupLocation)
+    .where(where)
+
+  let q = db.select().from(pickupLocation).$dynamic()
+  if (where) q = q.where(where)
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 // Merchant registers a new pickup location (shop) for their own business.

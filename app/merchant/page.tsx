@@ -39,17 +39,42 @@ import { StatCardList } from "@/components/stat-card-list"
 export default function MerchantOverviewPage() {
   const { currentUser } = useAuth()
   const { currentMerchant } = useMerchants()
-  const { orders } = useOrders()
+  const { allOrders, isLoading } = useOrders()
   const { pickupLocations } = usePickupLocations()
 
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
   const myOrders = currentMerchant
-    ? orders.filter((o) => o.merchantId === currentMerchant.id)
+    ? allOrders.filter((o) => o.merchantId === currentMerchant.id)
     : []
 
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+
+  function getOrderSearchValue(o: Order, columnId: string): string | null {
+    switch (columnId) {
+      case "tracking":
+        return o.code
+      case "recipient":
+        return `${o.recipientName} ${o.recipientPhone} ${o.deliveryCity}`
+      case "pickup":
+        return pickup(o.pickupLocationId)?.label ?? null
+      case "weight":
+        return `${o.parcelWeightKg} KG`
+      case "delivery":
+        return String(o.deliveryCharge)
+      case "collectible":
+        return String(o.totalCollectible)
+      case "notes":
+        return (
+          [o.merchantNote, o.receiverNote].filter(Boolean).join(" ") || null
+        )
+      case "status":
+        return o.status
+      default:
+        return null
+    }
+  }
 
   const inTransit = myOrders.filter((o) =>
     [
@@ -296,10 +321,14 @@ export default function MerchantOverviewPage() {
             </div>
           ) : (
             <DataTable
+              id="merchant-orders"
+              searchable
+              getSearchValue={getOrderSearchValue}
               columns={orderColumns}
               data={myOrders}
               getRowKey={(o) => o.id}
               initialSortId="tracking"
+              loading={isLoading}
               csv={{
                 filename: "orders",
                 headers: [
