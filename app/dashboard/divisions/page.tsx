@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Loader2, MapPin, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { Loader2, MapPin, MoreHorizontal, Pencil, Plus, Trash2, } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"

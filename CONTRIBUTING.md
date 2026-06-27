@@ -25,6 +25,8 @@ features/<name>/
   hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
   transitions.ts                     orders only — the state machine
 components/                          generic, feature-agnostic UI only
+  confirm-dialog.tsx                 reusable confirmation dialog (title/desc/variant/loading)
+  skeleton.tsx                       skeleton loader for table rows / placeholder content
 proxy.ts                             edge proxy — upload rate-limiting (matcher: /api/uploads)
 lib/
   db/index.ts                        Drizzle client — reads DB_PROVIDER, initialises pg or libsql
@@ -87,7 +89,8 @@ features/
 
 `components/` keeps **only generic, feature-agnostic** building blocks
 (`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
-`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps
+`confirm-dialog.tsx`, `form-dialog.tsx`, `skeleton.tsx`, `navigation/**`,
+etc.). `lib/` keeps
 cross-cutting concerns (`types.ts`, `constants.ts`, `db/**`, `validation.ts`,
 `pricing.ts`, the SWR `hooks/fetcher.ts` and `hooks/use-debounced-value.ts`,
 `hooks/use-data-error.ts`, auth glue, mailer, storage).
@@ -256,7 +259,12 @@ export function useMerchants() {
     statuses,
   })
 
-  const { data: response, error, isLoading, mutate } = useSWR<PaginatedResponse<Merchant>>(
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Merchant>>(
     currentUser ? url : null,
     jsonFetcher,
     swrOptions,
@@ -268,8 +276,21 @@ export function useMerchants() {
     // optimistic update + revalidate via mutate()
   }
 
-  return { merchants, total, isLoading, error, approveMerchant,
-    query, setQuery, page, setPage, limit, setLimit, statuses, setStatuses }
+  return {
+    merchants,
+    total,
+    isLoading,
+    error,
+    approveMerchant,
+    query,
+    setQuery,
+    page,
+    setPage,
+    limit,
+    setLimit,
+    statuses,
+    setStatuses,
+  }
 }
 ```
 
@@ -330,6 +351,20 @@ Rules:
 - **Mutations always target `KEY`**, the literal base-key string. The bound
   `mutate` from the base `useSWR` call already does this correctly — don't
   reroute it.
+- **`_globalMutate` must use a filter function**, not a string prefix.
+  SWR's `mutate` does prefix matching by default, so passing a bare key
+  (e.g. `_globalMutate(KEY)`) will also revalidate unrelated hooks whose
+  keys start with the same string. Use a filter to scope it:
+  ```ts
+  // Wrong — revalidates every SWR key that starts with "/api/team"
+  _globalMutate(KEY)
+
+  // Correct — only revalidates keys that exactly match "/api/team"
+  _globalMutate((key: string) => key === KEY)
+  ```
+  This matters especially when a hook has multiple SWR subscriptions (e.g.
+  `useTeam` has both a paginated key and an `allTeam` key — both use
+  `/api/team` as a prefix).
 
 ---
 
@@ -390,7 +425,13 @@ Every API route uses standardized response helpers instead of raw
 `NextResponse.json()` for error responses:
 
 ```ts
-import { unauthorized, forbidden, notFound, badRequest, conflict } from "@/lib/api-response"
+import {
+  unauthorized,
+  forbidden,
+  notFound,
+  badRequest,
+  conflict,
+} from "@/lib/api-response"
 
 if (!me) return unauthorized()
 if (me.role !== "ADMIN") return forbidden()
@@ -420,6 +461,183 @@ if (!allowed) return errorResponse("Too many requests", 429)
 
 The rate limiter is in-memory (single-instance). For multi-instance
 deployages, swap the internal `Map` for a Redis/Upstash store.
+
+---
+
+## 3.7. Confirmation dialogs (`components/confirm-dialog.tsx`)
+
+Reusable confirmation dialog for destructive or semi-destructive actions
+(approve, suspend, cancel, settle, etc.). It wraps `@base-ui/react/dialog`
+and renders a title, description, action button with loading spinner, and
+cancel button.
+
+```tsx
+import { ConfirmDialog } from "@/components/confirm-dialog"
+
+<ConfirmDialog
+  open={open}
+  onOpenChange={setOpen}
+  title="Approve merchant"
+  description={`Approve "${merchant.businessName}"? They will gain access to the platform.`}
+  confirmText="Approve"
+  loading={submitting}
+  onConfirm={async () => {
+    setSubmitting(true)
+    const res = await approveMerchant(merchant.id)
+    setSubmitting(false)
+    if (!res.ok) return toast.error(res.error)
+    toast.success("Merchant approved.")
+    setOpen(false)
+  }}
+/>
+```
+
+Props: `open`, `onOpenChange`, `title`, `description`, `confirmText`,
+`variant` (`"default"` | `"destructive"`), `loading`, `onConfirm`.
+
+Rules:
+
+- Use `ConfirmDialog` for **any action that changes state** — never rely on
+  the browser's built-in `window.confirm()`.
+- Place the dialog state (`open`/`setOpen`) in the page or parent component
+  that owns the triggering button. The dialog receives the state as props.
+- Always pass `loading={submitting}` so the confirm button shows a spinner
+  and is disabled during the API call.
+- **Never** nest `ConfirmDialog` inside a `DropdownMenu` — close the menu
+  first (via state) or trigger from a standalone button. Nested popovers
+  break focus management.
+
+### DropdownMenu action columns
+
+Table action columns use `DropdownMenu` from `@base-ui/react/dropdown-menu`
+for consistency. The pattern:
+
+```tsx
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+
+{
+  id: "actions",
+  header: "",
+  align: "right",
+  headClassName: "w-12",
+  cell: (row) => (
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => handleAction(row)}>
+            <Pencil className="size-4" />
+            Action label
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  ),
+}
+```
+
+Rules:
+
+- Trigger is always `<MoreHorizontal>` icon in a ghost icon button.
+- `align="end"` so the menu opens to the left of the trigger on narrow
+  screens.
+- `w-48` on the content for consistent width across all action menus.
+- Items that open a destructive confirmation should close the menu first
+  (via `onSelect` setting state) before showing the `ConfirmDialog`.
+
+---
+
+## 3.8. DataTable loading skeleton
+
+The `DataTable` component accepts a `loading` boolean prop. When `true`, it
+renders skeleton placeholder rows instead of data rows, matching the current
+column layout:
+
+```tsx
+const { data, isLoading } = useSWR<PaginatedResponse<Thing>>(...)
+
+<DataTable
+  id="things"
+  serverPaginated
+  loading={isLoading}
+  columns={columns}
+  data={data}
+  ...
+/>
+```
+
+The skeleton uses `components/skeleton.tsx` (a `<div>` with a shimmer
+animation via Tailwind). Each cell gets a skeleton `<div>` whose width is
+proportional to a random fraction, so the loading state looks like real
+content at a glance.
+
+Rules:
+
+- **Every `DataTable` must pass `loading={isLoading}`** from its SWR hook.
+  This gives users immediate visual feedback while data fetches, instead of
+  a blank table or a full-page spinner.
+- The `loading` prop is distinct from `serverPaginated` — both can be true
+  simultaneously (server-paginated table on initial load).
+- Don't use the skeleton for sub-second transitions (tab switches on cached
+  data) — SWR's `isLoading` is `true` only on the initial fetch or when the
+  key changes, so it won't flicker on cached re-renders.
+
+---
+
+## 3.9. Switch toggle loading UI
+
+Active-status switches (team members, divisions, warehouses) show a spinner
+next to the switch while the API call is in flight:
+
+```tsx
+const [togglingId, setTogglingId] = useState<string | null>(null)
+
+async function handleToggleActive(item: Thing) {
+  setTogglingId(item.id)
+  const res = await updateThing(item.id, { isActive: !item.isActive })
+  setTogglingId(null)
+  if (!res.ok) return toast.error(res.error)
+  toast.success(`${item.name} ${item.isActive ? "disabled" : "enabled"}.`)
+}
+
+// In the column cell:
+<div className="flex items-center gap-2">
+  <Switch
+    checked={item.isActive}
+    disabled={togglingId === item.id}
+    onCheckedChange={() => handleToggleActive(item)}
+  />
+  {togglingId === item.id ? (
+    <Loader2 className="text-muted-foreground size-3 animate-spin" />
+  ) : (
+    <Badge variant={item.isActive ? "default" : "secondary"}>
+      {item.isActive ? "Active" : "Disabled"}
+    </Badge>
+  )}
+</div>
+```
+
+Rules:
+
+- Track which row is toggling with `togglingId` state (or equivalent).
+- **Disable the switch** during the API call to prevent double-submits.
+- Show a `<Loader2 className="animate-spin" />` spinner next to the switch,
+  replacing the text label/badge. The spinner is `size-3` (12px) to stay
+  proportional to the switch.
+- **Do not wrap switches in `ConfirmDialog`** — switches are designed for
+  quick toggles. If the action needs confirmation, use a button that opens
+  the dialog instead.
 
 ---
 
@@ -564,7 +782,7 @@ the above in three ways:
   even though today's UI only ever sends one field group per request.
 - Skip the seed step if the column has a sane `.default(...)` — Drizzle
   applies it on insert when the seed script doesn't set the field explicitly,
-   so there's nothing to backfill in `lib/db/seed/`.
+  so there's nothing to backfill in `lib/db/seed/`.
 
 ### Recipe B — Add a brand-new resource (full CRUD)
 
@@ -670,7 +888,11 @@ import { unauthorized, forbidden, notFound } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { thing } from "@/lib/db/schema"
 import { thingCreateSchema, parseBody } from "@/lib/validation"
-import { paginateResponse, parsePagination, parseStatusFilter } from "@/lib/pagination"
+import {
+  paginateResponse,
+  parsePagination,
+  parseStatusFilter,
+} from "@/lib/pagination"
 import { and, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -696,9 +918,16 @@ export async function GET(req: Request) {
     where = where ? and(where, searchClause) : searchClause
   }
 
-  const [{ count }] = await db.select({ count: sql<number>`count(*)` })
-    .from(thing).where(where)
-  const rows = await db.select().from(thing).where(where).limit(limit).offset(offset)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(thing)
+    .where(where)
+  const rows = await db
+    .select()
+    .from(thing)
+    .where(where)
+    .limit(limit)
+    .offset(offset)
   return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
