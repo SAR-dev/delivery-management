@@ -406,6 +406,7 @@ export const emailLog = sqliteTable("email_log", {
   status: text("status", { enum: emailLogStatuses }).notNull(),
   attempts: integer("attempts").notNull(),
   error: text("error"),
+  body: text("body"),
   createdAt: ts("createdAt")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

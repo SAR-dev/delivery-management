@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { DataErrorBanner } from "@/components/data-error-banner"
@@ -26,7 +26,12 @@ const DASHBOARD_KEYS = [
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { currentUser, isReady } = useAuth()
+
+  const isWarehouseOrderDetail =
+    currentUser?.role === "WAREHOUSE_ADMIN" &&
+    pathname.startsWith("/dashboard/orders/")
 
   useEffect(() => {
     if (!isReady) return
@@ -36,17 +41,20 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       router.replace("/merchant")
     } else if (currentUser.role === "RIDER") {
       router.replace("/rider")
-    } else if (currentUser.role === "WAREHOUSE_ADMIN") {
+    } else if (
+      currentUser.role === "WAREHOUSE_ADMIN" &&
+      !pathname.startsWith("/dashboard/orders/")
+    ) {
       router.replace("/warehouse")
     }
-  }, [isReady, currentUser, router])
+  }, [isReady, currentUser, router, pathname])
 
   if (
     !isReady ||
     !currentUser ||
     currentUser.role === "MERCHANT" ||
     currentUser.role === "RIDER" ||
-    currentUser.role === "WAREHOUSE_ADMIN"
+    (currentUser.role === "WAREHOUSE_ADMIN" && !isWarehouseOrderDetail)
   ) {
     return (
       <div className="bg-background flex min-h-screen items-center justify-center">

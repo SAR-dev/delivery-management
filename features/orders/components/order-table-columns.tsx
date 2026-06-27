@@ -14,7 +14,13 @@ import { OrderStatusBadge } from "./order-status-badge"
 import { AddressModal } from "./address-modal"
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 
-export function useOrderColumns(): DataTableColumn<Order>[] {
+interface UseOrderColumnsOptions {
+  linkOrders?: boolean
+}
+
+export function useOrderColumns({
+  linkOrders = true,
+}: UseOrderColumnsOptions = {}): DataTableColumn<Order>[] {
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const { pickupLocations } = usePickupLocations()
@@ -42,12 +48,16 @@ export function useOrderColumns(): DataTableColumn<Order>[] {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <Link
-            href={`/dashboard/orders/${o.id}`}
-            className="text-primary font-medium hover:underline"
-          >
-            {o.code}
-          </Link>
+          {linkOrders ? (
+            <Link
+              href={`/dashboard/orders/${o.id}`}
+              className="text-primary font-medium hover:underline"
+            >
+              {o.code}
+            </Link>
+          ) : (
+            <span className="font-medium">{o.code}</span>
+          )}
           <span className="text-muted-foreground text-xs">
             {o.recipientName}
           </span>

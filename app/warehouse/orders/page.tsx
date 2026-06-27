@@ -71,7 +71,7 @@ export default function WarehouseOrdersPage() {
     onSortChange,
     isLoading,
   } = useOrders()
-  const baseColumns = useOrderColumns()
+  const baseColumns = useOrderColumns({ linkOrders: false })
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("ALL")

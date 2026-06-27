@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
+  AlertTriangle,
   Ban,
   CheckCircle2,
   Clock,
@@ -155,19 +156,7 @@ export default function MerchantsPage() {
       header: "Status",
       sortable: true,
       sortValue: (m) => m.status,
-      cell: (m) => {
-        const needsPricing = m.status === "ACTIVE" && m.baseRate <= 0
-        return (
-          <div className="flex items-center gap-2">
-            <MerchantStatusBadge status={m.status} />
-            {needsPricing ? (
-              <span className="text-chart-3 text-xs font-medium">
-                Needs rate
-              </span>
-            ) : null}
-          </div>
-        )
-      },
+      cell: (m) => <MerchantStatusBadge status={m.status} />,
     },
     {
       id: "baseRate",
@@ -175,11 +164,16 @@ export default function MerchantsPage() {
       align: "right",
       sortable: true,
       sortValue: (m) => m.baseRate,
-      cell: (m) => (
-        <span className="tabular-nums">
-          {m.baseRate > 0 ? formatTk(m.baseRate) : "—"}
-        </span>
-      ),
+      cell: (m) => {
+        const needsRate = m.status === "ACTIVE" && m.baseRate <= 0
+        return needsRate ? (
+          <span className="inline-flex items-center gap-1 text-chart-3">
+            <AlertTriangle className="size-4" />
+          </span>
+        ) : (
+          <span className="tabular-nums">{formatTk(m.baseRate)}</span>
+        )
+      },
     },
     {
       id: "perKg",

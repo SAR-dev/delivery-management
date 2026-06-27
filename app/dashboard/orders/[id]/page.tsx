@@ -16,8 +16,8 @@ import {
   Warehouse as WarehouseIcon,
   Weight,
 } from "lucide-react"
+import useSWR from "swr"
 import { useAuth } from "@/features/account/hooks/use-auth"
-import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -25,6 +25,7 @@ import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup
 import { formatTk } from "@/lib/pricing"
 import { CURRENCY_SUFFIX } from "@/lib/constants"
 import type { Order } from "@/lib/types"
+import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
@@ -81,7 +82,11 @@ function Section({
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>()
   const { isReady } = useAuth()
-  const { orders } = useOrders()
+  const { data: order, isLoading } = useSWR<Order>(
+    isReady && params.id ? `/api/orders/${params.id}` : null,
+    jsonFetcher,
+    swrOptions,
+  )
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const { warehouses } = useWarehouses()
@@ -89,9 +94,7 @@ export default function OrderDetailPage() {
 
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  const order: Order | undefined = orders.find((o) => o.id === params.id)
-
-  if (!isReady) {
+  if (!isReady || isLoading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <Loader2 className="text-muted-foreground size-6 animate-spin" />

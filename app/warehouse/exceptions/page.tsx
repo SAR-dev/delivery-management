@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, RotateCcw, Undo2, Wrench } from "lucide-react"
+import { AlertTriangle, ExternalLink, RotateCcw, Undo2, Wrench } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -12,7 +12,6 @@ import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
 import { AddressModal } from "@/features/orders/components/address-modal"
 import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
@@ -30,7 +29,7 @@ const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
 
 export default function WarehouseExceptionsPage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse, warehouses } = useWarehouses()
+  const { currentWarehouse } = useWarehouses()
   const {
     orders,
     allOrders,
@@ -59,8 +58,6 @@ export default function WarehouseExceptionsPage() {
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const rider = (id?: string | null) =>
     id ? riders.find((r) => r.id === id) : undefined
-  const warehouseName = (id?: string | null) =>
-    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   useEffect(() => {
     setStatuses(TAB_STATUSES[tab])
@@ -97,9 +94,20 @@ export default function WarehouseExceptionsPage() {
       sortValue: (o) => o.code,
       cell: (o) => (
         <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground font-mono text-xs">
+              {o.code}
+            </span>
+            <a
+              href={`/track/${encodeURIComponent(o.code)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground inline-flex size-4 cursor-pointer items-center justify-center transition-colors"
+              title="Open tracking page"
+            >
+              <ExternalLink className="size-3" />
+            </a>
+          </div>
           <span className="font-medium">{merchantName(o.merchantId)}</span>
         </div>
       ),
@@ -112,15 +120,8 @@ export default function WarehouseExceptionsPage() {
       ),
     },
     {
-      id: "warehouse",
-      header: "Warehouse",
-      cell: (o) => (
-        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
-      ),
-    },
-    {
       id: "city",
-      header: "City",
+      header: "Delivery address",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
@@ -145,13 +146,6 @@ export default function WarehouseExceptionsPage() {
       cell: (o) => (
         <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
       ),
-    },
-    {
-      id: "tracking",
-      header: "Tracking",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
     },
     {
       id: "note",
