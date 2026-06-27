@@ -37,13 +37,7 @@ export async function seedAnnouncements() {
       publishedAt: daysFromNow(-7),
       expiresAt: null,
       isActive: true,
-      targetRoles: [
-        "SUPER_ADMIN",
-        "ADMIN",
-        "WAREHOUSE_ADMIN",
-        "MERCHANT",
-        "RIDER",
-      ],
+      targetRoles: ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN", "MERCHANT", "RIDER"],
       createdBy: "Nadia Rahman",
     },
 
@@ -83,13 +77,7 @@ export async function seedAnnouncements() {
       publishedAt: daysFromNow(-30),
       expiresAt: daysFromNow(-10),
       isActive: true,
-      targetRoles: [
-        "SUPER_ADMIN",
-        "ADMIN",
-        "WAREHOUSE_ADMIN",
-        "MERCHANT",
-        "RIDER",
-      ],
+      targetRoles: ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN", "MERCHANT", "RIDER"],
       createdBy: "Tanvir Hossain",
     },
 
@@ -102,13 +90,7 @@ export async function seedAnnouncements() {
       publishedAt: daysFromNow(5),
       expiresAt: daysFromNow(6),
       isActive: true,
-      targetRoles: [
-        "SUPER_ADMIN",
-        "ADMIN",
-        "WAREHOUSE_ADMIN",
-        "MERCHANT",
-        "RIDER",
-      ],
+      targetRoles: ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN", "MERCHANT", "RIDER"],
       createdBy: "Nadia Rahman",
     },
 
