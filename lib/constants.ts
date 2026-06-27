@@ -104,3 +104,11 @@ export const EMAIL_LOG_STATUS_TONES: Record<EmailLogStatus, BadgeTone> = {
   SENT: "success",
   FAILED: "danger",
 }
+
+export const ANNOUNCEMENT_TARGET_ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
+  ADMIN: "Admin",
+  WAREHOUSE_ADMIN: "Warehouse Admin",
+  MERCHANT: "Merchant",
+  RIDER: "Rider",
+}

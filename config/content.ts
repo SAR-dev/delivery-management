@@ -64,6 +64,15 @@ export const pageContent = {
       description:
         "Every transactional email the platform has attempted to send, including delivery failures.",
     },
+    announcements: {
+      title: "Announcements",
+      description:
+        "Create and manage platform-wide announcements targeted at specific roles.",
+    },
+    announcementsInbox: {
+      title: "Inbox",
+      description: "Active platform announcements targeted at your role.",
+    },
   },
   warehouse: {
     riders: {
@@ -96,6 +105,10 @@ export const pageContent = {
       description:
         "Match collected cash against delivered orders. The platform keeps delivery charge and security money; product cost becomes payable to the merchant.",
     },
+    announcements: {
+      title: "Inbox",
+      description: "Active platform announcements from the ParcelFlow team.",
+    },
   },
   rider: {
     todo: {
@@ -112,6 +125,10 @@ export const pageContent = {
       title: (firstName: string) => `Delivery queue, ${firstName}`,
       description:
         "Take dispatched parcels out for delivery and record each outcome on the spot.",
+    },
+    announcements: {
+      title: "Inbox",
+      description: "Active platform announcements from the ParcelFlow team.",
     },
   },
   merchant: {
@@ -137,6 +154,10 @@ export const pageContent = {
       title: "Finances & payouts",
       description:
         "Track your available balance and request payouts. Payouts cover product cost only — delivery charge and security money are retained by the platform.",
+    },
+    announcements: {
+      title: "Inbox",
+      description: "Active platform announcements.",
     },
   },
 } as const

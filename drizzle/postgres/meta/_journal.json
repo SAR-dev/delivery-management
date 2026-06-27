@@ -15,6 +15,13 @@
       "when": 1782559220921,
       "tag": "0001_luxuriant_skreet",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782572096556,
+      "tag": "0002_dusty_prodigy",
+      "breakpoints": true
     }
   ]
 }
