@@ -18,6 +18,7 @@ function wrap(title: string, body: string): string {
     .header h1 { margin: 0; font-size: 18px; }
     .body { padding: 28px 32px; color: #333; line-height: 1.6; }
     .status-badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 14px; margin: 12px 0; }
+    .cta { display: inline-block; margin: 20px 0; padding: 12px 24px; background: #1a1a2e; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; }
     .footer { background: #f4f4f4; padding: 16px 32px; font-size: 12px; color: #888; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     td { padding: 8px 0; border-bottom: 1px solid #eee; font-size: 14px; }
@@ -48,7 +49,8 @@ export function orderApprovedTemplate(data: OrderEmailData) {
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Delivery Address</td><td>${data.deliveryAddress}</td></tr>
       </table>
-      <p>The rider will collect the parcel from your pickup location shortly.</p>`,
+      <p>The rider will collect the parcel from your pickup location shortly.</p>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -63,7 +65,8 @@ export function orderPickedUpTemplate(data: OrderEmailData) {
       <table>
         <tr><td>Order Code</td><td><strong>${data.orderCode}</strong></td></tr>
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
-      </table>`,
+      </table>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -79,7 +82,8 @@ export function orderInWarehouseTemplate(data: OrderEmailData) {
         <tr><td>Order Code</td><td><strong>${data.orderCode}</strong></td></tr>
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Delivery Address</td><td>${data.deliveryAddress}</td></tr>
-      </table>`,
+      </table>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -95,7 +99,8 @@ export function orderInTransitTemplate(data: OrderEmailData) {
         <tr><td>Order Code</td><td><strong>${data.orderCode}</strong></td></tr>
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Delivery Address</td><td>${data.deliveryAddress}</td></tr>
-      </table>`,
+      </table>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -112,7 +117,8 @@ export function orderDeliveredTemplate(data: OrderEmailData) {
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Delivered To</td><td>${data.deliveryAddress}</td></tr>
       </table>
-      <p>COD will be settled and reflected in your payout shortly.</p>`,
+      <p>COD will be settled and reflected in your payout shortly.</p>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -131,7 +137,8 @@ export function orderFailedAttemptTemplate(
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Failure Reason</td><td>${data.note}</td></tr>
       </table>
-      <p>Our team will assess the situation and attempt redelivery or initiate a return.</p>`,
+      <p>Our team will assess the situation and attempt redelivery or initiate a return.</p>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }
@@ -150,7 +157,8 @@ export function orderReturnedTemplate(
         <tr><td>Recipient</td><td>${data.recipientName}</td></tr>
         <tr><td>Return Reason</td><td>${data.reason}</td></tr>
       </table>
-      <p>Please contact support to arrange collection of the parcel.</p>`,
+      <p>Please contact support to arrange collection of the parcel.</p>
+      <a class="cta" href="${process.env.NEXT_PUBLIC_SITE_URL}">View Dashboard</a>`,
     ),
   }
 }

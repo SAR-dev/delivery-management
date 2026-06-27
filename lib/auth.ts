@@ -15,7 +15,7 @@ const vercelPreviewPattern = buildVercelPreviewPattern()
 
 const sharedConfig = {
   plugins: [admin()],
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL: process.env.NEXT_PUBLIC_SITE_URL,
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
@@ -25,7 +25,9 @@ const sharedConfig = {
       ...(process.env.NEXT_PUBLIC_ENV === "development"
         ? ["http://localhost:3000"]
         : []),
-      ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
+      ...(process.env.NEXT_PUBLIC_SITE_URL
+        ? [process.env.NEXT_PUBLIC_SITE_URL]
+        : []),
     ]
 
     // Only allow the *.vercel.app fallback through if the incoming request's

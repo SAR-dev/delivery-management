@@ -688,10 +688,8 @@ in `validateEnv()`.
 
 Key env vars:
 
-- `BETTER_AUTH_URL` — the app's base URL (used for auth callbacks). In
-  production, falls back to `NEXT_PUBLIC_SITE_URL` if set.
-- `NEXT_PUBLIC_SITE_URL` — canonical public URL for SEO metadata, OG tags, and
-  sitemaps. Falls back to `BETTER_AUTH_URL` → `site.json` if unset.
+- `NEXT_PUBLIC_SITE_URL` — the app's canonical public URL for auth callbacks,
+  SEO metadata, OG tags, and sitemaps. Falls back to `site.json` if unset.
 - `VERCEL_PROJECT_NAME` — scopes preview deployment trusted origins in
   `lib/auth.ts`. Falls back to a broader `*.vercel.app` match if unset.
 

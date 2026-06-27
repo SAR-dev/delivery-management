@@ -79,7 +79,7 @@ export function validateEnv(): void {
       minLength(e, "BETTER_AUTH_SECRET", 32, "Auth secret key")
     }
 
-    required(e, "BETTER_AUTH_URL", "App base URL")
+    required(e, "NEXT_PUBLIC_SITE_URL", "App base URL")
 
     // A deploy with NEXT_PUBLIC_ENV=development in production would silently
     // disable Vercel Analytics and keep localhost in trustedOrigins, so make
@@ -92,7 +92,7 @@ export function validateEnv(): void {
     )
     if (nodeEnv === "production" && !process.env.NEXT_PUBLIC_SITE_URL) {
       console.warn(
-        "[env] NEXT_PUBLIC_SITE_URL is unset in production — falling back to BETTER_AUTH_URL",
+        "[env] NEXT_PUBLIC_SITE_URL is unset in production — falling back to NEXT_PUBLIC_SITE_URL",
       )
     }
 
