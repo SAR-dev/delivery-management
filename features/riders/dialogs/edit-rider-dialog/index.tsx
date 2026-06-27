@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   CheckCircle2,
   ClipboardList,
@@ -47,22 +47,15 @@ export function EditRiderDialog({
     taskType: "DELIVERY" as RiderTaskType,
     isActive: true,
   })
-
+  const [openCount, setOpenCount] = useState(0)
+  const prevOpen = useRef(open)
   useEffect(() => {
-    if (rider) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm({
-        name: rider.name,
-        phone: rider.phone,
-        zone: rider.zone,
-        warehouseId: rider.warehouseId ?? "",
-        taskType: rider.taskType,
-        isActive: rider.isActive,
-      })
+    if (open && !prevOpen.current) {
+      setOpenCount((c) => c + 1)
+      setEditing(false)
     }
-    // Reset to detail view when a new rider is opened
-    setEditing(false)
-  }, [rider])
+    prevOpen.current = open
+  }, [open])
 
   function update<K extends keyof typeof form>(
     key: K,
@@ -94,10 +87,8 @@ export function EditRiderDialog({
         phone: form.phone.trim(),
         zone: form.zone.trim(),
         taskType: form.taskType,
-        // Only send the warehouse when reassignment is permitted.
         ...(canReassignWarehouse ? { warehouseId: form.warehouseId } : {}),
       })
-      // Apply active state change if it differs from the current rider state
       if (form.isActive !== rider.isActive) {
         await toggleRiderActive(rider.id)
       }
@@ -112,10 +103,10 @@ export function EditRiderDialog({
 
   const assignedWarehouse = warehouses.find((w) => w.id === rider.warehouseId)
 
-  // Detail view — read-only summary with an "Edit rider" action.
   if (!editing) {
     return (
       <FormDialog
+        key={`${rider.id}-${openCount}`}
         open={open}
         onOpenChange={handleClose}
         title={rider.name}
@@ -177,9 +168,9 @@ export function EditRiderDialog({
     )
   }
 
-  // Edit view — form with Cancel (back to detail) + Save.
   return (
     <FormDialog
+      key={`${rider.id}-${openCount}`}
       open={open}
       onOpenChange={handleClose}
       title="Edit rider"

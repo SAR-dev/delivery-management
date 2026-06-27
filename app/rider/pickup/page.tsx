@@ -1,12 +1,13 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { PackageCheck, Search } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { PackageCheck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { usePickupLocations } from "@/features/pickup-locations/hooks/use-pickup-locations"
+import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
@@ -16,7 +17,6 @@ import { PickupConfirmDialog } from "@/features/orders/dialogs/pickup-confirm-di
 import { PickupLocationModal } from "@/features/pickup-locations/components/pickup-location-modal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
@@ -33,16 +33,44 @@ type FilterTab = "TO_COLLECT" | "COLLECTED"
 export default function RiderPickupQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders, allOrders, query, setQuery } = useOrders()
+  const {
+    orders,
+    allOrders,
+    statuses: _statuses,
+    setStatuses,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
+  const { warehouses } = useWarehouses()
   const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
+  useEffect(() => {
+    if (tab === "TO_COLLECT") {
+      setStatuses(["APPROVED"])
+    } else {
+      setStatuses(COLLECTED_STATUSES)
+    }
+    setPage(1)
+  }, [tab, setStatuses, setPage])
+
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   // All orders assigned to this rider for pickup. Tab counts use the
   // unfiltered list; the table-facing versions below use the
@@ -59,22 +87,6 @@ export default function RiderPickupQueuePage() {
   const collected = myPickups.filter((o) =>
     COLLECTED_STATUSES.includes(o.status),
   )
-
-  const visibleMyPickups = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-  const visibleToCollect = visibleMyPickups.filter(
-    (o) => o.status === "APPROVED",
-  )
-  const visibleCollected = visibleMyPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
 
   function openConfirm(order: Order) {
     setActiveOrder(order)
@@ -95,8 +107,6 @@ export default function RiderPickupQueuePage() {
     {
       id: "merchant",
       header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
       cell: (o) => {
         const m = merchant(o.merchantId)
         return (
@@ -110,8 +120,6 @@ export default function RiderPickupQueuePage() {
     {
       id: "pickup",
       header: "Pickup from",
-      sortable: true,
-      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
       cell: (o) => {
         const p = pickup(o.pickupLocationId)
         return (
@@ -133,9 +141,25 @@ export default function RiderPickupQueuePage() {
       header: "Parcel",
       cell: (o) => (
         <span className="text-muted-foreground text-sm">
-          {o.parcelWeightKg} KG · {o.deliveryType} · to {o.deliveryCity}
+          {o.parcelWeightKg} KG · {o.deliveryType}
         </span>
       ),
+    },
+    {
+      id: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      sortValue: (o) => warehouseName(o.warehouseId),
+      cell: (o) => (
+        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
+      ),
+    },
+    {
+      id: "city",
+      header: "City",
+      sortable: true,
+      sortValue: (o) => o.deliveryCity,
+      cell: (o) => <span className="text-sm">{o.deliveryCity}</span>,
     },
     {
       id: "status",
@@ -179,29 +203,34 @@ export default function RiderPickupQueuePage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search code, recipient, phone, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
       </div>
 
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="rider-pickup"
+            searchable
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "TO_COLLECT"
                 ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
                 : "Nothing collected yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

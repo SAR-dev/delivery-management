@@ -58,34 +58,44 @@ function minLength(
   }
 }
 
-// ---------------------------------------------------------------------------
-
 export function validateEnv(): void {
   const errors = collect((e) => {
-    // --- Database -----------------------------------------------------------
-    required(e, "DATABASE_URL", "PostgreSQL connection string")
+    const dbProvider = oneOf(
+      e,
+      "DB_PROVIDER",
+      ["postgres", "turso"],
+      "postgres",
+    )
 
-    // --- Auth ---------------------------------------------------------------
+    if (dbProvider === "postgres") {
+      required(e, "POSTGRES_DATABASE_URL", "PostgreSQL connection string")
+    } else if (dbProvider === "turso") {
+      required(e, "TURSO_DATABASE_URL", "Turso database URL")
+      required(e, "TURSO_AUTH_TOKEN", "Turso auth token")
+    }
+
     const secret = required(e, "BETTER_AUTH_SECRET", "Auth secret key")
     if (secret) {
       minLength(e, "BETTER_AUTH_SECRET", 32, "Auth secret key")
     }
 
-    const env = oneOf(
+    required(e, "NEXT_PUBLIC_SITE_URL", "App base URL")
+
+    // A deploy with NEXT_PUBLIC_ENV=development in production would silently
+    // disable Vercel Analytics and keep localhost in trustedOrigins, so make
+    // sure that var is explicitly validated rather than left to its fallback.
+    const nodeEnv = oneOf(
       e,
       "NEXT_PUBLIC_ENV",
       ["development", "production"],
       "development",
     )
-    if (env === "production") {
-      required(
-        e,
-        "BETTER_AUTH_PRD_URL",
-        "Production app base URL (BETTER_AUTH_PRD_URL)",
+    if (nodeEnv === "production" && !process.env.NEXT_PUBLIC_SITE_URL) {
+      console.warn(
+        "[env] NEXT_PUBLIC_SITE_URL is unset in production — falling back to NEXT_PUBLIC_SITE_URL",
       )
     }
 
-    // --- Email (Gmail SMTP) -------------------------------------------------
     required(e, "GMAIL_USER", "Gmail address for sending emails")
     required(
       e,
@@ -93,10 +103,11 @@ export function validateEnv(): void {
       "Gmail App Password (not your login password)",
     )
 
-    // --- Storage ------------------------------------------------------------
     const provider = oneOf(e, "STORAGE_PROVIDER", ["local", "r2"], "local")
 
-    if (provider === "r2") {
+    if (provider === "local") {
+      required(e, "LOCAL_UPLOADS_DIR", "Local uploads directory path")
+    } else if (provider === "r2") {
       required(e, "R2_ACCOUNT_ID", "Cloudflare account ID")
       required(e, "R2_ACCESS_KEY_ID", "R2 API access key")
       required(e, "R2_SECRET_ACCESS_KEY", "R2 API secret key")

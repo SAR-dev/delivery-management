@@ -4,17 +4,17 @@ import { db } from "@/lib/db"
 import { order, profile, rider, warehouse } from "@/lib/db/schema"
 import { parseBody, warehouseUpdateSchema } from "@/lib/validation"
 import { and, eq, ne } from "drizzle-orm"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
-// Super Admin edits a warehouse or toggles its active state.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -36,15 +36,13 @@ export async function PATCH(
   if (divisionId !== undefined) updates.divisionId = divisionId
   if (isActive !== undefined) updates.isActive = isActive
 
-  // Block renaming onto another warehouse with the same name in the same city.
   if (updates.name !== undefined || updates.city !== undefined) {
     const [current] = await db
       .select({ name: warehouse.name, city: warehouse.city })
       .from(warehouse)
       .where(eq(warehouse.id, id))
       .limit(1)
-    if (!current)
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (!current) return notFound()
     const nextName = updates.name ?? current.name
     const nextCity = updates.city ?? current.city
     const [clash] = await db
@@ -72,8 +70,7 @@ export async function PATCH(
     .where(eq(warehouse.id, id))
     .returning()
 
-  if (!updated)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!updated) return notFound()
 
   await logAudit({
     actor: { userId: me.userId, name: me.name, role: me.role },
@@ -87,16 +84,14 @@ export async function PATCH(
   return NextResponse.json(updated)
 }
 
-// Super Admin deletes a warehouse. Blocked if any order, rider, or team member
-// still references it so no record is left pointing at a missing warehouse.
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params

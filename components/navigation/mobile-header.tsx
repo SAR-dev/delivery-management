@@ -37,12 +37,12 @@ export function MobileHeader({ config }: { config: SidebarConfig }) {
 
   return (
     <header className="border-border flex h-16 items-center justify-between border-b px-4 md:hidden">
-      <div className="flex items-center gap-2">
+      <Link href="/" className="flex items-center gap-2">
         <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg">
           <BrandIcon className="size-5" />
         </div>
         <span className="font-semibold">{BRAND_NAME}</span>
-      </div>
+      </Link>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger
@@ -54,7 +54,7 @@ export function MobileHeader({ config }: { config: SidebarConfig }) {
         />
         <SheetContent side="left" className="p-0">
           {/* Brand */}
-          <div className="flex h-16 items-center gap-2 px-4">
+          <Link href="/" className="flex h-16 items-center gap-2 px-4">
             <BrandIcon className="size-4 shrink-0" />
             <SheetTitle className="text-[13px] font-semibold">
               {BRAND_NAME}
@@ -62,7 +62,7 @@ export function MobileHeader({ config }: { config: SidebarConfig }) {
             <span className="bg-sidebar-primary text-sidebar-primary-foreground rounded-full px-2 py-0.5 text-[10px] font-medium">
               {config.roleLabel}
             </span>
-          </div>
+          </Link>
           <SheetDescription className="sr-only">
             Main navigation
           </SheetDescription>

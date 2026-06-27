@@ -4,11 +4,12 @@ import { db } from "@/lib/db"
 import { securityConfig } from "@/lib/db/schema"
 import { parseBody, securityConfigSchema } from "@/lib/validation"
 import { eq } from "drizzle-orm"
+import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
 export async function GET() {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
   const [row] = await db
     .select()
@@ -21,11 +22,10 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   const canWrite =
     me.role === "SUPER_ADMIN" || (me.role === "ADMIN" && me.canManagePricing)
-  if (!canWrite)
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canWrite) return forbidden()
 
   const parsed = await parseBody(req, securityConfigSchema)
   if (parsed.error) return parsed.error

@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 
 // Renders only when the platform data load failed. Lets the user retry the
 // fetch in place so the app degrades gracefully instead of showing empty data.
-export function DataErrorBanner() {
-  const { dataError, refreshData } = useDataError()
+// When `keys` is provided, only those resource endpoints are monitored.
+export function DataErrorBanner({ keys }: { keys?: readonly string[] }) {
+  const { dataError, refreshData } = useDataError(keys)
 
   if (!dataError) return null
 

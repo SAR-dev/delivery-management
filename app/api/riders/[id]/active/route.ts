@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { rider } from "@/lib/db/schema"
@@ -10,11 +11,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   const isAdmin = me.role === "SUPER_ADMIN" || me.role === "ADMIN"
   const isWarehouseAdmin = me.role === "WAREHOUSE_ADMIN"
   if (!isAdmin && !isWarehouseAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -25,15 +26,14 @@ export async function PATCH(
     .where(eq(rider.id, id))
     .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current) return notFound()
 
   // Warehouse Admins can only toggle riders based at their own hub.
   if (
     isWarehouseAdmin &&
     (!me.warehouseId || current.warehouseId !== me.warehouseId)
   ) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const [updated] = await db

@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
+  Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
-  Search,
   Trash2,
   Warehouse as WarehouseIcon,
 } from "lucide-react"
@@ -32,6 +33,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 interface WarehouseRow extends Warehouse {
@@ -58,11 +66,21 @@ export default function WarehousesPage() {
   const { currentUser } = useAuth()
   const {
     warehouses,
+    allWarehouses: _allWarehouses,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     createWarehouse,
     updateWarehouse,
     deleteWarehouse,
+    isLoading,
   } = useWarehouses()
   const { divisions } = useDivisions()
   const { allOrders } = useOrders()
@@ -76,12 +94,12 @@ export default function WarehousesPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
-  // Dialog state.
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Warehouse | null>(null)
   const [deleting, setDeleting] = useState<WarehouseRow | null>(null)
   const [form, setForm] = useState<WarehouseForm>(emptyForm)
   const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Active divisions, plus the one currently selected even if disabled, so the
   // edit form never silently drops a warehouse's existing division.
@@ -167,12 +185,15 @@ export default function WarehousesPage() {
   }
 
   async function handleToggleActive(w: Warehouse) {
+    setTogglingId(w.id)
     const res = await updateWarehouse(w.id, { isActive: !w.isActive })
     if (!res.ok) {
       toast.error(res.error ?? "Could not update the warehouse.")
+      setTogglingId(null)
       return
     }
     toast.success(`${w.name} ${w.isActive ? "disabled" : "enabled"}.`)
+    setTogglingId(null)
   }
 
   async function handleDelete() {
@@ -218,8 +239,6 @@ export default function WarehousesPage() {
     {
       id: "division",
       header: "Division",
-      sortable: true,
-      sortValue: (w) => w.divisionName,
       headClassName: "hidden md:table-cell",
       cellClassName: "hidden md:table-cell",
       cell: (w) => (
@@ -248,40 +267,52 @@ export default function WarehousesPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={w.isActive}
+            disabled={togglingId === w.id}
             onCheckedChange={() => handleToggleActive(w)}
             aria-label={`Toggle active state for ${w.name}`}
           />
-          <Badge variant={w.isActive ? "default" : "secondary"}>
-            {w.isActive ? "Active" : "Disabled"}
-          </Badge>
+          {togglingId === w.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <Badge variant={w.isActive ? "default" : "secondary"}>
+              {w.isActive ? "Active" : "Disabled"}
+            </Badge>
+          )}
         </div>
       ),
     },
     {
       id: "actions",
-      header: "Actions",
+      header: "",
       align: "right",
+      headClassName: "w-12",
       cell: (w) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => openEdit(w)}
-            aria-label={`Edit ${w.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleting(w)}
-            aria-label={`Delete ${w.name}`}
-            disabled={w.usageCount > 0}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Actions</span>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => openEdit(w)}>
+                <Pencil className="size-4" />
+                Edit warehouse
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={w.usageCount > 0}
+                onClick={() => setDeleting(w)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -301,26 +332,28 @@ export default function WarehousesPage() {
         </Button>
       </PageHeader>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search name, address, city"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            id="dashboard-warehouses"
+            searchable
             columns={columns}
             data={rows}
             getRowKey={(w) => w.id}
             initialSortId="name"
             emptyMessage="No warehouses yet. Add one to get started."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

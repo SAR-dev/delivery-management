@@ -5,6 +5,10 @@ import { ParcelIcon } from "@/icons/ParcelIcon"
 // The icon is an inline SVG React component sourced from /public/icon.svg so
 // it renders identically on every page — login, register, nav, and all app
 // sidebars — without relying on a Lucide component.
+//
+// siteUrl resolution order:
+//   1. NEXT_PUBLIC_SITE_URL  (explicit canonical — preferred)
+//   2. site.json siteUrl     (last-resort static fallback)
 
 export interface SiteConfig {
   /** Product / brand name, shown in nav, login, and metadata. */
@@ -13,14 +17,21 @@ export interface SiteConfig {
   tagline: string
   /** Used as the default <meta name="description"> for the app. */
   description: string
+  /** Canonical origin, used for metadataBase and OG URLs. */
+  siteUrl: string
   /** The brand mark as an inline-SVG React component. */
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+}
+
+function resolveSiteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? siteData.siteUrl
 }
 
 export const siteConfig: SiteConfig = {
   name: siteData.name,
   tagline: siteData.tagline,
   description: siteData.description,
+  siteUrl: resolveSiteUrl(),
   icon: ParcelIcon,
 }
 

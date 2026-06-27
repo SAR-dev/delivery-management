@@ -11,5 +11,9 @@ export async function GET() {
     .from(division)
     .where(eq(division.isActive, true))
     .orderBy(asc(division.name))
-  return NextResponse.json(rows)
+  return NextResponse.json(rows, {
+    headers: {
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+    },
+  })
 }

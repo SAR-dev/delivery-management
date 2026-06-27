@@ -23,25 +23,20 @@ export function homeForRole(role: Role): string {
 
 interface AuthContextValue {
   currentUser: User | null
-  // True once the session bootstrap (getSession + /api/users/me) has finished.
   isReady: boolean
   login: (
     email: string,
     password: string,
   ) => Promise<{ ok: boolean; user?: User; error?: string }>
   logout: () => Promise<void>
-  // Update the signed-in user's own display name.
   updateProfileName: (name: string) => Promise<{ ok: boolean; error?: string }>
-  // Set or clear (null) the signed-in user's avatar image.
   updateProfileImage: (
     image: string | null,
   ) => Promise<{ ok: boolean; error?: string }>
-  // Change the signed-in user's password (verifies the current one).
   changePassword: (
     currentPassword: string,
     newPassword: string,
   ) => Promise<{ ok: boolean; error?: string }>
-  // Update the signed-in user's default DataTable rows-per-page (1-250).
   updateTableRowsPerPage: (
     value: number,
   ) => Promise<{ ok: boolean; error?: string }>

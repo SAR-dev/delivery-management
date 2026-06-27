@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Fragment } from "react"
 import Link from "next/link"
 import {
@@ -254,10 +255,22 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-export async function generateMetadata({ params }: Props) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
+  const code = decodeURIComponent(id).toUpperCase()
+  const data = await fetchOrderData(code)
+
+  const statusLabel = data
+    ? STATUS_COPY[data.order.status].headline
+    : "Not found"
+  const merchant = data?.merchant?.businessName
+    ? ` · ${data.merchant.businessName}`
+    : ""
+
   return {
-    title: `Tracking ${decodeURIComponent(id)} – ParcelFlow`,
+    title: `${code} – ${statusLabel}`,
+    description: `Live delivery status for parcel ${code}${merchant} on ParcelFlow.`,
+    robots: { index: false, follow: false },
   }
 }
 

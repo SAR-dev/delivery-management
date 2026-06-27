@@ -1,20 +1,25 @@
 import { requireSession } from "@/lib/api-auth"
+import { notFound, unauthorized } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { division, merchant, order, securityConfig } from "@/lib/db/schema"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { orderBulkCreateSchema, parseBody } from "@/lib/validation"
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "MERCHANT" || !me.merchantId) {
     return NextResponse.json(
       { error: "Only merchants can create orders" },
       { status: 403 },
     )
   }
+
+  const limited = rateLimit(`orders-bulk:${getClientIp(req)}`, 10, 60)
+  if (limited) return limited
 
   const parsed = await parseBody(req, orderBulkCreateSchema)
   if (parsed.error) return parsed.error
@@ -27,7 +32,7 @@ export async function POST(req: Request) {
     .limit(1)
 
   if (!merchantRow) {
-    return NextResponse.json({ error: "Merchant not found" }, { status: 404 })
+    return notFound("Merchant not found")
   }
   if (merchantRow.status !== "ACTIVE") {
     return NextResponse.json(
@@ -41,8 +46,6 @@ export async function POST(req: Request) {
     )
   }
 
-  // Validate every parcel's weight up-front so the whole batch is rejected
-  // atomically rather than inserting a partial set.
   const overweight = inputs
     .map((o, i) => ({ i, weight: o.parcelWeightKg }))
     .filter((o) => o.weight > merchantRow.maxWeightKg)
@@ -56,13 +59,14 @@ export async function POST(req: Request) {
     )
   }
 
-  // Every referenced delivery division must exist and be active.
   const divisionIds = [...new Set(inputs.map((o) => o.deliveryDivisionId))]
   const validDivisions = await db
     .select({ id: division.id })
     .from(division)
     .where(and(inArray(division.id, divisionIds), eq(division.isActive, true)))
-  const validDivisionIds = new Set(validDivisions.map((d) => d.id))
+  const validDivisionIds = new Set(
+    validDivisions.map((d: { id: string }) => d.id),
+  )
   const badDivisionRows = inputs
     .map((o, i) => ({ i, ok: validDivisionIds.has(o.deliveryDivisionId) }))
     .filter((o) => !o.ok)
@@ -91,8 +95,6 @@ export async function POST(req: Request) {
 
   const merchantId = me.merchantId
 
-  // Insert the whole batch in one transaction. The starting sequence is read
-  // inside the transaction so concurrent bulk submissions can't collide.
   const created = await db.transaction(async (tx) => {
     const [{ maxCode }] = await tx
       .select({ maxCode: sql<string>`max(${order.code})` })

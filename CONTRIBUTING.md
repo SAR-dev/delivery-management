@@ -25,19 +25,38 @@ features/<name>/
   hooks/use-<resource>.ts            the SWR resource hook (the ONLY data source)
   transitions.ts                     orders only — the state machine
 components/                          generic, feature-agnostic UI only
+  confirm-dialog.tsx                 reusable confirmation dialog (title/desc/variant/loading)
+  skeleton.tsx                       skeleton loader for table rows / placeholder content
+proxy.ts                             edge proxy — upload rate-limiting (matcher: /api/uploads)
 lib/
-  db/schema.ts                       Drizzle tables — source of truth for entities
+  db/index.ts                        Drizzle client — reads DB_PROVIDER, initialises pg or libsql
+  db/schema.ts                       re-exports schema.postgres or schema.turso based on DB_PROVIDER
+  db/schema.postgres.ts              PostgreSQL table definitions (pg-core types)
+  db/schema.turso.ts                 SQLite/Turso table definitions (sqlite-core types)
+  db/seed/                           per-entity seed modules (divisions, riders, orders, etc.)
   types.ts                           re-exports entity types from schema
   validation.ts                      zod schemas + parseBody (missing/empty body is treated as `{}`)
   api-auth.ts                        requireSession()
+  api-response.ts                    standardized error responses (unauthorized, forbidden, notFound, etc.)
   audit.ts                           logAudit() — the only audit_log writer
+  pagination.ts                      PaginatedResponse<T>, parsePagination(), parseStatusFilter()
+  rate-limit.ts                      sliding-window rate limiter + getClientIp()
+  csv.ts                             CSV generation and download helpers
   nav-config.ts                      sidebar entries per role
   constants.ts, pricing.ts           cross-cutting domain logic
   mailer.ts, mail-templates.ts       transactional email (+ email_log history)
   storage/                           file upload backends (local / R2)
+  hooks/fetcher.ts                   SWR fetcher, RESOURCE_KEYS, swrOptions
+  hooks/use-debounced-value.ts       shared debounce hook used by all search hooks
+  hooks/use-data-error.ts            aggregates error state for the global banner
 config/
   site.json, site.ts                 brand name, tagline, icon
   content.ts                         page titles/descriptions (copy)
+drizzle/
+  postgres/                          PostgreSQL migration files
+  turso/                             Turso/SQLite migration files
+scripts/
+  check-schema-sync.ts               drift detection between schema.postgres and schema.turso
 ```
 
 ---
@@ -70,9 +89,11 @@ features/
 
 `components/` keeps **only generic, feature-agnostic** building blocks
 (`ui/**`, `data-table.tsx`, `page-header.tsx`, `status-badge.tsx`,
-`form-dialog.tsx`, `navigation/**`, etc.). `lib/` keeps cross-cutting concerns
-(`types.ts`, `constants.ts`, `db/**`, `validation.ts`, `pricing.ts`, the SWR
-`hooks/fetcher.ts` and `hooks/use-data-error.ts`, auth glue, mailer, storage).
+`confirm-dialog.tsx`, `form-dialog.tsx`, `skeleton.tsx`, `navigation/**`,
+etc.). `lib/` keeps
+cross-cutting concerns (`types.ts`, `constants.ts`, `db/**`, `validation.ts`,
+`pricing.ts`, the SWR `hooks/fetcher.ts` and `hooks/use-debounced-value.ts`,
+`hooks/use-data-error.ts`, auth glue, mailer, storage).
 
 **One documented exception:** `components/data-table.tsx` imports
 `useAuth()` from `features/account` to default its `pageSize` prop to the
@@ -197,10 +218,12 @@ just orders — see the matching shape in `app/api/payouts/[id]/approve/route.ts
 and `.../paid/route.ts`. When you add a new endpoint that reads a row, checks
 its status, and conditionally writes to it, wrap the read + guard + write in
 one `db.transaction()` with `.for("update")` on the initial read. A plain
-`db.transaction()` with no lock (as in Recipe B's bulk-insert sequence-number
-read, or the payout-request/payout-reject multi-table writes) is enough when
-the only risk is multiple _inserts_ racing on a derived value, not a
-stale-read guard on a row that already exists.
+`db.transaction()` with no lock (as in `app/api/orders/route.ts`'s single-order
+`POST` and `app/api/orders/bulk/route.ts`'s bulk insert, both of which read
+`MAX(code)` and insert inside the same transaction, or the
+payout-request/payout-reject multi-table writes) is enough when the only risk
+is multiple _inserts_ racing on a derived value, not a stale-read guard on a
+row that already exists.
 
 **Mocked `db` in tests**: if a spec hand-mocks `@/lib/db` (see
 `transitions.spec.ts`), the mock's `transaction` must run the callback against
@@ -216,22 +239,58 @@ wrapped code path.
 There is **no global data context**. Each resource has a focused hook in
 `features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
 key, the typed data, loading/error state, any derived selectors, the
-mutation functions for that resource, and — for searchable resources — the
-`query` state described below.
+mutation functions, and **the pagination/search/filter state** for server-side
+paginated tables. All API endpoints return `PaginatedResponse<T>`
+(`{ data, total, limit, offset }`) and the hook manages `page`, `limit`,
+`query`, and `statuses` state, building the URL with query params.
 
 ```ts
 export function useMerchants() {
-  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
-    "/api/merchants",
-    fetcher,
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [statuses, setStatuses] = useState<string[] | undefined>(undefined)
+  const debouncedQuery = useDebouncedValue(query)
+
+  const url = buildUrl(KEY, {
+    limit,
+    offset: (page - 1) * limit,
+    q: debouncedQuery.trim() || undefined,
+    statuses,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Merchant>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
   )
-  const merchants = data ?? []
+  const merchants = response?.data ?? []
+  const total = response?.total ?? 0
 
   async function approveMerchant(id: string) {
     // optimistic update + revalidate via mutate()
   }
 
-  return { merchants, isLoading, error, approveMerchant }
+  return {
+    merchants,
+    total,
+    isLoading,
+    error,
+    approveMerchant,
+    query,
+    setQuery,
+    page,
+    setPage,
+    limit,
+    setLimit,
+    statuses,
+    setStatuses,
+  }
 }
 ```
 
@@ -247,85 +306,65 @@ Rules:
 - Authentication/session lives in `features/account/hooks/use-auth.tsx`
   (`useAuth()`), the one piece of shared state that remains a React context.
 - The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
-  which aggregates the error state of every resource key.
+  which aggregates the error state of every resource key. Pass an optional
+  `keys` array to scope it to specific resources.
 
-### Search state lives in the hook, not the page
+### Server-side search and pagination
 
-Resources with a search box (`orders`, `merchants`, `riders`, `warehouses`,
-`team`, `divisions`, `payouts`) follow one pattern, mirrored exactly across
-all seven hooks — copy `use-orders.ts` rather than improvising:
+Every API GET endpoint supports `?q=`, `?limit=`, `?offset=`, and `?status=`
+query params. The hook manages all of this state and passes it to the
+`DataTable` via props:
 
-```ts
-const KEY = "/api/orders"
-
-export function useOrders() {
-  const { currentUser } = useAuth()
-  // 1. Base key — untouched. Every mutation and useDataError still dedupes
-  //    against this exact string; never repoint it at the search key.
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
-    currentUser ? KEY : null,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 2. Debounced query state, owned by the hook.
-  const [query, setQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  // 3. A second, parallel SWR call for the search results — only active once
-  //    there's a non-empty debounced query. Separate cache entry from KEY.
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Order[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  // 4. `orders` is search-aware; `allOrders` is always the full base list.
-  const orders = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allOrders = data ?? []
-
-  return {
-    orders,
-    allOrders,
-    query,
-    setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
-    error,
-    mutate,
-    // ...mutations, all still writing through the base `mutate`/`KEY`
-  }
-}
+```tsx
+<DataTable
+  id="my-table"
+  serverPaginated
+  columns={columns}
+  data={merchants}
+  total={total}
+  page={page}
+  pageSize={limit}
+  onPageChange={setPage}
+  onPageSizeChange={setLimit}
+  searchQuery={query}
+  onSearchChange={setQuery}
+  getRowKey={(r) => r.id}
+/>
 ```
 
 Rules:
 
-- **Never widen scope.** Search is `?q=` appended to the same role-scoped API
-  route — it narrows what a role-scoped `where` already returns, never
-  bypasses it. Every resource's `GET` composes the search clause onto the
-  existing role scoping with `and(roleScopedWhere, searchClause)`, in the
-  same order the role scoping is already applied — see Recipe E's template.
-- **Always export both `orders` and `allOrders`** (substitute the resource
-  name). Any derived value that should stay stable while the user searches —
-  stat cards, tab/badge counts, role-derived singletons like `currentRider` or
-  `currentWarehouse`, cross-resource usage counts — must be computed from the
-  `allX` list, never from the search-aware one. Get this wrong and a stat card
-  silently shrinks to the size of the search box's matches.
-- **Mutations always target `KEY`**, the literal base-key string, not the
-  dynamic `?q=...` key. The bound `mutate` from the base `useSWR` call already
-  does this correctly — don't reroute it.
-- A page with a search `<Input>` destructures `query`/`setQuery` from the
-  hook; it never keeps its own `useState` for this. Tab/status filters stay
-  client-side `useMemo`s layered **on top of** the hook's `orders` (or
-  equivalent), not on `allOrders`.
+- **All tables get `id`** and use `serverPaginated` mode. The `DataTable`
+  handles page navigation, search input, and CSV export. Column visibility is
+  persisted in localStorage per table `id`.
+- **Hooks own the pagination/search state.** The `DataTable` never manages its
+  own page or search — it receives and reports via props.
+- **Tab/status filters** pass a `statuses` array to the hook, which adds
+  `?status=A,B,C` to the URL. The hook resets `page` to 1 on tab change.
+- **Stat cards and tab counts** use the `all*` variants (unpaginated full
+  lists) so they stay stable regardless of the current page or search.
+- **Column definitions** for complex tables should be extracted to a feature
+  component file (`features/<name>/components/<resource>-table-columns.tsx`)
+  as a hook returning `DataTableColumn<T>[]`. See `useOrderColumns()` in
+  `features/orders/components/order-table-columns.tsx` for the canonical
+  example.
+- **Mutations always target `KEY`**, the literal base-key string. The bound
+  `mutate` from the base `useSWR` call already does this correctly — don't
+  reroute it.
+- **`_globalMutate` must use a filter function**, not a string prefix.
+  SWR's `mutate` does prefix matching by default, so passing a bare key
+  (e.g. `_globalMutate(KEY)`) will also revalidate unrelated hooks whose
+  keys start with the same string. Use a filter to scope it:
+  ```ts
+  // Wrong — revalidates every SWR key that starts with "/api/team"
+  _globalMutate(KEY)
+
+  // Correct — only revalidates keys that exactly match "/api/team"
+  _globalMutate((key: string) => key === KEY)
+  ```
+  This matters especially when a hook has multiple SWR subscriptions (e.g.
+  `useTeam` has both a paginated key and an `allTeam` key — both use
+  `/api/team` as a prefix).
 
 ---
 
@@ -380,6 +419,228 @@ UI — `logAudit()` is the only writer, by design.
 
 ---
 
+## 3.6. API response helpers (`lib/api-response.ts`)
+
+Every API route uses standardized response helpers instead of raw
+`NextResponse.json()` for error responses:
+
+```ts
+import {
+  unauthorized,
+  forbidden,
+  notFound,
+  badRequest,
+  conflict,
+} from "@/lib/api-response"
+
+if (!me) return unauthorized()
+if (me.role !== "ADMIN") return forbidden()
+if (!row) return notFound()
+```
+
+Available helpers: `unauthorized()` (401), `forbidden(msg?)` (403),
+`notFound(msg?)` (404), `badRequest(msg)` (400), `conflict(msg)` (409),
+`serverError(msg?)` (500), `errorResponse(msg, status)` (generic).
+
+Use `NextResponse.json()` only for **successful** responses (200, 201) and
+custom error shapes (e.g. validation errors with a `rows` array). All 401/403/404
+responses must go through these helpers.
+
+### Rate limiting (`lib/rate-limit.ts`)
+
+Write-heavy endpoints (order creation, bulk creation, payout requests, etc.)
+are protected by a sliding-window rate limiter:
+
+```ts
+import { rateLimit, getClientIp } from "@/lib/rate-limit"
+
+const ip = getClientIp(req)
+const { allowed } = rateLimit(`orders:${ip}`, { windowMs: 60_000, max: 10 })
+if (!allowed) return errorResponse("Too many requests", 429)
+```
+
+The rate limiter is in-memory (single-instance). For multi-instance
+deployages, swap the internal `Map` for a Redis/Upstash store.
+
+---
+
+## 3.7. Confirmation dialogs (`components/confirm-dialog.tsx`)
+
+Reusable confirmation dialog for destructive or semi-destructive actions
+(approve, suspend, cancel, settle, etc.). It wraps `@base-ui/react/dialog`
+and renders a title, description, action button with loading spinner, and
+cancel button.
+
+```tsx
+import { ConfirmDialog } from "@/components/confirm-dialog"
+
+<ConfirmDialog
+  open={open}
+  onOpenChange={setOpen}
+  title="Approve merchant"
+  description={`Approve "${merchant.businessName}"? They will gain access to the platform.`}
+  confirmText="Approve"
+  loading={submitting}
+  onConfirm={async () => {
+    setSubmitting(true)
+    const res = await approveMerchant(merchant.id)
+    setSubmitting(false)
+    if (!res.ok) return toast.error(res.error)
+    toast.success("Merchant approved.")
+    setOpen(false)
+  }}
+/>
+```
+
+Props: `open`, `onOpenChange`, `title`, `description`, `confirmText`,
+`variant` (`"default"` | `"destructive"`), `loading`, `onConfirm`.
+
+Rules:
+
+- Use `ConfirmDialog` for **any action that changes state** — never rely on
+  the browser's built-in `window.confirm()`.
+- Place the dialog state (`open`/`setOpen`) in the page or parent component
+  that owns the triggering button. The dialog receives the state as props.
+- Always pass `loading={submitting}` so the confirm button shows a spinner
+  and is disabled during the API call.
+- **Never** nest `ConfirmDialog` inside a `DropdownMenu` — close the menu
+  first (via state) or trigger from a standalone button. Nested popovers
+  break focus management.
+
+### DropdownMenu action columns
+
+Table action columns use `DropdownMenu` from `@base-ui/react/dropdown-menu`
+for consistency. The pattern:
+
+```tsx
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+
+{
+  id: "actions",
+  header: "",
+  align: "right",
+  headClassName: "w-12",
+  cell: (row) => (
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => handleAction(row)}>
+            <Pencil className="size-4" />
+            Action label
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  ),
+}
+```
+
+Rules:
+
+- Trigger is always `<MoreHorizontal>` icon in a ghost icon button.
+- `align="end"` so the menu opens to the left of the trigger on narrow
+  screens.
+- `w-48` on the content for consistent width across all action menus.
+- Items that open a destructive confirmation should close the menu first
+  (via `onSelect` setting state) before showing the `ConfirmDialog`.
+
+---
+
+## 3.8. DataTable loading skeleton
+
+The `DataTable` component accepts a `loading` boolean prop. When `true`, it
+renders skeleton placeholder rows instead of data rows, matching the current
+column layout:
+
+```tsx
+const { data, isLoading } = useSWR<PaginatedResponse<Thing>>(...)
+
+<DataTable
+  id="things"
+  serverPaginated
+  loading={isLoading}
+  columns={columns}
+  data={data}
+  ...
+/>
+```
+
+The skeleton uses `components/skeleton.tsx` (a `<div>` with a shimmer
+animation via Tailwind). Each cell gets a skeleton `<div>` whose width is
+proportional to a random fraction, so the loading state looks like real
+content at a glance.
+
+Rules:
+
+- **Every `DataTable` must pass `loading={isLoading}`** from its SWR hook.
+  This gives users immediate visual feedback while data fetches, instead of
+  a blank table or a full-page spinner.
+- The `loading` prop is distinct from `serverPaginated` — both can be true
+  simultaneously (server-paginated table on initial load).
+- Don't use the skeleton for sub-second transitions (tab switches on cached
+  data) — SWR's `isLoading` is `true` only on the initial fetch or when the
+  key changes, so it won't flicker on cached re-renders.
+
+---
+
+## 3.9. Switch toggle loading UI
+
+Active-status switches (team members, divisions, warehouses) show a spinner
+next to the switch while the API call is in flight:
+
+```tsx
+const [togglingId, setTogglingId] = useState<string | null>(null)
+
+async function handleToggleActive(item: Thing) {
+  setTogglingId(item.id)
+  const res = await updateThing(item.id, { isActive: !item.isActive })
+  setTogglingId(null)
+  if (!res.ok) return toast.error(res.error)
+  toast.success(`${item.name} ${item.isActive ? "disabled" : "enabled"}.`)
+}
+
+// In the column cell:
+<div className="flex items-center gap-2">
+  <Switch
+    checked={item.isActive}
+    disabled={togglingId === item.id}
+    onCheckedChange={() => handleToggleActive(item)}
+  />
+  {togglingId === item.id ? (
+    <Loader2 className="text-muted-foreground size-3 animate-spin" />
+  ) : (
+    <Badge variant={item.isActive ? "default" : "secondary"}>
+      {item.isActive ? "Active" : "Disabled"}
+    </Badge>
+  )}
+</div>
+```
+
+Rules:
+
+- Track which row is toggling with `togglingId` state (or equivalent).
+- **Disable the switch** during the API call to prevent double-submits.
+- Show a `<Loader2 className="animate-spin" />` spinner next to the switch,
+  replacing the text label/badge. The spinner is `size-3` (12px) to stay
+  proportional to the switch.
+- **Do not wrap switches in `ConfirmDialog`** — switches are designed for
+  quick toggles. If the action needs confirmation, use a button that opens
+  the dialog instead.
+
+---
+
 ## 4. Storage (`lib/storage/`)
 
 File uploads go through a single entry point — **never import the local or R2
@@ -401,6 +662,14 @@ the file before sending and targets the correct folder (avatar vs. photo). The
 
 Never write backend-specific upload logic outside `lib/storage/`.
 
+### Upload rate limiting
+
+`proxy.ts` runs as the edge proxy and rate-limits `POST /api/uploads` to 20
+requests per minute per IP using an in-process sliding-window counter. For
+multi-instance deployments, swap the in-memory `Map` for a Redis/Upstash store.
+The matcher is configured in `proxy.ts`'s `config` export — don't widen it
+without a reason.
+
 ---
 
 ## 5. Environment validation (`lib/env.ts`)
@@ -416,6 +685,13 @@ When you add a new env var:
 
 Never read `process.env` for a required variable without a corresponding entry
 in `validateEnv()`.
+
+Key env vars:
+
+- `NEXT_PUBLIC_SITE_URL` — the app's canonical public URL for auth callbacks,
+  SEO metadata, OG tags, and sitemaps. Falls back to `site.json` if unset.
+- `VERCEL_PROJECT_NAME` — scopes preview deployment trusted origins in
+  `lib/auth.ts`. Falls back to a broader `*.vercel.app` match if unset.
 
 ---
 
@@ -462,8 +738,11 @@ the JSON directly in components.
 
 Example: the `rider.taskType` column added recently.
 
-1. **Schema** — add the column in `lib/db/schema.ts`. Use a `text(... { enum })`
-   for enums and export the values array if the UI needs it:
+1. **Schema** — add the column in **both** `lib/db/schema.postgres.ts` and
+   `lib/db/schema.turso.ts`. The postgres file uses pg-core types (`text`,
+   `boolean`, `doublePrecision`, `jsonb`, …); the turso file uses sqlite-core
+   equivalents (`text`, `integer`, `real`, `text({ mode: "json" })`, …).
+   Use a `text(... { enum })` for enums and export the values array if the UI needs it:
    ```ts
    export const riderTaskTypes = ["PICKUP", "DELIVERY", "BOTH"] as const
    // ...
@@ -480,7 +759,8 @@ Example: the `rider.taskType` column added recently.
 4. **API** — read/write the new field in the matching route(s).
 5. **Hook** — add it to the create/update input types in `use-<resource>.ts`.
 6. **UI** — surface it in the dialog(s) and any table columns / detail views.
-7. **Seed** — add the field to `lib/db/seed.ts` sample rows.
+7. **Seed** — add the field to the relevant seed file under `lib/db/seed/`
+   (e.g. `lib/db/seed/riders.ts`).
 8. **Apply the DB change** — see [Applying schema changes](#applying-schema-changes).
 
 > If the column is `NOT NULL` and existing rows would violate it, either give it
@@ -500,13 +780,14 @@ the above in three ways:
   even though today's UI only ever sends one field group per request.
 - Skip the seed step if the column has a sane `.default(...)` — Drizzle
   applies it on insert when the seed script doesn't set the field explicitly,
-  so there's nothing to backfill in `lib/db/seed.ts`.
+  so there's nothing to backfill in `lib/db/seed/`.
 
 ### Recipe B — Add a brand-new resource (full CRUD)
 
 Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 
-1. **Schema** — add the `pgTable` in `lib/db/schema.ts`, with `createId()` PK and
+1. **Schema** — add the `pgTable` / `sqliteTable` in **both**
+   `lib/db/schema.postgres.ts` and `lib/db/schema.turso.ts`, with `createId()` PK and
    relations via `.references()`.
 2. **Type** — re-export from `lib/types.ts`:
    `export type Thing = typeof thing.$inferSelect`.
@@ -524,10 +805,10 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
-   `mutate(..., { revalidate: false })`. If the resource needs a search box,
-   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
+   `mutate(..., { revalidate: false })`. If the resource needs search/pagination,
+   copy `use-orders.ts` instead and follow [§3's server-side search subsection](#server-side-search-and-pagination).
 6. **UI** — a page (Recipe C) and dialogs (Recipe D).
-7. **Seed** — add sample rows to `lib/db/seed.ts`.
+7. **Seed** — add sample rows to the relevant file under `lib/db/seed/`.
 
 ### Recipe C — Add a page / screen
 
@@ -543,18 +824,40 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    ```
 3. Get data from the resource hook(s) — never fetch in the page directly.
 4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`. If the resource is searchable, destructure `query`/`setQuery`
-   from the hook and render the search `<Input>` (with a `Search` icon, see
-   `app/dashboard/orders/page.tsx`) above the table — don't keep a local
-   `useState` for it. `DataTable`'s own footer already places pagination on
-   the left and the CSV button on the right (disabled when no `csv` prop is
-   passed); don't rebuild that layout per page. Don't pass a `pageSize` prop
-   unless this table genuinely needs a different size than the rest of the
-   app — it already defaults to the signed-in account's saved preference
-   (Account settings → Tables, 1-250, default 20). An explicit `pageSize` is
-   for deliberately small, fixed widgets (see the dashboard summary lists in
-   `app/rider/page.tsx`, `pageSize={5}`), not a substitute for the account
-   setting.
+   `FormDialog`. Every `<DataTable>` uses server-side pagination:
+
+   ```tsx
+   <DataTable
+     id="warehouse-orders"
+     serverPaginated
+     columns={columns}
+     data={orders}
+     total={total}
+     page={page}
+     pageSize={limit}
+     onPageChange={setPage}
+     onPageSizeChange={setLimit}
+     searchQuery={query}
+     onSearchChange={setQuery}
+     getRowKey={(o) => o.id}
+   />
+   ```
+
+   - **`id`** — a unique string that enables column visibility settings
+     (persisted to localStorage) and shows a settings gear in the toolbar.
+   - **`serverPaginated`** — enables server-side pagination. The hook manages
+     `page`, `limit`, `query`, and `statuses` state; the DataTable handles
+     page navigation, search input, and CSV export via props.
+
+   `DataTable`'s toolbar places the search input on the top-right and the
+   settings gear + CSV download in the footer. Don't rebuild that layout per
+   page. Don't pass a `pageSize` prop unless this table genuinely needs a
+   different size than the rest of the app — it already defaults to the
+   signed-in account's saved preference (Account settings → Tables, 1-250,
+   default 20). An explicit `pageSize` is for deliberately small, fixed
+   widgets (see the dashboard summary lists in `app/rider/page.tsx`,
+   `pageSize={5}`), not a substitute for the account setting.
+
 5. **Add the nav entry** in `lib/nav-config.ts` under the correct role array
    (`href`, `label`, `icon`, `exact`). Pick an icon already imported there or
    add the import.
@@ -579,27 +882,33 @@ Every handler follows the same template:
 
 ```ts
 import { requireSession } from "@/lib/api-auth"
+import { unauthorized, forbidden, notFound } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { thing } from "@/lib/db/schema"
 import { thingCreateSchema, parseBody } from "@/lib/validation"
+import {
+  paginateResponse,
+  parsePagination,
+  parseStatusFilter,
+} from "@/lib/pagination"
 import { and, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-// Accept `req: Request` even if the resource has no search yet — adding `?q=`
-// later then doesn't require touching the function signature.
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
+
+  const { limit, offset } = parsePagination(req)
+  const statuses = parseStatusFilter(req)
 
   // Scope role-limited readers server-side.
   let where = undefined
   if (me.role === "WAREHOUSE_ADMIN") {
-    if (!me.warehouseId) return NextResponse.json([])
+    if (!me.warehouseId) return NextResponse.json(paginateResponse([], 0))
     // ...build the role-scoped where
   }
 
-  // Optional free-text search, layered on top of the role-scoped where —
-  // search narrows what a role already sees, never widens it.
+  // Optional free-text search, layered on top of the role-scoped where.
   const search = new URL(req.url).searchParams.get("q")?.trim()
   if (search) {
     const likeQ = `%${search}%`
@@ -607,27 +916,32 @@ export async function GET(req: Request) {
     where = where ? and(where, searchClause) : searchClause
   }
 
-  const rows = where
-    ? await db.select().from(thing).where(where)
-    : await db.select().from(thing)
-  return NextResponse.json(rows)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(thing)
+    .where(where)
+  const rows = await db
+    .select()
+    .from(thing)
+    .where(where)
+    .limit(limit)
+    .offset(offset)
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
+  if (!me) return unauthorized()
+  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") return forbidden()
   const parsed = await parseBody(req, thingCreateSchema)
   if (parsed.error) return parsed.error
   // ...insert + return NextResponse.json(created, { status: 201 })
 }
 ```
 
-Rules: `requireSession()` first; validate the body with `parseBody` + a zod
-schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
-return the created/updated row so the hook can update its cache. **`parseBody`
+Rules: `requireSession()` first; use `unauthorized()`/`forbidden()` for
+auth errors; validate the body with `parseBody` + a zod schema; return the
+created/updated row so the hook can update its cache. **`parseBody`
 normalises a missing or unparseable request body to `{}`** before running the
 schema — so schemas where every field is optional (e.g. `orderCancelSchema`)
 parse successfully even when the client sends no body at all. This is a Zod 4
@@ -681,17 +995,37 @@ done; don't add a second `logAudit()` call in the route wrapper.
 
 ## Applying schema changes
 
-The DB connection string lives in `.env.development.local` (not `.env`), so load
-it explicitly when running DB scripts from the shell:
+The DB connection string lives in `.env.development.local` (not `.env`). The
+project uses `dotenv-cli` to load it when running DB scripts — the `db:push`,
+`db:seed`, etc. npm scripts already include `dotenv -e .env.development.local`:
 
 ```bash
-set -a && . ./.env.development.local && set +a && pnpm db:push
-set -a && . ./.env.development.local && set +a && pnpm db:seed
+pnpm db:push
+pnpm db:seed
 ```
 
-- `pnpm db:push` applies `schema.ts` to Neon. A `NOT NULL` add fails if existing
-  rows violate it — backfill first (a quick `UPDATE` via the Neon SQL tooling) or
-  give the column a default.
+If you need to run a raw command that requires the env, use `dotenv-cli`:
+
+```bash
+pnpm dotenv -e .env.development.local -- drizzle-kit push
+```
+
+**When you add or change a column, update both schema files** —
+`lib/db/schema.postgres.ts` and `lib/db/schema.turso.ts`. They use different
+type systems (pg-core vs sqlite-core) but must represent the same shape.
+
+Provider-specific push shortcuts:
+
+```bash
+pnpm db:push:pg      # DB_PROVIDER=postgres
+pnpm db:push:turso   # DB_PROVIDER=turso
+```
+
+The plain `pnpm db:push` reads `DB_PROVIDER` from the environment and routes
+to the correct dialect automatically.
+
+- `pnpm db:push` applies the schema to the active database. A `NOT NULL` add
+  fails if existing rows violate it — backfill first or give the column a default.
 - The seed is **idempotent** — it skips rows that already exist. After changing
   seed values for existing ids, either reset the data or run a targeted `UPDATE`.
 

@@ -1,13 +1,11 @@
 "use client"
 
-import { Search } from "lucide-react"
 import { useAuditLogs } from "@/features/audit-logs/hooks/use-audit-logs"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { RoleBadge } from "@/components/role-badge"
 import type { AuditLog } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 function formatTimestamp(value: string) {
@@ -21,7 +19,21 @@ function formatTimestamp(value: string) {
 }
 
 export default function AuditLogsPage() {
-  const { auditLogs, query, setQuery, isLoading } = useAuditLogs()
+  const {
+    auditLogs,
+    allAuditLogs,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
+    isLoading,
+  } = useAuditLogs()
 
   const columns: DataTableColumn<AuditLog>[] = [
     {
@@ -83,47 +95,51 @@ export default function AuditLogsPage() {
         description={pageContent.dashboard.auditLogs.description}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            placeholder="Search actor, action, entity, description"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
-
       <Card>
         <CardContent className="p-0">
           <DataTable
+            serverPaginated
+            id="dashboard-audit-logs"
+            searchable
             columns={columns}
             data={auditLogs}
+            total={total}
+            loading={isLoading}
+            query={query}
+            onQueryChange={(q) => {
+              setQuery(q)
+              setPage(1)
+            }}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
             getRowKey={(l) => l.id}
             initialSortId="createdAt"
             initialSortDir="desc"
             emptyMessage={isLoading ? "Loading…" : "No audit log entries yet."}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
+            csvData={allAuditLogs}
             csv={{
-              parser: (l) => [
-                formatTimestamp(l.createdAt),
-                l.actorName,
-                l.actorRole,
-                l.action,
-                l.entityType,
-                l.entityId ?? "",
-                l.description,
-              ],
+              filename: "audit-logs",
               headers: [
                 "When",
                 "Actor",
                 "Role",
                 "Action",
-                "Entity type",
-                "Entity ID",
+                "Entity",
                 "Description",
               ],
-              filename: "audit-logs",
+              parser: (l) => [
+                new Date(l.createdAt).toLocaleString(),
+                l.actorName,
+                l.actorRole,
+                l.action,
+                l.entityType,
+                l.description,
+              ],
             }}
           />
         </CardContent>

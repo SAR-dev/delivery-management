@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Wallet, Package } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Package, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
 import { formatTk } from "@/lib/pricing"
@@ -32,13 +32,11 @@ export function PayoutRequestDialog({
   const [method, setMethod] = useState("bKash")
   const [details, setDetails] = useState("")
   const [submitting, setSubmitting] = useState(false)
-
+  const [openCount, setOpenCount] = useState(0)
+  const prevOpen = useRef(open)
   useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMethod("bKash")
-      setDetails("")
-    }
+    if (open && !prevOpen.current) setOpenCount((c) => c + 1)
+    prevOpen.current = open
   }, [open])
 
   const total = payableOrders.reduce((sum, o) => sum + o.productCost, 0)
@@ -71,6 +69,7 @@ export function PayoutRequestDialog({
 
   return (
     <FormDialog
+      key={`${payableOrders.map((o) => o.id).join(",")}-${openCount}`}
       open={open}
       onOpenChange={onOpenChange}
       title="Request payout"

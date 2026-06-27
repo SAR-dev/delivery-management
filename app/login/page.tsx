@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Loader2, Lock, FlaskConical } from "lucide-react"
-import { useAuth, homeForRole } from "@/features/account/hooks/use-auth"
+import { FlaskConical, Loader2, Lock } from "lucide-react"
+import { homeForRole, useAuth } from "@/features/account/hooks/use-auth"
 import { siteConfig } from "@/config/site"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -88,12 +88,12 @@ export default function LoginPage() {
       </div>
       {/* Brand panel */}
       <section className="bg-sidebar text-sidebar-foreground relative hidden flex-1 flex-col justify-between p-12 lg:flex">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <BrandIcon className="size-5" />
           <span className="text-lg font-semibold tracking-tight">
             {siteConfig.name}
           </span>
-        </div>
+        </Link>
 
         <div className="max-w-md">
           <p className="text-sidebar-primary text-sm font-medium tracking-widest uppercase">
@@ -117,14 +117,14 @@ export default function LoginPage() {
       {/* Form panel */}
       <section className="flex flex-1 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2 lg:hidden">
+          <Link href="/" className="mb-8 flex items-center gap-2 lg:hidden">
             <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
               <BrandIcon className="size-5" />
             </div>
             <span className="text-lg font-semibold tracking-tight">
               {siteConfig.name}
             </span>
-          </div>
+          </Link>
 
           <Card className="border-border/70 shadow-sm">
             <CardHeader className="flex flex-col gap-1">

@@ -7,8 +7,6 @@ type CsvCell = string | number | null | undefined
 
 function escapeCell(cell: CsvCell): string {
   const value = cell == null ? "" : String(cell)
-  // Quote whenever the value contains a comma, quote, or newline; double up
-  // any embedded quotes per RFC 4180.
   if (/[",\n\r]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`
   }
@@ -23,7 +21,6 @@ export function toCsv(rows: CsvCell[][], headers?: string[]): string {
 
 /** Triggers a browser download of `content` as a file named `filename`. */
 export function downloadCsv(filename: string, content: string): void {
-  // Prefix a BOM so Excel opens UTF-8 CSVs without mangling non-ASCII text.
   const blob = new Blob(["\ufeff", content], {
     type: "text/csv;charset=utf-8;",
   })

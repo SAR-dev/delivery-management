@@ -23,7 +23,7 @@ export const RESOURCE_KEYS = [
 
 // Shared fetcher for every resource hook. Throws on non-2xx so SWR surfaces
 // the failure through its `error` channel (mirrors the old loadAll() behavior
-// of treating any failed response as a failed load).
+// of treating any failed response as a failed load).\
 export async function jsonFetcher<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) {
@@ -32,10 +32,11 @@ export async function jsonFetcher<T>(url: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-// The old PlatformProvider loaded all data exactly once per session (no focus
-// or reconnect refetching). Mirror that so the data-layer swap doesn't change
-// observable loading/refetch behavior.
+// revalidateOnFocus is disabled to avoid disruptive table refreshes while an
+// admin is mid-action. revalidateOnReconnect is enabled so that data is
+// refreshed automatically after a network drop — preventing stale reads when
+// the tab comes back online after connectivity is restored.
 export const swrOptions: SWRConfiguration = {
   revalidateOnFocus: false,
-  revalidateOnReconnect: false,
+  revalidateOnReconnect: true,
 }

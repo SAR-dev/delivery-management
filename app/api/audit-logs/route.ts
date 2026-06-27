@@ -1,21 +1,19 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { auditLog } from "@/lib/db/schema"
-import { desc, ilike, or } from "drizzle-orm"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
+import { asc, desc, ilike, or, sql } from "drizzle-orm"
+import { unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
-// Read-only. Visible to Admin and Super Admin only — this is an internal
-// trail of who-did-what, not a resource either role mutates through the API.
-// Mirrors /api/team: other roles get an empty list (not 403) so the global
-// useDataError aggregator — which subscribes for every signed-in user,
-// regardless of role — doesn't surface a false "failed to load" banner.
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json(paginateResponse([], 0), { status: 200 })
   }
 
+  const { limit, offset } = parsePagination(req)
   const search = new URL(req.url).searchParams.get("q")?.trim()
   const where = search
     ? (() => {
@@ -29,13 +27,33 @@ export async function GET(req: Request) {
       })()
     : undefined
 
-  const rows = where
-    ? await db
-        .select()
-        .from(auditLog)
-        .where(where)
-        .orderBy(desc(auditLog.createdAt))
-    : await db.select().from(auditLog).orderBy(desc(auditLog.createdAt))
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(auditLog)
+    .where(where)
 
-  return NextResponse.json(rows)
+  let q = db.select().from(auditLog).$dynamic()
+  if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    createdAt: auditLog.createdAt,
+    actor: auditLog.actorName,
+    action: auditLog.action,
+    entity: auditLog.entityType,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  } else {
+    q = q.orderBy(desc(auditLog.createdAt))
+  }
+
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }

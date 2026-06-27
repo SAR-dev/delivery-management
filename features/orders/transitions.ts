@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { unauthorized, forbidden, notFound } from "@/lib/api-response"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import {
@@ -22,19 +23,6 @@ import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 import type { z } from "zod"
 
-// ---------------------------------------------------------------------------
-// Declarative order state machine.
-//
-// Every order-lifecycle PATCH route used to repeat the same skeleton:
-//   requireSession → role/ownership gate → fetch order → status guard →
-//   business rules → db.update(...).set(...) → return the row.
-//
-// This module captures each transition declaratively so the 10 route files
-// become thin wrappers. Behavior is intentionally identical to the original
-// routes — including the exact order in which checks run and the exact error
-// messages/status codes — so Phase 0's spec tests pass unmodified.
-// ---------------------------------------------------------------------------
-
 type Session = NonNullable<Awaited<ReturnType<typeof requireSession>>>
 type OrderRow = typeof order.$inferSelect
 
@@ -48,20 +36,13 @@ interface TransitionContext<Body> {
 }
 
 interface TransitionDef<Schema extends z.ZodType | undefined = undefined> {
-  // Role/precondition gate. Returns true when the session may attempt this
-  // transition at all (mirrors each route's `me.role !== ...` check).
   authorize: (session: Session) => boolean
-  // Optional Zod schema; when present the body is parsed BEFORE the order is
-  // fetched, exactly as the original routes did (invalid body → 400, not 404).
   schema?: Schema
-  // Ownership + status + business-rule checks, run in the original per-route
-  // order. Returns an error to short-circuit, or null to proceed.
   guard: (
     ctx: TransitionContext<
       Schema extends z.ZodType ? z.infer<Schema> : undefined
     >,
   ) => Promise<GuardError> | GuardError
-  // Computes the `db.update(order).set(...)` payload for a valid transition.
   buildUpdate: (
     ctx: TransitionContext<
       Schema extends z.ZodType ? z.infer<Schema> : undefined
@@ -76,7 +57,6 @@ function defineTransition<Schema extends z.ZodType | undefined>(
 }
 
 export const ORDER_TRANSITIONS = {
-  // -------------------------------------------------------------------------
   approve: defineTransition({
     authorize: (me) => me.role === "SUPER_ADMIN" || me.role === "ADMIN",
     schema: orderApproveSchema,
@@ -99,7 +79,6 @@ export const ORDER_TRANSITIONS = {
           status: 400,
         }
       }
-      // Weight compliance against the merchant's current pricing settings.
       const [merchantRow] = await db
         .select({ maxWeightKg: merchant.maxWeightKg })
         .from(merchant)
@@ -125,7 +104,6 @@ export const ORDER_TRANSITIONS = {
     },
   }),
 
-  // -------------------------------------------------------------------------
   dispatch: defineTransition({
     authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
     schema: orderDispatchSchema,
@@ -172,7 +150,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   "picked-up": defineTransition({
     authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
     schema: orderPickedUpSchema,
@@ -217,7 +194,6 @@ export const ORDER_TRANSITIONS = {
     },
   }),
 
-  // -------------------------------------------------------------------------
   receive: defineTransition({
     authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
     guard: ({ order: o }) => {
@@ -237,7 +213,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   "out-for-delivery": defineTransition({
     authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
     guard: ({ order: o, session }) => {
@@ -259,7 +234,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   delivered: defineTransition({
     authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
     schema: orderDeliveredSchema,
@@ -283,7 +257,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   failed: defineTransition({
     authorize: (me) => me.role === "RIDER" && Boolean(me.riderId),
     schema: orderFailedSchema,
@@ -306,7 +279,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   reattempt: defineTransition({
     authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
     guard: ({ order: o, session }) => {
@@ -338,7 +310,6 @@ export const ORDER_TRANSITIONS = {
     },
   }),
 
-  // -------------------------------------------------------------------------
   return: defineTransition({
     authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
     schema: orderReturnSchema,
@@ -369,7 +340,6 @@ export const ORDER_TRANSITIONS = {
     },
   }),
 
-  // -------------------------------------------------------------------------
   "settle-cod": defineTransition({
     authorize: (me) => me.role === "WAREHOUSE_ADMIN" && Boolean(me.warehouseId),
     guard: ({ order: o, session }) => {
@@ -396,7 +366,6 @@ export const ORDER_TRANSITIONS = {
     }),
   }),
 
-  // -------------------------------------------------------------------------
   cancel: defineTransition({
     authorize: (me) =>
       me.role === "SUPER_ADMIN" ||
@@ -406,7 +375,6 @@ export const ORDER_TRANSITIONS = {
     schema: orderCancelSchema,
     guard: ({ order: o, session }) => {
       if (session.role === "MERCHANT") {
-        // Merchants can only cancel orders they own, before pickup.
         if (o.merchantId !== session.merchantId) {
           return { error: "Forbidden", status: 403 }
         }
@@ -418,7 +386,6 @@ export const ORDER_TRANSITIONS = {
           }
         }
       } else {
-        // Admin / Super Admin / Warehouse Admin: before out-for-delivery.
         const adminAllowed = [
           "PENDING",
           "APPROVED",
@@ -446,13 +413,6 @@ export const ORDER_TRANSITIONS = {
 
 export type TransitionName = keyof typeof ORDER_TRANSITIONS
 
-// ---------------------------------------------------------------------------
-// Shared runner. Every transition route delegates to this. The control flow
-// mirrors the original routes exactly:
-//   session → role gate → (parse body) → fetch order → guard → update.
-// ---------------------------------------------------------------------------
-// Human-readable past-tense label for each transition, used to build the
-// audit log description (e.g. "Approved order ORD-0042").
 const TRANSITION_LABELS: Record<TransitionName, string> = {
   approve: "Approved",
   dispatch: "Dispatched",
@@ -475,12 +435,11 @@ export async function applyOrderTransition(
   const def = ORDER_TRANSITIONS[name] as TransitionDef<z.ZodType | undefined>
 
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (!def.authorize(me)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
-  // Body is parsed before the order is fetched (invalid body → 400, not 404).
   let body: unknown = undefined
   if (def.schema) {
     const parsed = await parseBody(req, def.schema)
@@ -488,14 +447,8 @@ export async function applyOrderTransition(
     body = parsed.data
   }
 
-  // Transaction: lock this order row for the duration of the guard + write so
-  // two concurrent transitions on the same order (e.g. two admins approving,
-  // or a rider double-submitting a delivery outcome) can't both pass the
-  // guard against stale state. `FOR UPDATE` makes a second concurrent
-  // transaction block here until the first commits, then re-reads the
-  // already-updated row — so its own guard correctly sees the new status.
   const committed: { order: OrderRow | null } = { order: null }
-  const response = await db.transaction(async (tx) => {
+  const response = await db.transaction(async (tx: any) => {
     const [orderRow] = await tx
       .select()
       .from(order)
@@ -503,7 +456,7 @@ export async function applyOrderTransition(
       .for("update")
       .limit(1)
     if (!orderRow) {
-      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+      return notFound("Order not found")
     }
 
     const ctx = {
@@ -531,8 +484,6 @@ export async function applyOrderTransition(
     return NextResponse.json(updated)
   })
 
-  // Fire the audit log only once the transaction has committed and actually
-  // produced an updated order (guard/not-found short-circuits leave this null).
   if (committed.order) {
     await logAudit({
       actor: { userId: me.userId, name: me.name, role: me.role },
