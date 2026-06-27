@@ -124,6 +124,18 @@ export const MERCHANT_SIDEBAR: SidebarConfig = {
       exact: true,
     },
     {
+      href: "/merchant/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+      exact: true,
+    },
+    {
+      href: "/merchant/divisions",
+      label: "Divisions",
+      icon: MapIcon,
+      exact: true,
+    },
+    {
       href: "/merchant/account",
       label: "Account",
       icon: UserCog,
@@ -173,6 +185,18 @@ export const WAREHOUSE_SIDEBAR: SidebarConfig = {
       exact: true,
     },
     {
+      href: "/warehouse/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+      exact: true,
+    },
+    {
+      href: "/warehouse/divisions",
+      label: "Divisions",
+      icon: MapIcon,
+      exact: true,
+    },
+    {
       href: "/warehouse/account",
       label: "Account",
       icon: UserCog,
@@ -196,6 +220,18 @@ export const RIDER_SIDEBAR: SidebarConfig = {
       href: "/rider/delivery",
       label: "Delivery queue",
       icon: Truck,
+      exact: true,
+    },
+    {
+      href: "/rider/warehouses",
+      label: "Warehouses",
+      icon: WarehouseIcon,
+      exact: true,
+    },
+    {
+      href: "/rider/divisions",
+      label: "Divisions",
+      icon: MapIcon,
       exact: true,
     },
     {
