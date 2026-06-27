@@ -1,7 +1,15 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, Navigation, Package, PackageCheck, PartyPopper, Phone, Truck, } from "lucide-react"
+import {
+  CheckCircle2,
+  Navigation,
+  Package,
+  PackageCheck,
+  PartyPopper,
+  Phone,
+  Truck,
+} from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
