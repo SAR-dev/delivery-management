@@ -43,4 +43,5 @@ export const {
   emailLogStatuses,
   emailLog,
   auditLog,
+  announcement,
 } = mod

@@ -484,6 +484,35 @@ export const emailLog = pgTable("email_log", {
 })
 
 // =============================================================================
+// Announcements
+//
+// Created by Admins and Super Admins; targeted at one or more platform roles.
+// An announcement is "live" when isActive=true, publishedAt <= now, and either
+// expiresAt is null or expiresAt > now. targetRoles is a jsonb array of Role
+// values — same pattern as payoutRequest.orderIds.
+// =============================================================================
+
+export const announcement = pgTable("announcement", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  // When the announcement becomes visible. Null = not yet scheduled (draft).
+  publishedAt: ts("publishedAt"),
+  // When it stops being visible. Null = no expiry.
+  expiresAt: ts("expiresAt"),
+  // Master toggle — allows admins to pull an announcement without deleting it.
+  isActive: boolean("isActive").notNull().default(true),
+  // Which roles this announcement targets. Stored as jsonb array of Role strings.
+  targetRoles: jsonb("targetRoles").$type<string[]>().notNull(),
+  // Name of the admin who created the announcement (matches the approvedBy pattern).
+  createdBy: text("createdBy").notNull(),
+  createdAt: ts("createdAt").notNull().defaultNow(),
+  updatedAt: ts("updatedAt").notNull().defaultNow(),
+})
+
+// =============================================================================
 // Audit log
 //
 // A generic, append-only trail of state-changing actions taken by Admin /

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Bell,
   Bike,
   Building2,
   Coins,
@@ -8,6 +9,7 @@ import {
   type LucideIcon,
   Mail,
   Map as MapIcon,
+  Megaphone,
   Package,
   PackageCheck,
   PackagePlus,
@@ -61,6 +63,16 @@ export const SUPER_ADMIN_SIDEBAR: SidebarConfig = {
       icon: WarehouseIcon,
     },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/announcements",
+      label: "Announcements",
+      icon: Megaphone,
+    },
+    {
+      href: "/dashboard/announcements-inbox",
+      label: "Inbox",
+      icon: Bell,
+    },
     { href: "/dashboard/audit-logs", label: "Audit Logs", icon: ScrollText },
     { href: "/dashboard/email-logs", label: "Email Logs", icon: Mail },
     {
@@ -88,6 +100,16 @@ export const ADMIN_SIDEBAR: SidebarConfig = {
     { href: "/dashboard/riders", label: "Riders", icon: Bike },
     { href: "/dashboard/merchants", label: "Merchants", icon: Store },
     { href: "/dashboard/payouts", label: "Payouts", icon: Wallet },
+    {
+      href: "/dashboard/announcements",
+      label: "Announcements",
+      icon: Megaphone,
+    },
+    {
+      href: "/dashboard/announcements-inbox",
+      label: "Inbox",
+      icon: Bell,
+    },
     { href: "/dashboard/audit-logs", label: "Audit Logs", icon: ScrollText },
     { href: "/dashboard/email-logs", label: "Email Logs", icon: Mail },
     {
@@ -133,6 +155,12 @@ export const MERCHANT_SIDEBAR: SidebarConfig = {
       href: "/merchant/divisions",
       label: "Divisions",
       icon: MapIcon,
+      exact: true,
+    },
+    {
+      href: "/merchant/announcements",
+      label: "Inbox",
+      icon: Megaphone,
       exact: true,
     },
     {
@@ -197,6 +225,12 @@ export const WAREHOUSE_SIDEBAR: SidebarConfig = {
       exact: true,
     },
     {
+      href: "/warehouse/announcements",
+      label: "Inbox",
+      icon: Megaphone,
+      exact: true,
+    },
+    {
       href: "/warehouse/account",
       label: "Account",
       icon: UserCog,
@@ -232,6 +266,12 @@ export const RIDER_SIDEBAR: SidebarConfig = {
       href: "/rider/divisions",
       label: "Divisions",
       icon: MapIcon,
+      exact: true,
+    },
+    {
+      href: "/rider/announcements",
+      label: "Inbox",
+      icon: Megaphone,
       exact: true,
     },
     {

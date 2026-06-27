@@ -415,6 +415,36 @@ export const emailLog = sqliteTable("email_log", {
 })
 
 // =============================================================================
+// Announcements
+// =============================================================================
+
+export const announcement = sqliteTable("announcement", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  // When the announcement becomes visible. Null = not yet scheduled (draft).
+  publishedAt: ts("publishedAt"),
+  // When it stops being visible. Null = no expiry.
+  expiresAt: ts("expiresAt"),
+  // Master toggle — allows admins to pull an announcement without deleting it.
+  isActive: integer("isActive", { mode: "boolean" }).notNull().default(true),
+  // Stored as JSON text. Drizzle handles serialize/deserialize transparently.
+  targetRoles: text("targetRoles", { mode: "json" })
+    .$type<string[]>()
+    .notNull(),
+  // Name of the admin who created the announcement (matches the approvedBy pattern).
+  createdBy: text("createdBy").notNull(),
+  createdAt: ts("createdAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: ts("updatedAt")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+})
+
+// =============================================================================
 // Audit log
 // =============================================================================
 

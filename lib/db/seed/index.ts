@@ -18,6 +18,7 @@ import { seedMerchants } from "./merchants"
 import { seedPickupLocations } from "./pickup-locations"
 import { seedSecurityConfig } from "./security-config"
 import { seedUsers } from "./users"
+import { seedAnnouncements } from "./announcements"
 import { seedOrders } from "./orders"
 import { seedPayoutRequests } from "./payout-requests"
 import { seedPayoutLinkedOrders } from "./payout-linked-orders"
@@ -40,6 +41,7 @@ async function main() {
     await seedPickupLocations()
     await seedSecurityConfig()
     await seedUsers()
+    await seedAnnouncements()
     await seedAuditLogs()
     await seedEmailLogs()
 

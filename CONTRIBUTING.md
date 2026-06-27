@@ -554,7 +554,6 @@ cancel button.
 
 ```tsx
 import { ConfirmDialog } from "@/components/confirm-dialog"
-
 ;<ConfirmDialog
   open={open}
   onOpenChange={setOpen}
@@ -638,6 +637,42 @@ Rules:
   (via `onSelect` setting state) before showing the `ConfirmDialog`.
 
 ---
+
+## 3.75. Announcement banner (`features/announcements/components/announcement-banner.tsx`)
+
+Renders a dismissible banner at the top of the content area showing unread live
+announcements on app load. Consumed by all four role shells
+(`dashboard-shell`, `merchant-shell`, `rider-shell`, `warehouse-shell`) where
+it sits above `<DataErrorBanner />` inside the `max-w-*` content wrapper.
+
+```tsx
+// In any role shell, inside the content wrapper:
+<AnnouncementBanner />
+<DataErrorBanner keys={...} />
+```
+
+Behaviour:
+
+- Reads from `useActiveAnnouncements()` — no additional API call or hook needed.
+- Renders `null` when there are no unread items; no empty space or flicker.
+- Shows one announcement at a time. When there are multiple unread items,
+  `‹ N / total ›` navigation lets the user cycle through them.
+- **Dismiss (×)** calls `markRead(id)`, which persists to localStorage via the
+  existing hook so the item won't reappear across sessions.
+- **Clicking the title/content** opens `AnnouncementDetailModal` and also marks
+  the item read.
+- Uses `role="status" aria-live="polite"` so screen readers announce it without
+  interrupting the current focus.
+
+Rules:
+
+- The banner is placed in the **shell**, not in individual pages — it must appear
+  on every screen within a role without any per-page wiring.
+- Do not add a second `useActiveAnnouncements()` call in page components; the
+  shell already triggers the SWR fetch and caches it for the whole session.
+- The sidebar inbox link (labelled **Inbox**) and this banner share the same
+  hook and the same localStorage read-set — dismissing from the banner is
+  reflected immediately in the inbox list and unread count.
 
 ## 3.8. DataTable loading skeleton
 
@@ -889,7 +924,7 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    `mutate(..., { revalidate: false })`. If the resource needs search/pagination,
    copy `use-orders.ts` instead and follow [§3's server-side search subsection](#server-side-search-and-pagination).
 6. **UI** — a page (Recipe C) and dialogs (Recipe D).
-7. **Seed** — add sample rows to the relevant file under `lib/db/seed/`.
+7. **Seed** — add sample rows to the relevant file under `lib/db/seed/`. For time-sensitive resources (anything with `publishedAt`, `expiresAt`, or similar timestamp columns), express dates relative to `now` using a `daysFromNow(n)` helper rather than hard-coded ISO strings — this keeps the seed realistic on every re-run without manual maintenance. See `lib/db/seed/announcements.ts` for the canonical example.
 
 ### Recipe C — Add a page / screen
 

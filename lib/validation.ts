@@ -296,3 +296,47 @@ export const teamCreateSchema = z.object({
   canManagePricing: z.boolean().optional(),
   password: z.string().min(8, "Password must be at least 8 characters"),
 })
+
+export const announcementRoles = [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "WAREHOUSE_ADMIN",
+  "MERCHANT",
+  "RIDER",
+] as const
+
+export const announcementCreateSchema = z.object({
+  title: requiredString("Title"),
+  content: requiredString("Content"),
+  publishedAt: z.string().datetime({ offset: true }).nullish(),
+  expiresAt: z.string().datetime({ offset: true }).nullish(),
+  isActive: z.boolean().optional(),
+  targetRoles: z
+    .array(z.enum(announcementRoles), {
+      error: "At least one role is required",
+    })
+    .min(1, "At least one target role is required"),
+})
+
+export const announcementUpdateSchema = z
+  .object({
+    title: requiredString("Title").optional(),
+    content: requiredString("Content").optional(),
+    publishedAt: z.string().datetime({ offset: true }).nullish(),
+    expiresAt: z.string().datetime({ offset: true }).nullish(),
+    isActive: z.boolean().optional(),
+    targetRoles: z
+      .array(z.enum(announcementRoles))
+      .min(1, "At least one target role is required")
+      .optional(),
+  })
+  .refine(
+    (d) =>
+      d.title !== undefined ||
+      d.content !== undefined ||
+      d.publishedAt !== undefined ||
+      d.expiresAt !== undefined ||
+      d.isActive !== undefined ||
+      d.targetRoles !== undefined,
+    { error: "Provide at least one field to update" },
+  )

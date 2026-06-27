@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { homeForRole, useAuth } from "@/features/account/hooks/use-auth"
 import { DataErrorBanner } from "@/components/data-error-banner"
+import { AnnouncementBanner } from "@/features/announcements/components/announcement-banner"
 import { Sidebar } from "@/components/navigation/sidebar"
 import { MobileHeader } from "@/components/navigation/mobile-header"
 import { dashboardSidebarForRole } from "@/lib/nav-config"
@@ -59,6 +60,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">
+            <AnnouncementBanner />
             <DataErrorBanner keys={DASHBOARD_KEYS} />
             {children}
           </div>

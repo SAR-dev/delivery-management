@@ -1,4 +1,5 @@
 import type {
+  announcement,
   auditLog,
   division,
   emailLog,
@@ -104,3 +105,5 @@ export interface CreateOrderInput {
   productCost: number
   merchantNote?: string | null
 }
+
+export type Announcement = Loosen<typeof announcement.$inferSelect>
