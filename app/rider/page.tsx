@@ -1,15 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import {
-  CheckCircle2,
-  Navigation,
-  Package,
-  PackageCheck,
-  PartyPopper,
-  Phone,
-  Truck,
-} from "lucide-react"
+import { CheckCircle2, Navigation, Package, PackageCheck, PartyPopper, Phone, Truck, } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
@@ -72,7 +64,7 @@ function TaskSection({
   return (
     <Card>
       <CardContent className="p-0">
-        <div className="border-border flex items-center justify-between border-b px-4 py-3 sm:px-5">
+        <div className="border-border flex items-center justify-between border-b px-4 py-3 mb-3 sm:px-5">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold">{title}</h2>
             <Badge variant="secondary">{count}</Badge>

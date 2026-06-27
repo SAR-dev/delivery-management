@@ -397,14 +397,14 @@ All six order tables share the same `useOrders()` hook and column factories,
 but each view composes a different subset of columns and applies different
 tab/status filters suited to that role's workflow:
 
-| View | File | Tabs / filter | Column set | Actions |
-|------|------|---------------|------------|---------|
-| **Admin orders** | `app/dashboard/orders/page.tsx` | PENDING · APPROVED · ALL | `useOrderColumns()` (all base columns) + inline actions | Approve (PENDING only), Cancel |
-| **Warehouse orders** | `app/warehouse/orders/page.tsx` | ALL · IN_PROGRESS · DELIVERED · EXCEPTIONS | `orderCodeColumn`, `merchantColumn`, `receiverColumn`, `warehouseColumn`, `deliveryAddressColumn`, `collectibleColumn`, `statusColumn`, `riderColumn(pickup)`, `riderColumn(delivery)` | Cancel only |
-| **Warehouse exceptions** | `app/warehouse/exceptions/page.tsx` | FAILED_ATTEMPT · RETURNED statuses | Subset focused on delivery outcome | Failed delivery, Return actions |
-| **Rider pickup queue** | `app/rider/pickup/page.tsx` | TO_COLLECT · COLLECTED | Inline: order code, merchant, pickup location, parcel, warehouse, city, status | Mark picked up (APPROVED only) |
-| **Rider delivery queue** | `app/rider/delivery/page.tsx` | TO_DELIVER · COMPLETED | Inline: order code, recipient, delivery address, parcel, collectible, status | Out for delivery, Delivered, Failed attempt |
-| **Merchant overview** | `app/merchant/page.tsx` | None (client-filtered, unpaginated) | Inline: tracking, pickup location, recipient, weight, delivery charge, collectible, notes, status | Cancel (PENDING only) |
+| View                     | File                                | Tabs / filter                              | Column set                                                                                                                                                                             | Actions                                     |
+| ------------------------ | ----------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Admin orders**         | `app/dashboard/orders/page.tsx`     | PENDING · APPROVED · ALL                   | `useOrderColumns()` (all base columns) + inline actions                                                                                                                                | Approve (PENDING only), Cancel              |
+| **Warehouse orders**     | `app/warehouse/orders/page.tsx`     | ALL · IN_PROGRESS · DELIVERED · EXCEPTIONS | `orderCodeColumn`, `merchantColumn`, `receiverColumn`, `warehouseColumn`, `deliveryAddressColumn`, `collectibleColumn`, `statusColumn`, `riderColumn(pickup)`, `riderColumn(delivery)` | Cancel only                                 |
+| **Warehouse exceptions** | `app/warehouse/exceptions/page.tsx` | FAILED_ATTEMPT · RETURNED statuses         | Subset focused on delivery outcome                                                                                                                                                     | Failed delivery, Return actions             |
+| **Rider pickup queue**   | `app/rider/pickup/page.tsx`         | TO_COLLECT · COLLECTED                     | Inline: order code, merchant, pickup location, parcel, warehouse, city, status                                                                                                         | Mark picked up (APPROVED only)              |
+| **Rider delivery queue** | `app/rider/delivery/page.tsx`       | TO_DELIVER · COMPLETED                     | Inline: order code, recipient, delivery address, parcel, collectible, status                                                                                                           | Out for delivery, Delivered, Failed attempt |
+| **Merchant overview**    | `app/merchant/page.tsx`             | None (client-filtered, unpaginated)        | Inline: tracking, pickup location, recipient, weight, delivery charge, collectible, notes, status                                                                                      | Cancel (PENDING only)                       |
 
 Key differences to know when adding a column or action:
 
@@ -434,6 +434,7 @@ Key differences to know when adding a column or action:
   SWR's `mutate` does prefix matching by default, so passing a bare key
   (e.g. `_globalMutate(KEY)`) will also revalidate unrelated hooks whose
   keys start with the same string. Use a filter to scope it:
+
   ```ts
   // Wrong — revalidates every SWR key that starts with "/api/team"
   _globalMutate(KEY)
@@ -441,6 +442,7 @@ Key differences to know when adding a column or action:
   // Correct — only revalidates keys that exactly match "/api/team"
   _globalMutate((key: string) => key === KEY)
   ```
+
   This matters especially when a hook has multiple SWR subscriptions (e.g.
   `useTeam` has both a paginated key and an `allTeam` key — both use
   `/api/team` as a prefix).
@@ -553,7 +555,7 @@ cancel button.
 ```tsx
 import { ConfirmDialog } from "@/components/confirm-dialog"
 
-<ConfirmDialog
+;<ConfirmDialog
   open={open}
   onOpenChange={setOpen}
   title="Approve merchant"
@@ -691,7 +693,7 @@ async function handleToggleActive(item: Thing) {
 }
 
 // In the column cell:
-<div className="flex items-center gap-2">
+;<div className="flex items-center gap-2">
   <Switch
     checked={item.isActive}
     disabled={togglingId === item.id}
@@ -873,14 +875,14 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 3. **Validation** — add `thingCreateSchema` / `thingUpdateSchema` in
    `lib/validation.ts`.
 4. **API routes**:
-    - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
-      handler with `requireSession()`; gate writes by `me.role`.
-    - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
-    - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
-      role-scoped — **enforce it server-side; Neon has no RLS.**
-    - If this is a resource Admin/Super Admin manage (not pure
-      merchant/rider self-service), call `logAudit()` after each write
-      succeeds — see [§3.5](#35-audit-log-libaudits).
+   - `app/api/things/route.ts` → `GET` (list) + `POST` (create). Start every
+     handler with `requireSession()`; gate writes by `me.role`.
+   - `app/api/things/[id]/route.ts` → `PATCH` / `DELETE` as needed.
+   - Scope reads/writes by `me.warehouseId` (or owner id) when the resource is
+     role-scoped — **enforce it server-side; Neon has no RLS.**
+   - If this is a resource Admin/Super Admin manage (not pure
+     merchant/rider self-service), call `logAudit()` after each write
+     succeeds — see [§3.5](#35-audit-log-libaudits).
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
@@ -922,11 +924,11 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    />
    ```
 
-    - **`id`** — a unique string that enables column visibility settings
-      (persisted to localStorage) and shows a settings gear in the toolbar.
-    - **`serverPaginated`** — enables server-side pagination. The hook manages
-      `page`, `limit`, `query`, and `statuses` state; the DataTable handles
-      page navigation, search input, and CSV export via props.
+   - **`id`** — a unique string that enables column visibility settings
+     (persisted to localStorage) and shows a settings gear in the toolbar.
+   - **`serverPaginated`** — enables server-side pagination. The hook manages
+     `page`, `limit`, `query`, and `statuses` state; the DataTable handles
+     page navigation, search input, and CSV export via props.
 
    `DataTable`'s toolbar places the search input on the top-right and the
    settings gear + CSV download in the footer. Don't rebuild that layout per
@@ -1180,12 +1182,12 @@ should set `@vitest-environment jsdom` in a file-level docblock, or use
 Spec files follow the `*.{test,spec}.{ts,tsx}` glob and can live anywhere in
 the tree. Current specs:
 
-| File | What it covers |
-| ---- | -------------- |
-| `app/api/orders/[id]/transitions.spec.ts` | All 11 order transitions end-to-end |
-| `components/data-table.spec.tsx` | DataTable rendering and column visibility |
-| `lib/csv.spec.ts` | CSV generation helpers |
-| `lib/pricing.spec.ts` | Delivery charge and security money calculations |
+| File                                      | What it covers                                  |
+| ----------------------------------------- | ----------------------------------------------- |
+| `app/api/orders/[id]/transitions.spec.ts` | All 11 order transitions end-to-end             |
+| `components/data-table.spec.tsx`          | DataTable rendering and column visibility       |
+| `lib/csv.spec.ts`                         | CSV generation helpers                          |
+| `lib/pricing.spec.ts`                     | Delivery charge and security money calculations |
 
 Run the full suite with `pnpm test:run`. For watch mode during development,
 `pnpm test` keeps Vitest running and re-runs affected tests on save.
