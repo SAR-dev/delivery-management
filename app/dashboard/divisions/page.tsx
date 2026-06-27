@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { MapPin, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { Loader2, MapPin, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -67,6 +67,7 @@ export default function DivisionsPage() {
   const [deleting, setDeleting] = useState<DivisionRow | null>(null)
   const [name, setName] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Count how many records reference each division so admins understand the
   // impact of disabling/deleting one, and we can block deletes of in-use rows.
@@ -121,16 +122,19 @@ export default function DivisionsPage() {
   }
 
   async function handleToggleActive(division: Division) {
+    setTogglingId(division.id)
     const res = await updateDivision(division.id, {
       isActive: !division.isActive,
     })
     if (!res.ok) {
       toast.error(res.error ?? "Could not update the division.")
+      setTogglingId(null)
       return
     }
     toast.success(
       `${division.name} ${division.isActive ? "disabled" : "enabled"}.`,
     )
+    setTogglingId(null)
   }
 
   async function handleDelete() {
@@ -181,12 +185,17 @@ export default function DivisionsPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={d.isActive}
+            disabled={togglingId === d.id}
             onCheckedChange={() => handleToggleActive(d)}
             aria-label={`Toggle active state for ${d.name}`}
           />
-          <Badge variant={d.isActive ? "default" : "secondary"}>
-            {d.isActive ? "Active" : "Disabled"}
-          </Badge>
+          {togglingId === d.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <Badge variant={d.isActive ? "default" : "secondary"}>
+              {d.isActive ? "Active" : "Disabled"}
+            </Badge>
+          )}
         </div>
       ),
     },

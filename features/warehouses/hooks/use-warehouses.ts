@@ -110,38 +110,6 @@ export function useWarehouses() {
         isActive?: boolean
       },
     ): Promise<{ ok: boolean; error?: string }> => {
-      const isToggleActive =
-        "isActive" in input && Object.keys(input).length === 1
-
-      if (isToggleActive) {
-        await mutate(
-          async () => {
-            const res = await fetch(`${KEY}/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(input),
-            })
-            const data = await res.json().catch(() => null)
-            if (!res.ok) {
-              throw new Error(data?.error ?? "Could not update the warehouse.")
-            }
-            return data
-          },
-          {
-            optimisticData: (current) => ({
-              ...(current ?? { data: [], total: 0 }),
-              data: (current?.data ?? []).map((w) =>
-                w.id === id ? { ...w, isActive: input.isActive! } : w,
-              ),
-            }),
-            rollbackOnError: true,
-            revalidate: true,
-          },
-        )
-        _globalMutate((key: string) => key === KEY)
-        return { ok: true }
-      }
-
       const res = await fetch(`${KEY}/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -155,6 +123,7 @@ export function useWarehouses() {
         }
       }
       await mutate()
+      _globalMutate((key: string) => key === KEY)
       return { ok: true }
     },
     [mutate, _globalMutate],

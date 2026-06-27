@@ -3,13 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import {
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Trash2,
-  Warehouse as WarehouseIcon,
-} from "lucide-react"
+import { Loader2, MoreHorizontal, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
@@ -25,13 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,6 +83,7 @@ export default function WarehousesPage() {
   const [deleting, setDeleting] = useState<WarehouseRow | null>(null)
   const [form, setForm] = useState<WarehouseForm>(emptyForm)
   const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Active divisions, plus the one currently selected even if disabled, so the
   // edit form never silently drops a warehouse's existing division.
@@ -180,12 +169,15 @@ export default function WarehousesPage() {
   }
 
   async function handleToggleActive(w: Warehouse) {
+    setTogglingId(w.id)
     const res = await updateWarehouse(w.id, { isActive: !w.isActive })
     if (!res.ok) {
       toast.error(res.error ?? "Could not update the warehouse.")
+      setTogglingId(null)
       return
     }
     toast.success(`${w.name} ${w.isActive ? "disabled" : "enabled"}.`)
+    setTogglingId(null)
   }
 
   async function handleDelete() {
@@ -261,12 +253,17 @@ export default function WarehousesPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={w.isActive}
+            disabled={togglingId === w.id}
             onCheckedChange={() => handleToggleActive(w)}
             aria-label={`Toggle active state for ${w.name}`}
           />
-          <Badge variant={w.isActive ? "default" : "secondary"}>
-            {w.isActive ? "Active" : "Disabled"}
-          </Badge>
+          {togglingId === w.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <Badge variant={w.isActive ? "default" : "secondary"}>
+              {w.isActive ? "Active" : "Disabled"}
+            </Badge>
+          )}
         </div>
       ),
     },

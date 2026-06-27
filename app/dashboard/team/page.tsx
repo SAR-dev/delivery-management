@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useTeam } from "@/features/team/hooks/use-team"
@@ -15,13 +16,7 @@ import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dial
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 // Sentinel value for the "Unassigned" option, since the Select cannot use an
@@ -31,20 +26,27 @@ const UNASSIGNED = "__unassigned__"
 function StatusToggle({
   user,
   onToggle,
+  loading,
 }: {
   user: User
   onToggle: () => void
+  loading?: boolean
 }) {
   return (
     <div className="flex items-center gap-2">
       <Switch
         checked={user.isActive}
+        disabled={loading}
         onCheckedChange={onToggle}
         aria-label={`Toggle active state for ${user.name}`}
       />
-      <span className="text-muted-foreground text-xs">
-        {user.isActive ? "Active" : "Disabled"}
-      </span>
+      {loading ? (
+        <Loader2 className="text-muted-foreground size-3 animate-spin" />
+      ) : (
+        <span className="text-muted-foreground text-xs">
+          {user.isActive ? "Active" : "Disabled"}
+        </span>
+      )}
     </div>
   )
 }
@@ -108,6 +110,7 @@ export default function TeamPage() {
     isLoading,
   } = useTeam()
   const { warehouses } = useWarehouses()
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
@@ -141,15 +144,19 @@ export default function TeamPage() {
   ).length
 
   async function handleToggleActive(user: User) {
+    setTogglingId(user.id)
     await toggleAccountActive(user.id)
     toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
+    setTogglingId(null)
   }
 
   async function handleTogglePricing(user: User) {
+    setTogglingId(user.id)
     await togglePricingPermission(user.id)
     toast.success(
       `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
     )
+    setTogglingId(null)
   }
 
   async function handleChangeWarehouse(user: User, warehouseId: string | null) {
@@ -200,7 +207,11 @@ export default function TeamPage() {
     sortValue: (u) => (u.isActive ? 1 : 0),
     cell: (u) => (
       <div className="flex justify-end">
-        <StatusToggle user={u} onToggle={() => handleToggleActive(u)} />
+        <StatusToggle
+          user={u}
+          onToggle={() => handleToggleActive(u)}
+          loading={togglingId === u.id}
+        />
       </div>
     ),
   }
@@ -217,12 +228,17 @@ export default function TeamPage() {
         <div className="flex items-center gap-2">
           <Switch
             checked={Boolean(u.canManagePricing)}
+            disabled={togglingId === u.id}
             onCheckedChange={() => handleTogglePricing(u)}
             aria-label={`Toggle pricing permission for ${u.name}`}
           />
-          <span className="text-muted-foreground text-xs">
-            {u.canManagePricing ? "Granted" : "Denied"}
-          </span>
+          {togglingId === u.id ? (
+            <Loader2 className="text-muted-foreground size-3 animate-spin" />
+          ) : (
+            <span className="text-muted-foreground text-xs">
+              {u.canManagePricing ? "Granted" : "Denied"}
+            </span>
+          )}
         </div>
       ),
     },

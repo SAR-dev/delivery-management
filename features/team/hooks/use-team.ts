@@ -90,26 +90,11 @@ export function useTeam() {
     },
     [mutate],
   )
-
   const toggleAccountActive = useCallback(
     async (id: string) => {
-      await mutate(
-        async () => {
-          const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
-          if (!res.ok) throw new Error("Failed")
-          return await res.json()
-        },
-        {
-          optimisticData: (current) => ({
-            ...(current ?? { data: [], total: 0 }),
-            data: (current?.data ?? []).map((u) =>
-              u.id === id ? { ...u, isActive: !u.isActive } : u,
-            ),
-          }),
-          rollbackOnError: true,
-          revalidate: true,
-        },
-      )
+      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
+      if (!res.ok) return
+      await mutate()
       _globalMutate((key: string) => key === KEY)
     },
     [mutate, _globalMutate],
@@ -117,28 +102,13 @@ export function useTeam() {
 
   const togglePricingPermission = useCallback(
     async (id: string) => {
-      await mutate(
-        async () => {
-          const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
-          if (!res.ok) throw new Error("Failed")
-          return await res.json()
-        },
-        {
-          optimisticData: (current) => ({
-            ...(current ?? { data: [], total: 0 }),
-            data: (current?.data ?? []).map((u) =>
-              u.id === id ? { ...u, canManagePricing: !u.canManagePricing } : u,
-            ),
-          }),
-          rollbackOnError: true,
-          revalidate: true,
-        },
-      )
+      const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
+      if (!res.ok) return
+      await mutate()
       _globalMutate((key: string) => key === KEY)
     },
     [mutate, _globalMutate],
   )
-
   const updateAccountWarehouse = useCallback(
     async (id: string, warehouseId: string | null) => {
       const res = await fetch(`${KEY}/${id}/warehouse`, {
