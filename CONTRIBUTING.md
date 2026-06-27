@@ -31,21 +31,30 @@ lib/
   db/schema.ts                       re-exports schema.postgres or schema.turso based on DB_PROVIDER
   db/schema.postgres.ts              PostgreSQL table definitions (pg-core types)
   db/schema.turso.ts                 SQLite/Turso table definitions (sqlite-core types)
+  db/seed/                           per-entity seed modules (divisions, riders, orders, etc.)
   types.ts                           re-exports entity types from schema
   validation.ts                      zod schemas + parseBody (missing/empty body is treated as `{}`)
   api-auth.ts                        requireSession()
+  api-response.ts                    standardized error responses (unauthorized, forbidden, notFound, etc.)
   audit.ts                           logAudit() — the only audit_log writer
+  pagination.ts                      PaginatedResponse<T>, parsePagination(), parseStatusFilter()
+  rate-limit.ts                      sliding-window rate limiter + getClientIp()
+  csv.ts                             CSV generation and download helpers
   nav-config.ts                      sidebar entries per role
   constants.ts, pricing.ts           cross-cutting domain logic
   mailer.ts, mail-templates.ts       transactional email (+ email_log history)
   storage/                           file upload backends (local / R2)
+  hooks/fetcher.ts                   SWR fetcher, RESOURCE_KEYS, swrOptions
   hooks/use-debounced-value.ts       shared debounce hook used by all search hooks
+  hooks/use-data-error.ts            aggregates error state for the global banner
 config/
   site.json, site.ts                 brand name, tagline, icon
   content.ts                         page titles/descriptions (copy)
 drizzle/
   postgres/                          PostgreSQL migration files
   turso/                             Turso/SQLite migration files
+scripts/
+  check-schema-sync.ts               drift detection between schema.postgres and schema.turso
 ```
 
 ---
@@ -226,23 +235,41 @@ wrapped code path.
 
 There is **no global data context**. Each resource has a focused hook in
 `features/<name>/hooks/use-<resource>.ts` built on SWR. A hook owns: the fetch
-key, the typed data, loading/error state, any derived selectors, and the
-mutation functions for that resource. Hooks no longer need to export `query`/`setQuery`
-for page-level search — the `DataTable` handles search client-side.
+key, the typed data, loading/error state, any derived selectors, the
+mutation functions, and **the pagination/search/filter state** for server-side
+paginated tables. All API endpoints return `PaginatedResponse<T>`
+(`{ data, total, limit, offset }`) and the hook manages `page`, `limit`,
+`query`, and `statuses` state, building the URL with query params.
 
 ```ts
 export function useMerchants() {
-  const { data, error, isLoading, mutate } = useSWR<Merchant[]>(
-    "/api/merchants",
-    fetcher,
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [statuses, setStatuses] = useState<string[] | undefined>(undefined)
+  const debouncedQuery = useDebouncedValue(query)
+
+  const url = buildUrl(KEY, {
+    limit,
+    offset: (page - 1) * limit,
+    q: debouncedQuery.trim() || undefined,
+    statuses,
+  })
+
+  const { data: response, error, isLoading, mutate } = useSWR<PaginatedResponse<Merchant>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
   )
-  const merchants = data ?? []
+  const merchants = response?.data ?? []
+  const total = response?.total ?? 0
 
   async function approveMerchant(id: string) {
     // optimistic update + revalidate via mutate()
   }
 
-  return { merchants, isLoading, error, approveMerchant }
+  return { merchants, total, isLoading, error, approveMerchant,
+    query, setQuery, page, setPage, limit, setLimit, statuses, setStatuses }
 }
 ```
 
@@ -258,67 +285,48 @@ Rules:
 - Authentication/session lives in `features/account/hooks/use-auth.tsx`
   (`useAuth()`), the one piece of shared state that remains a React context.
 - The global "failed to load" banner is driven by `lib/hooks/use-data-error.ts`,
-  which aggregates the error state of every resource key.
+  which aggregates the error state of every resource key. Pass an optional
+  `keys` array to scope it to specific resources.
 
-### Search state lives in the DataTable, not the hook
+### Server-side search and pagination
 
-The `DataTable` component has built-in client-side search. Every table now uses
-the `searchable` prop — the search input appears in the top-right toolbar above
-the table, with a column picker filter button (when `id` is also set) to
-choose which columns to search against.
+Every API GET endpoint supports `?q=`, `?limit=`, `?offset=`, and `?status=`
+query params. The hook manages all of this state and passes it to the
+`DataTable` via props:
 
 ```tsx
 <DataTable
-  id="my-table" // enables column visibility + search column picker
-  searchable // enables the built-in search input
+  id="my-table"
+  serverPaginated
   columns={columns}
-  data={filtered}
+  data={merchants}
+  total={total}
+  page={page}
+  pageSize={limit}
+  onPageChange={setPage}
+  onPageSizeChange={setLimit}
+  searchQuery={query}
+  onSearchChange={setQuery}
   getRowKey={(r) => r.id}
-/>
-```
-
-When `getSearchValue` is **omitted**, `DataTable` falls back to each column's
-`sortValue` function to extract searchable text. Provide `getSearchValue` only
-when the searchable text differs from the sort value (e.g. combining multiple
-fields into one searchable string):
-
-```tsx
-<DataTable
-  id="orders-table"
-  searchable
-  getSearchValue={(o, columnId) => {
-    switch (columnId) {
-      case "order":
-        return o.code
-      case "recipient":
-        return `${o.recipientName} ${o.recipientPhone}`
-      case "city":
-        return o.deliveryCity
-      default:
-        return null
-    }
-  }}
-  columns={columns}
-  data={data}
-  getRowKey={(o) => o.id}
 />
 ```
 
 Rules:
 
-- **All tables get `id` and `searchable`.** Every `<DataTable>` in the
-  codebase uses both props. Column visibility is persisted in localStorage per
-  table `id`; the search column picker remembers which columns the user
-  selected.
+- **All tables get `id`** and use `serverPaginated` mode. The `DataTable`
+  handles page navigation, search input, and CSV export. Column visibility is
+  persisted in localStorage per table `id`.
+- **Hooks own the pagination/search state.** The `DataTable` never manages its
+  own page or search — it receives and reports via props.
+- **Tab/status filters** pass a `statuses` array to the hook, which adds
+  `?status=A,B,C` to the URL. The hook resets `page` to 1 on tab change.
+- **Stat cards and tab counts** use the `all*` variants (unpaginated full
+  lists) so they stay stable regardless of the current page or search.
 - **Column definitions** for complex tables should be extracted to a feature
   component file (`features/<name>/components/<resource>-table-columns.tsx`)
   as a hook returning `DataTableColumn<T>[]`. See `useOrderColumns()` in
   `features/orders/components/order-table-columns.tsx` for the canonical
   example.
-- **Tab/status filters stay client-side** `useMemo`s layered **on top of** the
-  hook's data, not on `allOrders`. The hook still exports both `orders` and
-  `allOrders` — stat cards and tab counts must always use `allOrders` so they
-  stay stable regardless of what the user searches.
 - **Mutations always target `KEY`**, the literal base-key string. The bound
   `mutate` from the base `useSWR` call already does this correctly — don't
   reroute it.
@@ -373,6 +381,45 @@ The trail itself is read-only and visible only to Admin and Super Admin, at
 `/dashboard/audit-logs` (`app/api/audit-logs/route.ts`,
 `features/audit-logs/hooks/use-audit-logs.ts`). It has no create/update/delete
 UI — `logAudit()` is the only writer, by design.
+
+---
+
+## 3.6. API response helpers (`lib/api-response.ts`)
+
+Every API route uses standardized response helpers instead of raw
+`NextResponse.json()` for error responses:
+
+```ts
+import { unauthorized, forbidden, notFound, badRequest, conflict } from "@/lib/api-response"
+
+if (!me) return unauthorized()
+if (me.role !== "ADMIN") return forbidden()
+if (!row) return notFound()
+```
+
+Available helpers: `unauthorized()` (401), `forbidden(msg?)` (403),
+`notFound(msg?)` (404), `badRequest(msg)` (400), `conflict(msg)` (409),
+`serverError(msg?)` (500), `errorResponse(msg, status)` (generic).
+
+Use `NextResponse.json()` only for **successful** responses (200, 201) and
+custom error shapes (e.g. validation errors with a `rows` array). All 401/403/404
+responses must go through these helpers.
+
+### Rate limiting (`lib/rate-limit.ts`)
+
+Write-heavy endpoints (order creation, bulk creation, payout requests, etc.)
+are protected by a sliding-window rate limiter:
+
+```ts
+import { rateLimit, getClientIp } from "@/lib/rate-limit"
+
+const ip = getClientIp(req)
+const { allowed } = rateLimit(`orders:${ip}`, { windowMs: 60_000, max: 10 })
+if (!allowed) return errorResponse("Too many requests", 429)
+```
+
+The rate limiter is in-memory (single-instance). For multi-instance
+deployages, swap the internal `Map` for a Redis/Upstash store.
 
 ---
 
@@ -496,7 +543,8 @@ Example: the `rider.taskType` column added recently.
 4. **API** — read/write the new field in the matching route(s).
 5. **Hook** — add it to the create/update input types in `use-<resource>.ts`.
 6. **UI** — surface it in the dialog(s) and any table columns / detail views.
-7. **Seed** — add the field to `lib/db/seed.ts` sample rows.
+7. **Seed** — add the field to the relevant seed file under `lib/db/seed/`
+   (e.g. `lib/db/seed/riders.ts`).
 8. **Apply the DB change** — see [Applying schema changes](#applying-schema-changes).
 
 > If the column is `NOT NULL` and existing rows would violate it, either give it
@@ -516,7 +564,7 @@ the above in three ways:
   even though today's UI only ever sends one field group per request.
 - Skip the seed step if the column has a sane `.default(...)` — Drizzle
   applies it on insert when the seed script doesn't set the field explicitly,
-  so there's nothing to backfill in `lib/db/seed.ts`.
+   so there's nothing to backfill in `lib/db/seed/`.
 
 ### Recipe B — Add a brand-new resource (full CRUD)
 
@@ -541,10 +589,10 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
 5. **Hook** — `features/things/hooks/use-things.ts`. Copy the shape of
    `use-divisions.ts`: SWR keyed on the API path (gated on `currentUser`),
    `data ?? []`, and `useCallback` mutations that do an optimistic
-   `mutate(..., { revalidate: false })`. If the resource needs a search box,
-   copy `use-orders.ts` instead and follow [§3's search subsection](#search-state-lives-in-the-hook-not-the-page).
+   `mutate(..., { revalidate: false })`. If the resource needs search/pagination,
+   copy `use-orders.ts` instead and follow [§3's server-side search subsection](#server-side-search-and-pagination).
 6. **UI** — a page (Recipe C) and dialogs (Recipe D).
-7. **Seed** — add sample rows to `lib/db/seed.ts`.
+7. **Seed** — add sample rows to the relevant file under `lib/db/seed/`.
 
 ### Recipe C — Add a page / screen
 
@@ -560,24 +608,30 @@ Example structure to mirror: **divisions** (simple) or **merchants** (rich).
    ```
 3. Get data from the resource hook(s) — never fetch in the page directly.
 4. Use shared building blocks: `DataTable`, `StatCardList`, `StatusBadge`,
-   `FormDialog`. Every `<DataTable>` must pass both `id` and `searchable`:
+   `FormDialog`. Every `<DataTable>` uses server-side pagination:
 
    ```tsx
    <DataTable
      id="warehouse-orders"
-     searchable
+     serverPaginated
      columns={columns}
-     data={data}
+     data={orders}
+     total={total}
+     page={page}
+     pageSize={limit}
+     onPageChange={setPage}
+     onPageSizeChange={setLimit}
+     searchQuery={query}
+     onSearchChange={setQuery}
      getRowKey={(o) => o.id}
    />
    ```
 
    - **`id`** — a unique string that enables column visibility settings
      (persisted to localStorage) and shows a settings gear in the toolbar.
-   - **`searchable`** — enables the built-in search input in the top-right
-     toolbar. When `getSearchValue` is omitted, columns are searched using
-     their `sortValue`. Pass `getSearchValue` only when the searchable text
-     differs from the sort value.
+   - **`serverPaginated`** — enables server-side pagination. The hook manages
+     `page`, `limit`, `query`, and `statuses` state; the DataTable handles
+     page navigation, search input, and CSV export via props.
 
    `DataTable`'s toolbar places the search input on the top-right and the
    settings gear + CSV download in the footer. Don't rebuild that layout per
@@ -612,27 +666,29 @@ Every handler follows the same template:
 
 ```ts
 import { requireSession } from "@/lib/api-auth"
+import { unauthorized, forbidden, notFound } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { thing } from "@/lib/db/schema"
 import { thingCreateSchema, parseBody } from "@/lib/validation"
+import { paginateResponse, parsePagination, parseStatusFilter } from "@/lib/pagination"
 import { and, ilike, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
-// Accept `req: Request` even if the resource has no search yet — adding `?q=`
-// later then doesn't require touching the function signature.
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
+
+  const { limit, offset } = parsePagination(req)
+  const statuses = parseStatusFilter(req)
 
   // Scope role-limited readers server-side.
   let where = undefined
   if (me.role === "WAREHOUSE_ADMIN") {
-    if (!me.warehouseId) return NextResponse.json([])
+    if (!me.warehouseId) return NextResponse.json(paginateResponse([], 0))
     // ...build the role-scoped where
   }
 
-  // Optional free-text search, layered on top of the role-scoped where —
-  // search narrows what a role already sees, never widens it.
+  // Optional free-text search, layered on top of the role-scoped where.
   const search = new URL(req.url).searchParams.get("q")?.trim()
   if (search) {
     const likeQ = `%${search}%`
@@ -640,27 +696,25 @@ export async function GET(req: Request) {
     where = where ? and(where, searchClause) : searchClause
   }
 
-  const rows = where
-    ? await db.select().from(thing).where(where)
-    : await db.select().from(thing)
-  return NextResponse.json(rows)
+  const [{ count }] = await db.select({ count: sql<number>`count(*)` })
+    .from(thing).where(where)
+  const rows = await db.select().from(thing).where(where).limit(limit).offset(offset)
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
-  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
+  if (!me) return unauthorized()
+  if (me.role !== "ADMIN" && me.role !== "SUPER_ADMIN") return forbidden()
   const parsed = await parseBody(req, thingCreateSchema)
   if (parsed.error) return parsed.error
   // ...insert + return NextResponse.json(created, { status: 201 })
 }
 ```
 
-Rules: `requireSession()` first; validate the body with `parseBody` + a zod
-schema; return `{ error }` with `401` / `403` / `404` / `409` as appropriate;
-return the created/updated row so the hook can update its cache. **`parseBody`
+Rules: `requireSession()` first; use `unauthorized()`/`forbidden()` for
+auth errors; validate the body with `parseBody` + a zod schema; return the
+created/updated row so the hook can update its cache. **`parseBody`
 normalises a missing or unparseable request body to `{}`** before running the
 schema — so schemas where every field is optional (e.g. `orderCancelSchema`)
 parse successfully even when the client sends no body at all. This is a Zod 4

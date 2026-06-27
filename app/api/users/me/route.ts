@@ -74,7 +74,7 @@ export async function PATCH(req: Request) {
   // write (profile table) are two tables backing one logical "update my
   // account" action — keep them atomic even though today's UI only ever
   // sends one group at a time.
-  const result = await db.transaction(async (tx: any) => {
+  const result = await db.transaction(async (tx) => {
     let updatedUser: Parameters<typeof serializeUser>[0] = session.user
     if (name !== undefined || image !== undefined) {
       const userUpdates: {

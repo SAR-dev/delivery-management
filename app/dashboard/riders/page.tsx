@@ -19,7 +19,18 @@ import { StatCardList } from "@/components/stat-card-list"
 import { DataTable } from "@/components/data-table"
 
 export default function RidersPage() {
-  const { riders, allRiders } = useRiders()
+  const {
+    riders,
+    allRiders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    isLoading,
+  } = useRiders()
   const columns = useRiderColumns({ showWarehouse: true })
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -75,10 +86,22 @@ export default function RidersPage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
+            serverPaginated
             id="dashboard-riders"
             searchable
             columns={columns}
             data={riders}
+            total={total}
+            loading={isLoading}
+            query={query}
+            onQueryChange={(q) => {
+              setQuery(q)
+              setPage(1)
+            }}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
             getRowKey={(r) => r.id}
             initialSortId="name"
             emptyMessage="No riders yet. Add one to get started."

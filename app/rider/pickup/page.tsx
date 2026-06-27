@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { PackageCheck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useRiders } from "@/features/riders/hooks/use-riders"
@@ -33,13 +33,35 @@ type FilterTab = "TO_COLLECT" | "COLLECTED"
 export default function RiderPickupQueuePage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders, allOrders } = useOrders()
+  const {
+    orders,
+    allOrders,
+    statuses: _statuses,
+    setStatuses,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
   const { warehouses } = useWarehouses()
   const [tab, setTab] = useState<FilterTab>("TO_COLLECT")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+
+  useEffect(() => {
+    if (tab === "TO_COLLECT") {
+      setStatuses(["APPROVED"])
+    } else {
+      setStatuses(COLLECTED_STATUSES)
+    }
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
@@ -62,22 +84,6 @@ export default function RiderPickupQueuePage() {
   const collected = myPickups.filter((o) =>
     COLLECTED_STATUSES.includes(o.status),
   )
-
-  const visibleMyPickups = useMemo(
-    () =>
-      currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
-        : [],
-    [orders, currentRider],
-  )
-  const visibleToCollect = visibleMyPickups.filter(
-    (o) => o.status === "APPROVED",
-  )
-  const visibleCollected = visibleMyPickups.filter((o) =>
-    COLLECTED_STATUSES.includes(o.status),
-  )
-
-  const visible = tab === "TO_COLLECT" ? visibleToCollect : visibleCollected
 
   function openConfirm(order: Order) {
     setActiveOrder(order)
@@ -206,14 +212,23 @@ export default function RiderPickupQueuePage() {
             id="rider-pickup"
             searchable
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "TO_COLLECT"
                 ? "No pickups waiting. New pickups appear here once an Admin assigns them to you."
                 : "Nothing collected yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

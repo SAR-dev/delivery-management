@@ -22,6 +22,7 @@ import {
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -61,11 +62,16 @@ export interface DataTableColumn<T> {
   cellClassName?: string
 }
 
-/** Enables a "Download CSV" toolbar button. `parser` is required — CSV
- * export only activates when the caller supplies a way to flatten a row. */
+/** Enables a "Download CSV" toolbar button. `parser` is required for
+ * client-side export; `downloadUrl` enables server-side streaming. */
 export interface DataTableCsv<T> {
-  /** Converts one row into an array of cell values, in column order. */
-  parser: (row: T) => (string | number | null | undefined)[]
+  /** Server-side CSV download URL. When provided, triggers a browser
+   * download instead of client-side generation. Takes precedence over
+   * `parser`. */
+  downloadUrl?: string
+  /** Converts one row into an array of cell values, in column order.
+   * Required when `downloadUrl` is not set. */
+  parser?: (row: T) => (string | number | null | undefined)[]
   /** Header row labels, in the same order as `parser`'s output. */
   headers?: string[]
   /** Filename without extension. Defaults to "export". */
@@ -104,6 +110,28 @@ interface DataTableProps<T> {
   className?: string
   /** Enables a "Download CSV" button in the toolbar. */
   csv?: DataTableCsv<T>
+  /** Full dataset for CSV export when using server-side pagination.
+   * When provided, `scope: "all"` exports from this array instead of
+   * the paginated `data`. */
+  csvData?: T[]
+  /** Enable server-side pagination mode. Data is already the current page;
+   * filtering, sorting, and pagination are handled by the parent. */
+  serverPaginated?: boolean
+  /** Total row count from the API (required when serverPaginated is true). */
+  total?: number
+  /** Show loading state. */
+  loading?: boolean
+  /** Controlled search query (server mode). */
+  query?: string
+  /** Called when the user types in the search box (server mode). */
+  onQueryChange?: (query: string) => void
+  /** Controlled sort state (server mode). */
+  serverSortId?: string
+  serverSortDir?: SortDir
+  /** Called when the user clicks a sortable column header (server mode). */
+  onSortChange?: (sortId: string, sortDir: SortDir) => void
+  /** Called when the user changes page or page size (server mode). */
+  onPageChange?: (page: number, limit: number) => void
 }
 
 type SortDir = "asc" | "desc"
@@ -136,7 +164,7 @@ function readVisibleFromStorage(id: string): string[] | null {
       return parsed
     }
   } catch {
-    // corrupted value — ignore
+    // ignored
   }
   return null
 }
@@ -146,7 +174,7 @@ function writeVisibleToStorage(id: string, visible: string[]) {
   try {
     localStorage.setItem(storageKey(id), JSON.stringify(visible))
   } catch {
-    // storage full — silently ignore
+    // ignored
   }
 }
 
@@ -164,7 +192,7 @@ function readSearchColumnsFromStorage(id: string): string[] | null {
       return parsed
     }
   } catch {
-    // corrupted — ignore
+    // ignored
   }
   return null
 }
@@ -174,7 +202,7 @@ function writeSearchColumnsToStorage(id: string, columns: string[]) {
   try {
     localStorage.setItem(searchColumnsKey(id), JSON.stringify(columns))
   } catch {
-    // storage full — silently ignore
+    // ignored
   }
 }
 
@@ -211,6 +239,16 @@ export function DataTable<T>({
   onRowClick,
   className,
   csv,
+  csvData,
+  serverPaginated = false,
+  total: serverTotal,
+  loading = false,
+  query: controlledQuery,
+  onQueryChange,
+  serverSortId,
+  serverSortDir,
+  onSortChange,
+  onPageChange,
 }: DataTableProps<T>) {
   const { currentUser } = useAuth()
 
@@ -234,7 +272,6 @@ export function DataTable<T>({
   const [page, setPage] = React.useState(1)
   const paginated = size > 0
 
-  // ---- Column visibility ----
   const allColumnIds = React.useMemo(() => columns.map((c) => c.id), [columns])
 
   const [visibleColumnIds, setVisibleColumnIds] = React.useState<string[]>(
@@ -253,14 +290,11 @@ export function DataTable<T>({
 
   const [settingsOpen, setSettingsOpen] = React.useState(false)
 
-  // Validate visible IDs against current columns — handles added/removed
-  // columns without needing a setState-in-effect.
   const filteredColumns = React.useMemo(() => {
     const valid = visibleColumnIds.filter((cid) => allColumnIds.includes(cid))
     if (valid.length >= MIN_VISIBLE_COLUMNS) {
       return columns.filter((c) => valid.includes(c.id))
     }
-    // Fallback: columns changed drastically, show all.
     return columns
   }, [columns, visibleColumnIds, allColumnIds])
 
@@ -324,6 +358,7 @@ export function DataTable<T>({
   }, [effectivePageSize, pageSize])
 
   const filtered = React.useMemo(() => {
+    if (serverPaginated) return data
     if (!trimmedSearch || !searchable) return data
     return data.filter((row) =>
       searchColumnIds.some((cid) => {
@@ -344,9 +379,11 @@ export function DataTable<T>({
     getSearchValue,
     searchColumnIds,
     columns,
+    serverPaginated,
   ])
 
   const sorted = React.useMemo(() => {
+    if (serverPaginated) return data
     if (!sortId) return filtered
     const col = columns.find((c) => c.id === sortId)
     if (!col?.sortValue) return filtered
@@ -370,10 +407,15 @@ export function DataTable<T>({
       return sortDir === "asc" ? result : -result
     })
     return copy
-  }, [filtered, columns, sortId, sortDir])
+  }, [filtered, columns, sortId, sortDir, serverPaginated, data])
 
   const totalPages = paginated
-    ? Math.max(1, Math.ceil(sorted.length / size))
+    ? Math.max(
+        1,
+        Math.ceil(
+          (serverPaginated ? (serverTotal ?? 0) : sorted.length) / size,
+        ),
+      )
     : 1
 
   // Clamp page during render — avoids the extra render cycle that
@@ -382,13 +424,26 @@ export function DataTable<T>({
   const currentPage = Math.min(Math.max(1, page), totalPages)
 
   const visible = React.useMemo(() => {
+    if (serverPaginated) return data
     if (!paginated) return sorted
     const start = (currentPage - 1) * size
     return sorted.slice(start, start + size)
-  }, [sorted, currentPage, size, paginated])
+  }, [sorted, currentPage, size, paginated, serverPaginated, data])
 
   function toggleSort(col: DataTableColumn<T>) {
     if (!col.sortable || !col.sortValue) return
+    if (serverPaginated && onSortChange) {
+      const currentId = serverSortId
+      const currentDir = serverSortDir ?? "asc"
+      if (currentId !== col.id) {
+        onSortChange(col.id, "asc")
+      } else if (currentDir === "asc") {
+        onSortChange(col.id, "desc")
+      } else {
+        onSortChange("", "asc")
+      }
+      return
+    }
     if (sortId !== col.id) {
       setSortId(col.id)
       setSortDir("asc")
@@ -405,15 +460,21 @@ export function DataTable<T>({
 
   function handleDownloadCsv() {
     if (!csv) return
-    const rows = csv.scope === "page" ? visible : sorted
-    const content = toCsv(rows.map(csv.parser), csv.headers)
+    if (csv.downloadUrl) {
+      window.open(csv.downloadUrl, "_blank")
+      return
+    }
+    if (!csv.parser) return
+    const source = csvData ?? (csv.scope === "page" ? visible : sorted)
+    const content = toCsv(source.map(csv.parser), csv.headers)
     downloadCsv(csv.filename ?? "export", content)
   }
 
-  const from = sorted.length === 0 ? 0 : (currentPage - 1) * size + 1
+  const displayTotal = serverPaginated ? (serverTotal ?? 0) : sorted.length
+  const from = displayTotal === 0 ? 0 : (currentPage - 1) * size + 1
   const to = paginated
-    ? Math.min(currentPage * size, sorted.length)
-    : sorted.length
+    ? Math.min(currentPage * size, displayTotal)
+    : displayTotal
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -423,10 +484,14 @@ export function DataTable<T>({
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
             <Input
               placeholder="Search..."
-              value={searchQuery}
+              value={serverPaginated ? (controlledQuery ?? "") : searchQuery}
               onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setPage(1)
+                if (serverPaginated) {
+                  onQueryChange?.(e.target.value)
+                } else {
+                  setSearchQuery(e.target.value)
+                  setPage(1)
+                }
               }}
               className="h-8 w-48 pl-9 text-sm sm:w-64"
             />
@@ -454,7 +519,11 @@ export function DataTable<T>({
           <TableRow>
             {filteredColumns.map((col) => {
               const align = col.align ?? "left"
-              const isSorted = sortId === col.id
+              const effectiveSortId = serverPaginated ? serverSortId : sortId
+              const effectiveSortDir = serverPaginated
+                ? (serverSortDir ?? "asc")
+                : sortDir
+              const isSorted = effectiveSortId === col.id
               const canSort = Boolean(col.sortable && col.sortValue)
               return (
                 <TableHead
@@ -462,7 +531,7 @@ export function DataTable<T>({
                   className={cn(alignClass[align], col.headClassName)}
                   aria-sort={
                     isSorted
-                      ? sortDir === "asc"
+                      ? effectiveSortDir === "asc"
                         ? "ascending"
                         : "descending"
                       : undefined
@@ -480,7 +549,7 @@ export function DataTable<T>({
                     >
                       {col.header}
                       {isSorted ? (
-                        sortDir === "asc" ? (
+                        effectiveSortDir === "asc" ? (
                           <ChevronUp className="size-3.5" />
                         ) : (
                           <ChevronDown className="size-3.5" />
@@ -498,7 +567,26 @@ export function DataTable<T>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {visible.length === 0 ? (
+          {loading ? (
+            Array.from({ length: size || 5 }).map((_, rowIndex) => (
+              <TableRow key={`skeleton-${rowIndex}`}>
+                {filteredColumns.map((col, colIndex) => (
+                  <TableCell key={col.id}>
+                    <Skeleton
+                      className={cn(
+                        "h-4",
+                        colIndex === 0
+                          ? "w-3/4"
+                          : colIndex === filteredColumns.length - 1
+                            ? "w-1/2"
+                            : "w-full",
+                      )}
+                    />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : visible.length === 0 ? (
             <TableRow>
               <TableCell
                 colSpan={filteredColumns.length}
@@ -537,7 +625,8 @@ export function DataTable<T>({
             {paginated ? (
               <>
                 <span className="text-muted-foreground tabular-nums">
-                  {from}–{to} of {sorted.length}
+                  {from}–{to} of{" "}
+                  {serverPaginated ? (serverTotal ?? 0) : sorted.length}
                 </span>
                 {pageSizeOptions && pageSizeOptions.length > 0 ? (
                   <label className="flex items-center gap-1.5">
@@ -545,9 +634,14 @@ export function DataTable<T>({
                     <select
                       value={size}
                       onChange={(e) => {
-                        userChangedSize.current = true
-                        setSize(Number(e.target.value))
-                        setPage(1)
+                        const newSize = Number(e.target.value)
+                        if (serverPaginated && onPageChange) {
+                          onPageChange(1, newSize)
+                        } else {
+                          userChangedSize.current = true
+                          setSize(newSize)
+                          setPage(1)
+                        }
                       }}
                       className="border-input bg-background text-foreground h-8 rounded-md border px-2 text-sm"
                     >
@@ -566,7 +660,14 @@ export function DataTable<T>({
                   variant="outline"
                   size="icon"
                   className="size-8"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onClick={() => {
+                    const newPage = Math.max(1, page - 1)
+                    if (serverPaginated && onPageChange) {
+                      onPageChange(newPage, size)
+                    } else {
+                      setPage(newPage)
+                    }
+                  }}
                   disabled={currentPage <= 1}
                   aria-label="Previous page"
                 >
@@ -576,7 +677,14 @@ export function DataTable<T>({
                   variant="outline"
                   size="icon"
                   className="size-8"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={() => {
+                    const newPage = Math.min(totalPages, page + 1)
+                    if (serverPaginated && onPageChange) {
+                      onPageChange(newPage, size)
+                    } else {
+                      setPage(newPage)
+                    }
+                  }}
                   disabled={currentPage >= totalPages}
                   aria-label="Next page"
                 >
@@ -585,7 +693,7 @@ export function DataTable<T>({
               </>
             ) : (
               <span className="text-muted-foreground tabular-nums">
-                {sorted.length} record{sorted.length === 1 ? "" : "s"}
+                {displayTotal} record{displayTotal === 1 ? "" : "s"}
               </span>
             )}
           </div>
@@ -606,7 +714,7 @@ export function DataTable<T>({
               type="button"
               variant="outline"
               onClick={handleDownloadCsv}
-              disabled={!csv}
+              disabled={!csv || (!csv.downloadUrl && !csv.parser)}
               className="gap-1.5"
             >
               <Download className="size-4" />

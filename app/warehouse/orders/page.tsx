@@ -1,7 +1,15 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Ban, Boxes, CheckCircle2, Clock, Truck, X } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import {
+  Ban,
+  Boxes,
+  CheckCircle2,
+  Clock,
+  MoreHorizontal,
+  Truck,
+  X,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -16,6 +24,12 @@ import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog
 import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
@@ -30,10 +44,30 @@ const IN_PROGRESS_STATUSES: OrderStatus[] = [
   "OUT_FOR_DELIVERY",
 ]
 
+const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
+  ALL: undefined,
+  IN_PROGRESS: ["PICKED_UP", "IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY"],
+  DELIVERED: ["DELIVERED"],
+  EXCEPTIONS: ["FAILED_ATTEMPT", "RETURNED"],
+}
+
 export default function WarehouseOrdersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders } = useOrders()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    isLoading,
+  } = useOrders()
   const baseColumns = useOrderColumns()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
@@ -42,6 +76,11 @@ export default function WarehouseOrdersPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
+
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
@@ -69,19 +108,6 @@ export default function WarehouseOrdersPage() {
     [allOrders],
   )
 
-  const visible = useMemo(() => {
-    switch (tab) {
-      case "IN_PROGRESS":
-        return orders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status))
-      case "DELIVERED":
-        return orders.filter((o) => o.status === "DELIVERED")
-      case "EXCEPTIONS":
-        return orders.filter((o) => EXCEPTION_STATUSES.includes(o.status))
-      default:
-        return orders
-    }
-  }, [tab, orders])
-
   function openOrder(order: Order) {
     setActiveOrder(order)
     setDialogOpen(true)
@@ -92,6 +118,8 @@ export default function WarehouseOrdersPage() {
     {
       id: "actions",
       header: "",
+      align: "right",
+      headClassName: "w-12",
       cell: (o) => {
         const canCancel = [
           "PENDING",
@@ -102,19 +130,31 @@ export default function WarehouseOrdersPage() {
         ].includes(o.status)
         if (!canCancel) return null
         return (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={(e) => {
-              e.stopPropagation()
-              setCancelTarget(o)
-              setCancelOpen(true)
-            }}
-          >
-            <Ban className="size-3.5" />
-            Cancel
-          </Button>
+          <div className="flex justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="ghost" size="icon">
+                    <MoreHorizontal className="size-4" />
+                    <span className="sr-only">Actions</span>
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setCancelTarget(o)
+                    setCancelOpen(true)
+                  }}
+                >
+                  <Ban className="size-4" />
+                  Cancel order
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )
       },
     },
@@ -191,11 +231,20 @@ export default function WarehouseOrdersPage() {
             id="warehouse-orders"
             searchable
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
             emptyMessage="No orders to show for this view."
+            loading={isLoading}
             onRowClick={openOrder}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

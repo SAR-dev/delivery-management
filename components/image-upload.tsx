@@ -28,8 +28,6 @@ export function ImageUpload({
   label?: string
   className?: string
   previewClassName?: string
-  // When true, render only the action buttons (the caller shows its own
-  // preview, e.g. an Avatar). Only applies when a value is present.
   hidePreview?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)

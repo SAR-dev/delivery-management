@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { merchant } from "@/lib/db/schema"
@@ -12,9 +13,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN" && me.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -25,8 +26,7 @@ export async function PATCH(
     .where(eq(merchant.id, id))
     .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current) return notFound()
   if (current.status !== "PENDING") {
     return NextResponse.json(
       { error: "Only PENDING merchants can be approved" },

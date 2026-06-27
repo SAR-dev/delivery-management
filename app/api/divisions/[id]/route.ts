@@ -10,17 +10,17 @@ import {
 } from "@/lib/db/schema"
 import { divisionUpdateSchema, parseBody } from "@/lib/validation"
 import { and, eq, ne } from "drizzle-orm"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
-// Super Admin renames a division or toggles its active state.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -31,7 +31,6 @@ export async function PATCH(
   const updates: { name?: string; isActive?: boolean } = {}
   if (name !== undefined) {
     const trimmed = name.trim()
-    // Block renaming onto another division's name.
     const [clash] = await db
       .select({ id: division.id })
       .from(division)
@@ -53,8 +52,7 @@ export async function PATCH(
     .where(eq(division.id, id))
     .returning()
 
-  if (!updated)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!updated) return notFound()
 
   await logAudit({
     actor: { userId: me.userId, name: me.name, role: me.role },
@@ -68,16 +66,14 @@ export async function PATCH(
   return NextResponse.json(updated)
 }
 
-// Super Admin deletes a division. Blocked if any entity still references it so
-// no address is left pointing at a missing division.
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params

@@ -1,45 +1,70 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import useSWR from "swr"
+import useSWR, { useSWRConfig } from "swr"
 import type { Warehouse } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+import { DEFAULT_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 const KEY = "/api/warehouses"
 
-const byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
+const _byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
+
+function buildUrl(
+  base: string,
+  params: { limit?: number; offset?: number; q?: string },
+) {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set("limit", String(params.limit))
+  if (params.offset != null) sp.set("offset", String(params.offset))
+  if (params.q) sp.set("q", params.q)
+  const qs = sp.toString()
+  return qs ? `${base}?${qs}` : base
+}
 
 // Warehouses resource. Create/update/delete keep the cache sorted by name to
 // match the old context, and expose the current Warehouse Admin's hub.
 export function useWarehouses() {
   const { currentUser } = useAuth()
-  const { data, error, isLoading, mutate } = useSWR<Warehouse[]>(
+  const { mutate: _globalMutate } = useSWRConfig()
+
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const debouncedQuery = useDebouncedValue(query)
+
+  const trimmedQuery = debouncedQuery.trim()
+  const offset = (page - 1) * limit
+  const url = buildUrl(KEY, {
+    limit,
+    offset,
+    q: trimmedQuery || undefined,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<Warehouse>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const warehouses = response?.data ?? []
+  const total = response?.total ?? 0
+
+  // allWarehouses: fetch full list (no pagination) for cross-resource lookups
+  const { data: allResponse } = useSWR<PaginatedResponse<Warehouse>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const debouncedQuery = useDebouncedValue(query)
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<Warehouse[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const warehouses = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allWarehouses = data ?? []
+  const allWarehouses = allResponse?.data ?? []
 
   // The warehouse managed by the logged-in Warehouse Admin (if any) — always
   // derived from the unfiltered list, since many other hooks depend on this
@@ -68,9 +93,7 @@ export function useWarehouses() {
           error: data?.error ?? "Could not create the warehouse.",
         }
       }
-      await mutate((prev) => [...(prev ?? []), data].sort(byName), {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true }
     },
     [mutate],
@@ -87,6 +110,38 @@ export function useWarehouses() {
         isActive?: boolean
       },
     ): Promise<{ ok: boolean; error?: string }> => {
+      const isToggleActive =
+        "isActive" in input && Object.keys(input).length === 1
+
+      if (isToggleActive) {
+        await mutate(
+          async () => {
+            const res = await fetch(`${KEY}/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(input),
+            })
+            const data = await res.json().catch(() => null)
+            if (!res.ok) {
+              throw new Error(data?.error ?? "Could not update the warehouse.")
+            }
+            return data
+          },
+          {
+            optimisticData: (current) => ({
+              ...(current ?? { data: [], total: 0 }),
+              data: (current?.data ?? []).map((w) =>
+                w.id === id ? { ...w, isActive: input.isActive! } : w,
+              ),
+            }),
+            rollbackOnError: true,
+            revalidate: true,
+          },
+        )
+        _globalMutate((key: string) => key === KEY)
+        return { ok: true }
+      }
+
       const res = await fetch(`${KEY}/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -99,14 +154,10 @@ export function useWarehouses() {
           error: data?.error ?? "Could not update the warehouse.",
         }
       }
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((w) => (w.id === id ? data : w)).sort(byName),
-        { revalidate: false },
-      )
+      await mutate()
       return { ok: true }
     },
-    [mutate],
+    [mutate, _globalMutate],
   )
 
   const deleteWarehouse = useCallback(
@@ -119,9 +170,7 @@ export function useWarehouses() {
           error: data?.error ?? "Could not delete the warehouse.",
         }
       }
-      await mutate((prev) => (prev ?? []).filter((w) => w.id !== id), {
-        revalidate: false,
-      })
+      await mutate()
       return { ok: true }
     },
     [mutate],
@@ -130,10 +179,15 @@ export function useWarehouses() {
   return {
     warehouses,
     allWarehouses,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
     query,
     setQuery,
     currentWarehouse,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    isLoading,
     error,
     mutate,
     createWarehouse,

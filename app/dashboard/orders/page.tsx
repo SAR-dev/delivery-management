@@ -1,10 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Ban,
   CheckCircle2,
   Clock,
+  MoreHorizontal,
   Package,
   ShieldCheck,
   Truck,
@@ -18,14 +19,40 @@ import { ApproveOrderDialog } from "@/features/orders/dialogs/approve-order-dial
 import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "PENDING" | "APPROVED" | "ALL"
 
+const TAB_STATUSES: Record<FilterTab, string[] | undefined> = {
+  PENDING: ["PENDING"],
+  APPROVED: ["APPROVED"],
+  ALL: undefined,
+}
+
 export default function OrdersPage() {
-  const { orders, allOrders } = useOrders()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    isLoading,
+  } = useOrders()
   const baseColumns = useOrderColumns()
   const [tab, setTab] = useState<FilterTab>("PENDING")
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
@@ -33,7 +60,11 @@ export default function OrdersPage() {
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
-  // Stats always reflect the full order set, not the current search.
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
+
   const counts = useMemo(
     () => ({
       pending: allOrders.filter((o) => o.status === "PENDING").length,
@@ -45,13 +76,6 @@ export default function OrdersPage() {
       total: allOrders.length,
     }),
     [allOrders],
-  )
-
-  // Search is server-side now (see useOrders); the tab status filter stays
-  // client-side, layered on top of the already-search-narrowed `orders`.
-  const filtered = useMemo(
-    () => orders.filter((o) => tab === "ALL" || o.status === tab),
-    [orders, tab],
   )
 
   function openApprove(order: Order) {
@@ -77,27 +101,38 @@ export default function OrdersPage() {
         ].includes(o.status)
         if (!canApprove && !canCancel) return null
         return (
-          <div className="flex items-center justify-end gap-2">
-            {canApprove && (
-              <Button size="sm" onClick={() => openApprove(o)}>
-                <ShieldCheck className="size-4" />
-                Review
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => {
-                  setCancelTarget(o)
-                  setCancelOpen(true)
-                }}
-              >
-                <Ban className="size-3.5" />
-                Cancel
-              </Button>
-            )}
+          <div className="flex justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="ghost" size="icon">
+                    <MoreHorizontal className="size-4" />
+                    <span className="sr-only">Actions</span>
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-48">
+                {canApprove && (
+                  <DropdownMenuItem onClick={() => openApprove(o)}>
+                    <ShieldCheck className="size-4" />
+                    Review order
+                  </DropdownMenuItem>
+                )}
+                {canApprove && canCancel && <DropdownMenuSeparator />}
+                {canCancel && (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => {
+                      setCancelTarget(o)
+                      setCancelOpen(true)
+                    }}
+                  >
+                    <Ban className="size-4" />
+                    Cancel order
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )
       },
@@ -111,7 +146,6 @@ export default function OrdersPage() {
         description={pageContent.dashboard.orders.description}
       />
 
-      {/* Stats */}
       <StatCardList
         columns={4}
         items={[
@@ -141,7 +175,6 @@ export default function OrdersPage() {
         ]}
       />
 
-      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
           <TabsList>
@@ -152,17 +185,55 @@ export default function OrdersPage() {
         </Tabs>
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           <DataTable
             id="dashboard-orders"
             searchable
             columns={columns}
-            data={filtered}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
             emptyMessage="No orders match the current filters."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            csvData={allOrders}
+            csv={{
+              filename: "orders",
+              headers: [
+                "Tracking",
+                "Status",
+                "Recipient",
+                "Phone",
+                "City",
+                "Weight (KG)",
+                "Delivery type",
+                "Product cost",
+                "Delivery charge",
+                "Security money",
+                "Total collectible",
+              ],
+              parser: (o) => [
+                o.code,
+                o.status,
+                o.recipientName,
+                o.recipientPhone,
+                o.deliveryCity,
+                o.parcelWeightKg,
+                o.deliveryType,
+                o.productCost,
+                o.deliveryCharge,
+                o.securityMoney,
+                o.totalCollectible,
+              ],
+            }}
           />
         </CardContent>
       </Card>

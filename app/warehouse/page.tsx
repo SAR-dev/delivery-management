@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Bike, Boxes, Clock, PackageOpen, PackagePlus } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -8,7 +8,7 @@ import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
+import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
@@ -22,10 +22,28 @@ import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "INCOMING" | "RECEIVED"
 
+const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
+  INCOMING: ["PICKED_UP"],
+  RECEIVED: ["IN_WAREHOUSE", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"],
+}
+
 export default function WarehouseIntakePage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders } = useOrders()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("INCOMING")
@@ -38,6 +56,11 @@ export default function WarehouseIntakePage() {
     id ? riders.find((r) => r.id === id) : undefined
   const warehouseName = (id?: string | null) =>
     id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
+
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
   function getOrderSearchValue(o: Order, columnId: string): string | null {
     switch (columnId) {
@@ -67,15 +90,15 @@ export default function WarehouseIntakePage() {
   // Parcels that have been picked up and are heading to a warehouse. In this
   // mock, all PICKED_UP parcels are incoming to whichever warehouse logs them.
   const incoming = useMemo(
-    () => orders.filter((o) => o.status === "PICKED_UP"),
-    [orders],
+    () => allOrders.filter((o) => o.status === "PICKED_UP"),
+    [allOrders],
   )
 
   // Parcels this warehouse has already received.
   const received = useMemo(
     () =>
       currentWarehouse
-        ? orders.filter(
+        ? allOrders.filter(
             (o) =>
               o.warehouseId === currentWarehouse.id &&
               [
@@ -86,10 +109,8 @@ export default function WarehouseIntakePage() {
               ].includes(o.status),
           )
         : [],
-    [orders, currentWarehouse],
+    [allOrders, currentWarehouse],
   )
-
-  const visible = tab === "INCOMING" ? incoming : received
 
   function openConfirm(order: Order) {
     setActiveOrder(order)
@@ -270,14 +291,23 @@ export default function WarehouseIntakePage() {
             searchable
             getSearchValue={getOrderSearchValue}
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "INCOMING"
                 ? "No parcels incoming. Parcels appear here once a rider marks them picked up."
                 : "Nothing received yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

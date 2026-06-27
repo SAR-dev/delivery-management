@@ -17,10 +17,18 @@ import { DataTable } from "@/components/data-table"
 export default function WarehouseRidersPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse } = useWarehouses()
-  // The riders API already scopes the roster to the signed-in Warehouse
-  // Admin's hub (search composes with that scope server-side too), so
-  // `riders`/`allRiders` here only ever contain this warehouse's riders.
-  const { riders, allRiders } = useRiders()
+  const {
+    riders,
+    allRiders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    isLoading,
+  } = useRiders()
   const columns = useRiderColumns()
   const [editingRider, setEditingRider] = useState<Rider | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -78,10 +86,22 @@ export default function WarehouseRidersPage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
+            serverPaginated
             id="warehouse-riders"
             searchable
             columns={columns}
             data={riders}
+            total={total}
+            loading={isLoading}
+            query={query}
+            onQueryChange={(q) => {
+              setQuery(q)
+              setPage(1)
+            }}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
             getRowKey={(r) => r.id}
             initialSortId="name"
             emptyMessage="No riders are based at this warehouse yet."

@@ -3,6 +3,7 @@ import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
 export async function PATCH(
@@ -10,9 +11,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -23,8 +24,7 @@ export async function PATCH(
     .where(eq(profile.userId, id))
     .limit(1)
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!current) return notFound()
   if (current.role !== "ADMIN") {
     return NextResponse.json(
       { error: "Only ADMIN users have pricing permission" },

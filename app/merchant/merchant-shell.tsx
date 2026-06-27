@@ -9,6 +9,13 @@ import { MerchantSidebar } from "@/components/navigation/merchant-sidebar"
 import { MobileHeader } from "@/components/navigation/mobile-header"
 import { MERCHANT_SIDEBAR } from "@/lib/nav-config"
 
+// Merchant monitors: merchants, orders, pickup-locations.
+const MERCHANT_KEYS = [
+  "/api/merchants",
+  "/api/orders",
+  "/api/pickup-locations",
+] as const
+
 export function MerchantShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { currentUser, isReady } = useAuth()
@@ -37,7 +44,7 @@ export function MerchantShell({ children }: { children: React.ReactNode }) {
         <MobileHeader config={MERCHANT_SIDEBAR} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-6xl">
-            <DataErrorBanner />
+            <DataErrorBanner keys={MERCHANT_KEYS} />
             {children}
           </div>
         </main>

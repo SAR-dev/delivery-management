@@ -33,8 +33,8 @@ import { StatCardList } from "@/components/stat-card-list"
 
 export default function MerchantFinancePage() {
   const { currentMerchant } = useMerchants()
-  const { merchantPayableOrders } = useOrders()
-  const { merchantPayoutRequests } = usePayouts()
+  const { merchantPayableOrders, isLoading: isLoadingOrders } = useOrders()
+  const { merchantPayoutRequests, isLoading: isLoadingPayouts } = usePayouts()
   const requestColumns = usePayoutRequestColumns()
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -225,6 +225,7 @@ export default function MerchantFinancePage() {
               data={merchantPayableOrders}
               getRowKey={(o) => o.id}
               initialSortId="tracking"
+              loading={isLoadingOrders}
               csv={{
                 filename: "available-for-payout",
                 headers: [
@@ -280,6 +281,7 @@ export default function MerchantFinancePage() {
               getRowKey={(p) => p.id}
               initialSortId="requested"
               initialSortDir="desc"
+              loading={isLoadingPayouts}
               csv={{
                 filename: "payout-requests",
                 headers: [

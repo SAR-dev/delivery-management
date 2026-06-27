@@ -9,6 +9,15 @@ import { RiderSidebar } from "@/components/navigation/rider-sidebar"
 import { MobileHeader } from "@/components/navigation/mobile-header"
 import { RIDER_SIDEBAR } from "@/lib/nav-config"
 
+// Rider monitors: riders, orders, merchants, warehouses, pickup-locations.
+const RIDER_KEYS = [
+  "/api/riders",
+  "/api/orders",
+  "/api/merchants",
+  "/api/warehouses",
+  "/api/pickup-locations",
+] as const
+
 export function RiderShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { currentUser, isReady } = useAuth()
@@ -37,7 +46,7 @@ export function RiderShell({ children }: { children: React.ReactNode }) {
         <MobileHeader config={RIDER_SIDEBAR} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
+            <DataErrorBanner keys={RIDER_KEYS} />
             {children}
           </div>
         </main>

@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { division, merchant } from "@/lib/db/schema"
 import { merchantProfileSchema, parseBody } from "@/lib/validation"
@@ -13,14 +14,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
   const { id } = await params
 
   const isOwner = me.role === "MERCHANT" && me.merchantId === id
   const isAdmin = me.role === "SUPER_ADMIN" || me.role === "ADMIN"
   if (!isOwner && !isAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const parsed = await parseBody(req, merchantProfileSchema)
@@ -51,7 +52,6 @@ export async function PATCH(
     .where(eq(merchant.id, id))
     .returning()
 
-  if (!updated)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!updated) return notFound()
   return NextResponse.json(updated)
 }

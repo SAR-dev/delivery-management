@@ -2,20 +2,25 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { payoutRequest } from "@/lib/db/schema"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function PATCH(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
+
+  const limited = rateLimit(`payout-approve:${getClientIp(req)}`, 20, 60)
+  if (limited) return limited
 
   // Transaction: lock the request row for the guard + write so two
   // concurrent approve/reject calls on the same request can't both pass the
@@ -23,7 +28,7 @@ export async function PATCH(
   const committed: { row: typeof payoutRequest.$inferSelect | null } = {
     row: null,
   }
-  const response = await db.transaction(async (tx: any) => {
+  const response = await db.transaction(async (tx) => {
     const [current] = await tx
       .select({ status: payoutRequest.status })
       .from(payoutRequest)
@@ -31,8 +36,7 @@ export async function PATCH(
       .for("update")
       .limit(1)
 
-    if (!current)
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (!current) return notFound()
     if (current.status !== "PENDING") {
       return NextResponse.json(
         { error: "Only PENDING requests can be approved." },

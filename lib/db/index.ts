@@ -64,8 +64,6 @@ if (dbProvider === "postgres") {
     url: process.env.TURSO_DATABASE_URL!,
     authToken: process.env.TURSO_AUTH_TOKEN,
   })
-  // Genuinely a LibSQLDatabase<typeof schema.turso> at runtime — see header
-  // comment for why this single cast is intentional rather than `any`.
   db = drizzle(client, { schema }) as unknown as NodePgDatabase<typeof pgSchema>
 }
 

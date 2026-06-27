@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Pencil, Plus, Trash2, Warehouse as WarehouseIcon } from "lucide-react"
+import {
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Warehouse as WarehouseIcon,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
@@ -26,6 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 interface WarehouseRow extends Warehouse {
@@ -50,8 +63,21 @@ const emptyForm: WarehouseForm = {
 export default function WarehousesPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { warehouses, createWarehouse, updateWarehouse, deleteWarehouse } =
-    useWarehouses()
+  const {
+    warehouses,
+    allWarehouses: _allWarehouses,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    createWarehouse,
+    updateWarehouse,
+    deleteWarehouse,
+    isLoading,
+  } = useWarehouses()
   const { divisions } = useDivisions()
   const { allOrders } = useOrders()
   const { allRiders } = useRiders()
@@ -64,7 +90,6 @@ export default function WarehousesPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
-  // Dialog state.
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Warehouse | null>(null)
   const [deleting, setDeleting] = useState<WarehouseRow | null>(null)
@@ -247,29 +272,36 @@ export default function WarehousesPage() {
     },
     {
       id: "actions",
-      header: "Actions",
+      header: "",
       align: "right",
+      headClassName: "w-12",
       cell: (w) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => openEdit(w)}
-            aria-label={`Edit ${w.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleting(w)}
-            aria-label={`Delete ${w.name}`}
-            disabled={w.usageCount > 0}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Actions</span>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => openEdit(w)}>
+                <Pencil className="size-4" />
+                Edit warehouse
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={w.usageCount > 0}
+                onClick={() => setDeleting(w)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -299,6 +331,15 @@ export default function WarehousesPage() {
             getRowKey={(w) => w.id}
             initialSortId="name"
             emptyMessage="No warehouses yet. Add one to get started."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

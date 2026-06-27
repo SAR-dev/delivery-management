@@ -16,18 +16,19 @@
     "test:run": "vitest run",
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
-    "db:generate:pg": "DB_PROVIDER=postgres drizzle-kit generate",
-    "db:generate:turso": "DB_PROVIDER=turso drizzle-kit generate",
+    "db:generate:pg": "cross-env DB_PROVIDER=postgres drizzle-kit generate",
+    "db:generate:turso": "cross-env DB_PROVIDER=turso drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
-    "db:studio:pg": "DB_PROVIDER=postgres drizzle-kit studio",
-    "db:studio:turso": "DB_PROVIDER=turso drizzle-kit studio",
+    "db:studio:pg": "cross-env DB_PROVIDER=postgres drizzle-kit studio",
+    "db:studio:turso": "cross-env DB_PROVIDER=turso drizzle-kit studio",
     "db:push": "drizzle-kit push",
-    "db:push:pg": "DB_PROVIDER=postgres drizzle-kit push",
-    "db:push:turso": "DB_PROVIDER=turso drizzle-kit push",
-    "db:seed": "tsx lib/db/seed.ts",
-    "db:seed:min": "tsx lib/db/seed.ts --min",
+    "db:push:pg": "cross-env DB_PROVIDER=postgres drizzle-kit push",
+    "db:push:turso": "cross-env DB_PROVIDER=turso drizzle-kit push",
+    "db:seed": "tsx lib/db/seed/index.ts",
+    "db:seed:min": "tsx lib/db/seed/index.ts --min",
+    "db:check-sync": "tsx scripts/check-schema-sync.ts",
     "repomix": "repomix",
-    "check": "pnpm typecheck && pnpm lint && pnpm format && pnpm repomix"
+    "check": "pnpm typecheck && pnpm lint && pnpm format && pnpm db:check-sync && pnpm repomix"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
@@ -58,11 +59,15 @@
     "@eslint/js": "^10.0.1",
     "@next/eslint-plugin-next": "^16.2.9",
     "@tailwindcss/postcss": "^4.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.10",
@@ -70,6 +75,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
     "lint-staged": "^17.0.7",
     "postcss": "8.5.10",
     "prettier": "^3.8.4",
@@ -84,6 +90,7 @@
     "vitest": "^4.1.9"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,json,css,md,mdx}": "prettier --write"
+    "*.{js,jsx,ts,tsx,json,css,md,mdx}": "prettier --write",
+    "*.{ts,tsx}": "tsc --noEmit --pretty"
   }
 }

@@ -9,6 +9,15 @@ import { WarehouseSidebar } from "@/components/navigation/warehouse-sidebar"
 import { MobileHeader } from "@/components/navigation/mobile-header"
 import { WAREHOUSE_SIDEBAR } from "@/lib/nav-config"
 
+// Warehouse Admin monitors: warehouses, orders, merchants, riders, pickup-locations.
+const WAREHOUSE_KEYS = [
+  "/api/warehouses",
+  "/api/orders",
+  "/api/merchants",
+  "/api/riders",
+  "/api/pickup-locations",
+] as const
+
 export function WarehouseShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { currentUser, isReady } = useAuth()
@@ -37,7 +46,7 @@ export function WarehouseShell({ children }: { children: React.ReactNode }) {
         <MobileHeader config={WAREHOUSE_SIDEBAR} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
+            <DataErrorBanner keys={WAREHOUSE_KEYS} />
             {children}
           </div>
         </main>

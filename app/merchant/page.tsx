@@ -39,14 +39,14 @@ import { StatCardList } from "@/components/stat-card-list"
 export default function MerchantOverviewPage() {
   const { currentUser } = useAuth()
   const { currentMerchant } = useMerchants()
-  const { orders } = useOrders()
+  const { allOrders, isLoading } = useOrders()
   const { pickupLocations } = usePickupLocations()
 
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
   const myOrders = currentMerchant
-    ? orders.filter((o) => o.merchantId === currentMerchant.id)
+    ? allOrders.filter((o) => o.merchantId === currentMerchant.id)
     : []
 
   const pickup = (id: string) => pickupLocations.find((p) => p.id === id)
@@ -328,6 +328,7 @@ export default function MerchantOverviewPage() {
               data={myOrders}
               getRowKey={(o) => o.id}
               initialSortId="tracking"
+              loading={isLoading}
               csv={{
                 filename: "orders",
                 headers: [

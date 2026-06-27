@@ -58,11 +58,8 @@ function minLength(
   }
 }
 
-// ---------------------------------------------------------------------------
-
 export function validateEnv(): void {
   const errors = collect((e) => {
-    // --- Database -----------------------------------------------------------
     const dbProvider = oneOf(
       e,
       "DB_PROVIDER",
@@ -77,7 +74,6 @@ export function validateEnv(): void {
       required(e, "TURSO_AUTH_TOKEN", "Turso auth token")
     }
 
-    // --- Auth ---------------------------------------------------------------
     const secret = required(e, "BETTER_AUTH_SECRET", "Auth secret key")
     if (secret) {
       minLength(e, "BETTER_AUTH_SECRET", 32, "Auth secret key")
@@ -100,7 +96,6 @@ export function validateEnv(): void {
       )
     }
 
-    // --- Email (Gmail SMTP) -------------------------------------------------
     required(e, "GMAIL_USER", "Gmail address for sending emails")
     required(
       e,
@@ -108,7 +103,6 @@ export function validateEnv(): void {
       "Gmail App Password (not your login password)",
     )
 
-    // --- Storage ------------------------------------------------------------
     const provider = oneOf(e, "STORAGE_PROVIDER", ["local", "r2"], "local")
 
     if (provider === "local") {

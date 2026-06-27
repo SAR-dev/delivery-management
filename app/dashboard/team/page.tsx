@@ -93,14 +93,22 @@ export default function TeamPage() {
   const {
     team,
     allTeam,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    role: _role,
+    setRole,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
+    isLoading,
   } = useTeam()
   const { warehouses } = useWarehouses()
 
-  // Managing Admin accounts is a Super Admin-only capability. Admins who reach
-  // this route directly are redirected back to their console overview.
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN"
   useEffect(() => {
     if (currentUser && !isSuperAdmin) {
@@ -108,28 +116,37 @@ export default function TeamPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
+  useEffect(() => {
+    setRole("ADMIN")
+  }, [setRole])
+
+  const TAB_ROLES: Record<string, string | undefined> = {
+    admins: "ADMIN",
+    warehouse: "WAREHOUSE_ADMIN",
+  }
+
+  function handleTabChange(value: string) {
+    setRole(TAB_ROLES[value])
+    setPage(1)
+  }
+
   function warehouseName(id?: string | null) {
     if (!id) return "Unassigned"
     return warehouses.find((w) => w.id === id)?.name ?? "Unknown"
   }
 
-  // Table contents are search-narrowed; tab counts always reflect the full
-  // roster so they don't shrink to zero just because a search has no matches
-  // in that role.
-  const admins = team.filter((u) => u.role === "ADMIN")
-  const warehouseAdmins = team.filter((u) => u.role === "WAREHOUSE_ADMIN")
   const totalAdmins = allTeam.filter((u) => u.role === "ADMIN").length
   const totalWarehouseAdmins = allTeam.filter(
     (u) => u.role === "WAREHOUSE_ADMIN",
   ).length
 
-  function handleToggleActive(user: User) {
-    toggleAccountActive(user.id)
+  async function handleToggleActive(user: User) {
+    await toggleAccountActive(user.id)
     toast.success(`${user.name} ${user.isActive ? "disabled" : "enabled"}.`)
   }
 
-  function handleTogglePricing(user: User) {
-    togglePricingPermission(user.id)
+  async function handleTogglePricing(user: User) {
+    await togglePricingPermission(user.id)
     toast.success(
       `${user.name} ${user.canManagePricing ? "can no longer" : "can now"} manage pricing.`,
     )
@@ -242,7 +259,7 @@ export default function TeamPage() {
         <CreateAccountDialog />
       </PageHeader>
 
-      <Tabs defaultValue="admins">
+      <Tabs defaultValue="admins" onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="admins">Admins ({totalAdmins})</TabsTrigger>
           <TabsTrigger value="warehouse">
@@ -250,7 +267,6 @@ export default function TeamPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Admins */}
         <TabsContent value="admins" className="mt-4">
           <Card>
             <CardContent className="p-0">
@@ -258,16 +274,24 @@ export default function TeamPage() {
                 id="dashboard-team-admins"
                 searchable
                 columns={adminColumns}
-                data={admins}
+                data={team}
                 getRowKey={(u) => u.id}
                 initialSortId="name"
                 emptyMessage="No Admin accounts yet. Create one to get started."
+                loading={isLoading}
+                serverPaginated
+                total={total}
+                query={query}
+                onQueryChange={setQuery}
+                onPageChange={(p, l) => {
+                  setPage(p)
+                  setLimit(l)
+                }}
               />
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Warehouse Admins */}
         <TabsContent value="warehouse" className="mt-4">
           <Card>
             <CardContent className="p-0">
@@ -275,10 +299,19 @@ export default function TeamPage() {
                 id="dashboard-team-warehouse-admins"
                 searchable
                 columns={warehouseColumns}
-                data={warehouseAdmins}
+                data={team}
                 getRowKey={(u) => u.id}
                 initialSortId="name"
                 emptyMessage="No Warehouse Admin accounts yet."
+                loading={isLoading}
+                serverPaginated
+                total={total}
+                query={query}
+                onQueryChange={setQuery}
+                onPageChange={(p, l) => {
+                  setPage(p)
+                  setLimit(l)
+                }}
               />
             </CardContent>
           </Card>

@@ -2,7 +2,9 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { order, payoutRequest } from "@/lib/db/schema"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { parseBody, payoutRejectSchema } from "@/lib/validation"
+import { forbidden, notFound, unauthorized } from "@/lib/api-response"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -11,9 +13,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const { id } = await params
@@ -21,29 +23,38 @@ export async function PATCH(
   if (parsed.error) return parsed.error
   const { reason } = parsed.data
 
-  const [current] = await db
-    .select()
-    .from(payoutRequest)
-    .where(eq(payoutRequest.id, id))
-    .limit(1)
+  const limited = rateLimit(`payout-reject:${getClientIp(req)}`, 20, 60)
+  if (limited) return limited
 
-  if (!current)
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (current.status !== "PENDING") {
-    return NextResponse.json(
-      { error: "Only PENDING requests can be rejected." },
-      { status: 400 },
-    )
+  // Transaction: lock the request row for the guard + write so two
+  // concurrent approve/reject calls on the same request can't both pass the
+  // "still PENDING" check against stale state.
+  const committed: { row: typeof payoutRequest.$inferSelect | null } = {
+    row: null,
   }
+  const response = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: payoutRequest.status })
+      .from(payoutRequest)
+      .where(eq(payoutRequest.id, id))
+      .for("update")
+      .limit(1)
 
-  const updated = await db.transaction(async (tx: any) => {
+    if (!current) return notFound()
+    if (current.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Only PENDING requests can be rejected." },
+        { status: 400 },
+      )
+    }
+
     // Unlock orders before updating the request status.
     await tx
       .update(order)
       .set({ payoutRequestId: null })
       .where(eq(order.payoutRequestId, id))
 
-    const [rejected] = await tx
+    const [updated] = await tx
       .update(payoutRequest)
       .set({
         status: "REJECTED",
@@ -54,16 +65,19 @@ export async function PATCH(
       .where(eq(payoutRequest.id, id))
       .returning()
 
-    return rejected
+    committed.row = updated
+    return NextResponse.json(updated)
   })
 
-  await logAudit({
-    actor: { userId: me.userId, name: me.name, role: me.role },
-    action: "PAYOUT_REJECTED",
-    entityType: "payout_request",
-    entityId: updated.id,
-    description: `Rejected payout request ${updated.code}: ${reason.trim()}`,
-  })
+  if (committed.row) {
+    await logAudit({
+      actor: { userId: me.userId, name: me.name, role: me.role },
+      action: "PAYOUT_REJECTED",
+      entityType: "payout_request",
+      entityId: committed.row.id,
+      description: `Rejected payout request ${committed.row.code}: ${reason.trim()}`,
+    })
+  }
 
-  return NextResponse.json(updated)
+  return response
 }

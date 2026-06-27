@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ShieldCheck, AlertTriangle, Bike } from "lucide-react"
+import { AlertTriangle, Bike, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
@@ -46,7 +46,6 @@ export function ApproveOrderDialog({
   const [riderId, setRiderId] = useState("")
   const [syncedId, setSyncedId] = useState<string | null>(null)
 
-  // Reset rider selection whenever a different order is opened.
   if (order && order.id !== syncedId) {
     setSyncedId(order.id)
     setRiderId("")

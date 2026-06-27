@@ -19,7 +19,18 @@ function formatTimestamp(value: string) {
 }
 
 export default function AuditLogsPage() {
-  const { auditLogs, isLoading } = useAuditLogs()
+  const {
+    auditLogs,
+    allAuditLogs,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    isLoading,
+  } = useAuditLogs()
 
   const columns: DataTableColumn<AuditLog>[] = [
     {
@@ -84,34 +95,45 @@ export default function AuditLogsPage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
+            serverPaginated
             id="dashboard-audit-logs"
             searchable
             columns={columns}
             data={auditLogs}
+            total={total}
+            loading={isLoading}
+            query={query}
+            onQueryChange={(q) => {
+              setQuery(q)
+              setPage(1)
+            }}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
             getRowKey={(l) => l.id}
             initialSortId="createdAt"
             initialSortDir="desc"
             emptyMessage={isLoading ? "Loading…" : "No audit log entries yet."}
+            csvData={allAuditLogs}
             csv={{
-              parser: (l) => [
-                formatTimestamp(l.createdAt),
-                l.actorName,
-                l.actorRole,
-                l.action,
-                l.entityType,
-                l.entityId ?? "",
-                l.description,
-              ],
+              filename: "audit-logs",
               headers: [
                 "When",
                 "Actor",
                 "Role",
                 "Action",
-                "Entity type",
-                "Entity ID",
+                "Entity",
                 "Description",
               ],
-              filename: "audit-logs",
+              parser: (l) => [
+                new Date(l.createdAt).toLocaleString(),
+                l.actorName,
+                l.actorRole,
+                l.action,
+                l.entityType,
+                l.description,
+              ],
             }}
           />
         </CardContent>

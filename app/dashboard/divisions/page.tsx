@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { MapPin, Pencil, Plus, Trash2 } from "lucide-react"
+import { MapPin, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -19,6 +19,13 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 interface DivisionRow extends Division {
@@ -28,8 +35,21 @@ interface DivisionRow extends Division {
 export default function DivisionsPage() {
   const router = useRouter()
   const { currentUser } = useAuth()
-  const { divisions, createDivision, updateDivision, deleteDivision } =
-    useDivisions()
+  const {
+    divisions,
+    allDivisions: _allDivisions,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    createDivision,
+    updateDivision,
+    deleteDivision,
+    isLoading,
+  } = useDivisions()
   const { allWarehouses } = useWarehouses()
   const { allMerchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
@@ -42,7 +62,6 @@ export default function DivisionsPage() {
     }
   }, [currentUser, isSuperAdmin, router])
 
-  // Dialog state.
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Division | null>(null)
   const [deleting, setDeleting] = useState<DivisionRow | null>(null)
@@ -173,29 +192,36 @@ export default function DivisionsPage() {
     },
     {
       id: "actions",
-      header: "Actions",
+      header: "",
       align: "right",
+      headClassName: "w-12",
       cell: (d) => (
-        <div className="flex justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => openEdit(d)}
-            aria-label={`Rename ${d.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleting(d)}
-            aria-label={`Delete ${d.name}`}
-            disabled={d.usageCount > 0}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="size-4" />
+                  <span className="sr-only">Actions</span>
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => openEdit(d)}>
+                <Pencil className="size-4" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={d.usageCount > 0}
+                onClick={() => setDeleting(d)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -225,6 +251,15 @@ export default function DivisionsPage() {
             getRowKey={(d) => d.id}
             initialSortId="name"
             emptyMessage="No divisions yet. Add one to get started."
+            loading={isLoading}
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

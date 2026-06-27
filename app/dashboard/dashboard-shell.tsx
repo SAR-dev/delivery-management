@@ -9,6 +9,21 @@ import { Sidebar } from "@/components/navigation/sidebar"
 import { MobileHeader } from "@/components/navigation/mobile-header"
 import { dashboardSidebarForRole } from "@/lib/nav-config"
 
+// Dashboard (Super Admin / Admin) monitors all resources.
+const DASHBOARD_KEYS = [
+  "/api/team",
+  "/api/merchants",
+  "/api/orders",
+  "/api/payouts",
+  "/api/pickup-locations",
+  "/api/riders",
+  "/api/warehouses",
+  "/api/divisions",
+  "/api/security-config",
+  "/api/audit-logs",
+  "/api/email-logs",
+] as const
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { currentUser, isReady } = useAuth()
@@ -47,7 +62,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <MobileHeader config={dashboardSidebarForRole(currentUser.role)} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">
-            <DataErrorBanner />
+            <DataErrorBanner keys={DASHBOARD_KEYS} />
             {children}
           </div>
         </main>

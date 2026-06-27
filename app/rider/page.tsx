@@ -95,7 +95,7 @@ function TaskSection({
 export default function RiderTodoPage() {
   const { currentUser } = useAuth()
   const { currentRider } = useRiders()
-  const { orders } = useOrders()
+  const { allOrders, isLoading } = useOrders()
   const { merchants } = useMerchants()
   const { pickupLocations } = usePickupLocations()
 
@@ -156,19 +156,18 @@ export default function RiderTodoPage() {
   const myPickups = useMemo(
     () =>
       currentRider
-        ? orders.filter((o) => o.pickupRiderId === currentRider.id)
+        ? allOrders.filter((o) => o.pickupRiderId === currentRider.id)
         : [],
-    [orders, currentRider],
+    [allOrders, currentRider],
   )
   const myDeliveries = useMemo(
     () =>
       currentRider
-        ? orders.filter((o) => o.deliveryRiderId === currentRider.id)
+        ? allOrders.filter((o) => o.deliveryRiderId === currentRider.id)
         : [],
-    [orders, currentRider],
+    [allOrders, currentRider],
   )
 
-  // Three concrete to-do groups, each needing one action from the rider.
   const toPickup = myPickups.filter((o) => o.status === "APPROVED")
   const toStart = myDeliveries.filter((o) => o.status === "IN_TRANSIT")
   const toDeliver = myDeliveries.filter((o) => o.status === "OUT_FOR_DELIVERY")
@@ -195,7 +194,6 @@ export default function RiderTodoPage() {
     setDeliveryDialogOpen(true)
   }
 
-  // Pickup needs merchant info only — no recipient details yet.
   const pickupColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -253,7 +251,6 @@ export default function RiderTodoPage() {
     },
   ]
 
-  // IN_TRANSIT: parcel already handed over — just start the route.
   const startColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -304,7 +301,6 @@ export default function RiderTodoPage() {
     },
   ]
 
-  // Delivery needs recipient info + the amount to collect.
   const deliverColumns: DataTableColumn<Order>[] = [
     {
       id: "order",
@@ -431,6 +427,7 @@ export default function RiderTodoPage() {
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="No pickups waiting."
             />
           </TaskSection>
@@ -447,6 +444,7 @@ export default function RiderTodoPage() {
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="Nothing dispatched to you yet."
             />
           </TaskSection>
@@ -465,6 +463,7 @@ export default function RiderTodoPage() {
               getRowKey={(o) => o.id}
               initialSortId="order"
               pageSize={5}
+              loading={isLoading}
               emptyMessage="Nothing out for delivery right now."
             />
           </TaskSection>

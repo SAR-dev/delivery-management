@@ -2,37 +2,45 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division } from "@/lib/db/schema"
+import { paginateResponse, parsePagination } from "@/lib/pagination"
 import { divisionCreateSchema, parseBody } from "@/lib/validation"
-import { asc, eq, ilike } from "drizzle-orm"
+import { asc, eq, ilike, sql } from "drizzle-orm"
+import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
-// Any signed-in user can read the division list (needed to populate address
-// selectors across the app).
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
+  const { limit, offset } = parsePagination(req)
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  let q = db.select().from(division).$dynamic()
-  if (search) q = q.where(ilike(division.name, `%${search}%`))
+  const where = search ? ilike(division.name, `%${search}%`) : undefined
 
-  const rows = await q.orderBy(asc(division.name))
-  return NextResponse.json(rows)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(division)
+    .where(where)
+
+  let q = db.select().from(division).orderBy(asc(division.name)).$dynamic()
+  if (where) q = q.where(where)
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
-// Only Super Admins manage the division list.
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const parsed = await parseBody(req, divisionCreateSchema)
   if (parsed.error) return parsed.error
   const name = parsed.data.name.trim()
 
-  // Reject duplicates (case-insensitive) before hitting the unique constraint.
   const [existing] = await db
     .select({ id: division.id })
     .from(division)

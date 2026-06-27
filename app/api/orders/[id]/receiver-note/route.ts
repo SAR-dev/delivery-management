@@ -1,3 +1,4 @@
+import { notFound } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { order } from "@/lib/db/schema"
 import { orderReceiverNoteSchema, parseBody } from "@/lib/validation"
@@ -23,7 +24,7 @@ export async function PATCH(
     .limit(1)
 
   if (!orderRow) {
-    return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    return notFound("Order not found")
   }
 
   if (

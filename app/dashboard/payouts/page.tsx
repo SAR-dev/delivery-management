@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Banknote, Check, Clock, Loader2, Wallet, X } from "lucide-react"
 import { usePayouts } from "@/features/payouts/hooks/use-payouts"
@@ -24,15 +24,32 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { StatCardList } from "@/components/stat-card-list"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 
 type FilterTab = "PENDING" | "APPROVED" | "HISTORY"
+
+const TAB_STATUSES: Record<FilterTab, string[] | undefined> = {
+  PENDING: ["PENDING"],
+  APPROVED: ["APPROVED"],
+  HISTORY: ["PAID", "REJECTED"],
+}
 
 export default function PayoutsPage() {
   const {
     payoutRequests,
     allPayoutRequests,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
     approvePayout,
     rejectPayout,
+    isLoading,
     markPayoutPaid,
   } = usePayouts()
   const baseColumns = usePayoutRequestColumns({ showMerchantName: true })
@@ -40,18 +57,16 @@ export default function PayoutsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<PayoutRequest | null>(null)
   const [rejectReason, setRejectReason] = useState("")
+  const [confirmPayout, setConfirmPayout] = useState<PayoutRequest | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    "approve" | "markPaid" | null
+  >(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  // Search narrows what's displayed in the table; stats and tab counts
-  // always reflect the full request set.
-  const pending = payoutRequests.filter((p) => p.status === "PENDING")
-  const approved = payoutRequests.filter((p) => p.status === "APPROVED")
-  const history = useMemo(
-    () =>
-      payoutRequests
-        .filter((p) => p.status === "PAID" || p.status === "REJECTED")
-        .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
-    [payoutRequests],
-  )
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
   const totalPending = allPayoutRequests.filter(
     (p) => p.status === "PENDING",
@@ -73,34 +88,38 @@ export default function PayoutsPage() {
     .filter((p) => p.status === "PAID")
     .reduce((sum, p) => sum + p.amount, 0)
 
-  const visible =
-    tab === "PENDING" ? pending : tab === "APPROVED" ? approved : history
-
-  async function handleApprove(req: PayoutRequest) {
-    setBusy(req.id)
-    try {
-      const result = await approvePayout(req.id)
-      if (result.ok) {
-        toast.success(`${req.code} approved. Mark it paid once funds are sent.`)
-      } else {
-        toast.error(result.error ?? "Unable to approve this request.")
-      }
-    } finally {
-      setBusy(null)
-    }
+  function openConfirm(req: PayoutRequest, action: "approve" | "markPaid") {
+    setConfirmPayout(req)
+    setConfirmAction(action)
+    setConfirmOpen(true)
   }
 
-  async function handleMarkPaid(req: PayoutRequest) {
-    setBusy(req.id)
+  async function handleConfirm() {
+    if (!confirmPayout || !confirmAction) return
+    setBusy(confirmPayout.id)
     try {
-      const result = await markPayoutPaid(req.id)
-      if (result.ok) {
-        toast.success(`${req.code} marked as paid.`)
+      if (confirmAction === "approve") {
+        const result = await approvePayout(confirmPayout.id)
+        if (result.ok) {
+          toast.success(
+            `${confirmPayout.code} approved. Mark it paid once funds are sent.`,
+          )
+        } else {
+          toast.error(result.error ?? "Unable to approve this request.")
+        }
       } else {
-        toast.error(result.error ?? "Unable to mark this request as paid.")
+        const result = await markPayoutPaid(confirmPayout.id)
+        if (result.ok) {
+          toast.success(`${confirmPayout.code} marked as paid.`)
+        } else {
+          toast.error(result.error ?? "Unable to mark this request as paid.")
+        }
       }
     } finally {
       setBusy(null)
+      setConfirmOpen(false)
+      setConfirmPayout(null)
+      setConfirmAction(null)
     }
   }
 
@@ -142,7 +161,7 @@ export default function PayoutsPage() {
             </Button>
             <Button
               size="sm"
-              onClick={() => handleApprove(p)}
+              onClick={() => openConfirm(p, "approve")}
               disabled={busy === p.id}
             >
               {busy === p.id ? (
@@ -156,7 +175,7 @@ export default function PayoutsPage() {
         ) : p.status === "APPROVED" ? (
           <Button
             size="sm"
-            onClick={() => handleMarkPaid(p)}
+            onClick={() => openConfirm(p, "markPaid")}
             disabled={busy === p.id}
           >
             {busy === p.id ? (
@@ -218,10 +237,11 @@ export default function PayoutsPage() {
             id="dashboard-payouts"
             searchable
             columns={columns}
-            data={visible}
+            data={payoutRequests}
             getRowKey={(p) => p.id}
             initialSortId="requested"
             initialSortDir="desc"
+            loading={isLoading}
             emptyMessage={
               tab === "PENDING"
                 ? "No payout requests to review. New merchant requests will appear here."
@@ -229,6 +249,36 @@ export default function PayoutsPage() {
                   ? "No approved requests awaiting payment."
                   : "No paid or rejected requests yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
+            csvData={allPayoutRequests}
+            csv={{
+              filename: "payout-requests",
+              headers: [
+                "Request",
+                "Amount",
+                "Status",
+                "Method",
+                "Details",
+                "Orders",
+                "Requested",
+              ],
+              parser: (p) => [
+                p.code,
+                p.amount,
+                p.status,
+                p.payoutMethod,
+                p.payoutDetails,
+                p.orderIds.length,
+                new Date(p.requestedAt).toLocaleDateString(),
+              ],
+            }}
           />
         </CardContent>
       </Card>
@@ -281,6 +331,24 @@ export default function PayoutsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={
+          confirmAction === "approve"
+            ? "Approve payout request"
+            : "Mark payout as paid"
+        }
+        description={
+          confirmAction === "approve"
+            ? `Approve ${confirmPayout?.code} for ${formatTk(confirmPayout?.amount ?? 0)}?`
+            : `Mark ${confirmPayout?.code} as paid? This cannot be undone.`
+        }
+        confirmLabel={confirmAction === "approve" ? "Approve" : "Mark as paid"}
+        variant={confirmAction === "markPaid" ? "destructive" : "default"}
+        onConfirm={handleConfirm}
+      />
     </div>
   )
 }

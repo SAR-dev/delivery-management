@@ -25,18 +25,26 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 import { StatCardList } from "@/components/stat-card-list"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 
 type FilterTab = "UNSETTLED" | "SETTLED"
 
 export default function WarehouseReconciliationPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders, warehouseUnsettledOrders, settleOrderCod } =
-    useOrders()
+  const {
+    orders,
+    allOrders,
+    warehouseUnsettledOrders,
+    settleOrderCod,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("UNSETTLED")
   const [settling, setSettling] = useState<string | null>(null)
+  const [confirmOrder, setConfirmOrder] = useState<Order | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
@@ -45,8 +53,6 @@ export default function WarehouseReconciliationPage() {
   const warehouseName = (id?: string | null) =>
     id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
-  // Already derived from the unfiltered list (see useOrders), so stats/tab
-  // counts stay stable regardless of the current search.
   const unsettled = warehouseUnsettledOrders
 
   // Delivered parcels at this warehouse whose COD has been settled.
@@ -101,19 +107,27 @@ export default function WarehouseReconciliationPage() {
 
   const visible = tab === "UNSETTLED" ? visibleUnsettled : visibleSettled
 
-  async function handleSettle(order: Order) {
-    setSettling(order.id)
+  function openConfirm(order: Order) {
+    setConfirmOrder(order)
+    setConfirmOpen(true)
+  }
+
+  async function handleConfirm() {
+    if (!confirmOrder) return
+    setSettling(confirmOrder.id)
     try {
-      const result = await settleOrderCod(order.id)
+      const result = await settleOrderCod(confirmOrder.id)
       if (result.ok) {
         toast.success(
-          `${order.code} settled. Product cost is now available for merchant payout.`,
+          `${confirmOrder.code} settled. Product cost is now available for merchant payout.`,
         )
       } else {
         toast.error(result.error ?? "Unable to settle this parcel.")
       }
     } finally {
       setSettling(null)
+      setConfirmOpen(false)
+      setConfirmOrder(null)
     }
   }
 
@@ -220,7 +234,7 @@ export default function WarehouseReconciliationPage() {
         o.codSettledAt ? null : (
           <Button
             size="sm"
-            onClick={() => handleSettle(o)}
+            onClick={() => openConfirm(o)}
             disabled={settling === o.id}
           >
             {settling === o.id ? (
@@ -293,6 +307,7 @@ export default function WarehouseReconciliationPage() {
             data={visible}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "UNSETTLED"
                 ? "Nothing to reconcile. Delivered parcels appear here until their rider settles the collected cash."
@@ -301,6 +316,15 @@ export default function WarehouseReconciliationPage() {
           />
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Settle cash on delivery"
+        description={`Settle ${confirmOrder?.code} for ${formatTk(confirmOrder?.totalCollectible ?? 0)}? This marks the cash as collected and makes it available for merchant payout.`}
+        confirmLabel="Settle"
+        onConfirm={handleConfirm}
+      />
     </div>
   )
 }

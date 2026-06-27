@@ -1,15 +1,20 @@
 import { requireSession } from "@/lib/api-auth"
+import { unauthorized } from "@/lib/api-response"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { division, merchant, profile } from "@/lib/db/schema"
-import { parsePagination } from "@/lib/pagination"
+import {
+  paginateResponse,
+  parsePagination,
+  parseStatusFilter,
+} from "@/lib/pagination"
 import { merchantRegisterSchema, parseBody } from "@/lib/validation"
-import { and, eq, ilike, or } from "drizzle-orm"
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
   // A merchant only ever sees their own business row — no pagination needed.
   if (me.role === "MERCHANT" && me.merchantId) {
@@ -17,33 +22,40 @@ export async function GET(req: Request) {
       .select()
       .from(merchant)
       .where(eq(merchant.id, me.merchantId))
-    return NextResponse.json(rows)
+    return NextResponse.json(paginateResponse(rows, rows.length))
   }
 
   const { limit, offset } = parsePagination(req)
-  let q = db.select().from(merchant).$dynamic()
-
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  if (search) {
-    const likeQ = `%${search}%`
-    q = q.where(
-      or(
-        ilike(merchant.businessName, likeQ),
-        ilike(merchant.ownerName, likeQ),
-        ilike(merchant.email, likeQ),
-        ilike(merchant.phone, likeQ),
-      ),
-    )
+  let where = search
+    ? or(
+        ilike(merchant.businessName, `%${search}%`),
+        ilike(merchant.ownerName, `%${search}%`),
+        ilike(merchant.email, `%${search}%`),
+        ilike(merchant.phone, `%${search}%`),
+      )
+    : undefined
+
+  const statuses = parseStatusFilter(req)
+  if (statuses.length > 0) {
+    const statusClause = inArray(merchant.status, statuses as any)
+    where = where ? and(where, statusClause) : statusClause
   }
 
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(merchant)
+    .where(where)
+
+  let q = db.select().from(merchant).$dynamic()
+  if (where) q = q.where(where)
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 
   const rows = await q
-  return NextResponse.json(rows)
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
-// Public registration — no requireSession() guard. Called from the sign-up page.
 export async function POST(req: Request) {
   const parsed = await parseBody(req, merchantRegisterSchema)
   if (parsed.error) return parsed.error
@@ -70,7 +82,6 @@ export async function POST(req: Request) {
     )
   }
 
-  // 1. Insert the merchant row first (no dependency on the Better Auth user).
   const [newMerchant] = await db
     .insert(merchant)
     .values({
@@ -88,16 +99,12 @@ export async function POST(req: Request) {
     })
     .returning()
 
-  // 2. Create the Better Auth user (createUser throws on failure).
   let created
   try {
     created = await auth.api.createUser({
-      // The app's real role lives in the `profile` table; Better Auth's admin
-      // plugin only types `role` as "user" | "admin", so cast to satisfy it.
       body: { name: ownerName, email, password, role: "MERCHANT" as "user" },
     })
   } catch (err) {
-    // Roll back the merchant row so a failed sign-up doesn't leave an orphan.
     await db.delete(merchant).where(eq(merchant.id, newMerchant.id))
     return NextResponse.json(
       {
@@ -108,7 +115,6 @@ export async function POST(req: Request) {
     )
   }
 
-  // 3. Link the Better Auth user to the merchant row via the profile table.
   await db.insert(profile).values({
     userId: created.user.id,
     role: "MERCHANT",

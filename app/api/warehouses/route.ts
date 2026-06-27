@@ -2,16 +2,19 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division, warehouse } from "@/lib/db/schema"
+import { paginateResponse, parsePagination } from "@/lib/pagination"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
+  const { limit, offset } = parsePagination(req)
   const search = new URL(req.url).searchParams.get("q")?.trim()
-  let q = db.select().from(warehouse).$dynamic()
+  let where
   if (search) {
     const likeQ = `%${search}%`
     const conditions = [
@@ -19,7 +22,6 @@ export async function GET(req: Request) {
       ilike(warehouse.address, likeQ),
       ilike(warehouse.city, likeQ),
     ]
-    // Also search by division name.
     const [{ count: divisionMatchCount }] = await db
       .select({ count: sql<number>`count(*)` })
       .from(division)
@@ -31,26 +33,34 @@ export async function GET(req: Request) {
         .where(ilike(division.name, likeQ))
       conditions.push(inArray(warehouse.divisionId, divisionIds))
     }
-    q = q.where(or(...conditions))
+    where = or(...conditions)
   }
 
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(warehouse)
+    .where(where)
+
+  let q = db.select().from(warehouse).$dynamic()
+  if (where) q = q.where(where)
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
   const rows = await q
-  return NextResponse.json(rows)
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
-// Only Super Admins create warehouses.
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const parsed = await parseBody(req, warehouseCreateSchema)
   if (parsed.error) return parsed.error
   const { name, address, city, divisionId } = parsed.data
 
-  // Reject duplicate name within the same city before insert.
   const [existing] = await db
     .select({ id: warehouse.id })
     .from(warehouse)

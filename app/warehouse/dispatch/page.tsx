@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Bike, PackageOpen, Send, Truck } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
@@ -8,7 +8,7 @@ import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
-import type { Order } from "@/lib/types"
+import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
 import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
@@ -22,10 +22,28 @@ import { StatCardList } from "@/components/stat-card-list"
 
 type FilterTab = "READY" | "DISPATCHED"
 
+const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
+  READY: ["IN_WAREHOUSE"],
+  DISPATCHED: ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"],
+}
+
 export default function WarehouseDispatchPage() {
   const { currentUser } = useAuth()
   const { currentWarehouse, warehouses } = useWarehouses()
-  const { orders, allOrders } = useOrders()
+  const {
+    orders,
+    allOrders,
+    total,
+    page: _page,
+    setPage,
+    limit: _limit,
+    setLimit,
+    query,
+    setQuery,
+    statuses: _statuses,
+    setStatuses,
+    isLoading,
+  } = useOrders()
   const { merchants } = useMerchants()
   const { riders, warehouseDeliveryRiders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("READY")
@@ -38,6 +56,11 @@ export default function WarehouseDispatchPage() {
     id ? riders.find((r) => r.id === id) : undefined
   const warehouseName = (id?: string | null) =>
     id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
+
+  useEffect(() => {
+    setStatuses(TAB_STATUSES[tab])
+    setPage(1)
+  }, [tab, setStatuses, setPage])
 
   // Parcels held in this warehouse, awaiting a delivery rider. Stats and tab
   // counts come from the unfiltered `allOrders`; the table-facing versions
@@ -69,35 +92,6 @@ export default function WarehouseDispatchPage() {
         : [],
     [allOrders, currentWarehouse],
   )
-
-  const visibleReady = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.status === "IN_WAREHOUSE" &&
-              o.warehouseId === currentWarehouse.id,
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visibleDispatched = useMemo(
-    () =>
-      currentWarehouse
-        ? orders.filter(
-            (o) =>
-              o.warehouseId === currentWarehouse.id &&
-              o.deliveryRiderId != null &&
-              ["IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(
-                o.status,
-              ),
-          )
-        : [],
-    [orders, currentWarehouse],
-  )
-
-  const visible = tab === "READY" ? visibleReady : visibleDispatched
 
   function openDispatch(order: Order) {
     setActiveOrder(order)
@@ -255,14 +249,23 @@ export default function WarehouseDispatchPage() {
             id="warehouse-dispatch"
             searchable
             columns={columns}
-            data={visible}
+            data={orders}
             getRowKey={(o) => o.id}
             initialSortId="order"
+            loading={isLoading}
             emptyMessage={
               tab === "READY"
                 ? "Nothing ready to dispatch. Parcels appear here once they're received into the warehouse."
                 : "Nothing dispatched yet."
             }
+            serverPaginated
+            total={total}
+            query={query}
+            onQueryChange={setQuery}
+            onPageChange={(p, l) => {
+              setPage(p)
+              setLimit(l)
+            }}
           />
         </CardContent>
       </Card>

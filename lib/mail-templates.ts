@@ -1,6 +1,3 @@
-// HTML email templates for order lifecycle events.
-// Each function returns { subject, html } ready to pass to sendMail().
-
 export interface OrderEmailData {
   orderCode: string
   merchantName: string

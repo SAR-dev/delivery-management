@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Ban, MapPin, Package, Phone, User } from "lucide-react"
 import { toast } from "sonner"
 import { useOrders } from "@/features/orders/hooks/use-orders"
@@ -43,14 +43,12 @@ export function CancelOrderDialog({
   const { cancelOrder } = useOrders()
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
-
-  // Reset form when a new order is opened.
+  const [openCount, setOpenCount] = useState(0)
+  const prevOpen = useRef(open)
   useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setReason("")
-    }
-  }, [open, order?.id])
+    if (open && !prevOpen.current) setOpenCount((c) => c + 1)
+    prevOpen.current = open
+  }, [open])
 
   if (!order) return null
 
@@ -71,6 +69,7 @@ export function CancelOrderDialog({
 
   return (
     <FormDialog
+      key={`${order.id}-${openCount}`}
       open={open}
       onOpenChange={onOpenChange}
       title={`Cancel order — ${order.code}`}

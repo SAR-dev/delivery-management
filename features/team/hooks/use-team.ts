@@ -2,13 +2,15 @@
 
 import { useCallback, useState } from "react"
 import useSWR, { useSWRConfig } from "swr"
-import type { Role, User, Warehouse } from "@/lib/types"
+import type { Role, User } from "@/lib/types"
+import type { PaginatedResponse } from "@/lib/pagination"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { jsonFetcher, swrOptions } from "@/lib/hooks/fetcher"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
+import { DEFAULT_TABLE_ROWS_PER_PAGE } from "@/lib/constants"
 
 const KEY = "/api/team"
-const WAREHOUSES_KEY = "/api/warehouses"
+const _WAREHOUSES_KEY = "/api/warehouses"
 
 interface NewAccountInput {
   name: string
@@ -19,37 +21,62 @@ interface NewAccountInput {
   canManagePricing?: boolean
 }
 
+function buildUrl(
+  base: string,
+  params: { limit?: number; offset?: number; q?: string; role?: string },
+) {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set("limit", String(params.limit))
+  if (params.offset != null) sp.set("offset", String(params.offset))
+  if (params.q) sp.set("q", params.q)
+  if (params.role) sp.set("role", params.role)
+  const qs = sp.toString()
+  return qs ? `${base}?${qs}` : base
+}
+
 // Team (staff accounts) resource. Creating/reassigning a Warehouse Admin also
 // updates the warehouses cache's managedBy field, so both views stay
 // consistent without a global reload — mirrors the old context exactly.
 export function useTeam() {
   const { currentUser } = useAuth()
-  const { mutate: globalMutate } = useSWRConfig()
-  const { data, error, isLoading, mutate } = useSWR<User[]>(
+  const { mutate: _globalMutate } = useSWRConfig()
+
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [role, setRole] = useState<string | undefined>(undefined)
+  const debouncedQuery = useDebouncedValue(query)
+
+  const trimmedQuery = debouncedQuery.trim()
+  const offset = (page - 1) * limit
+  const url = buildUrl(KEY, {
+    limit,
+    offset,
+    q: trimmedQuery || undefined,
+    role,
+  })
+
+  const {
+    data: response,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR<PaginatedResponse<User>>(
+    currentUser ? url : null,
+    jsonFetcher,
+    swrOptions,
+  )
+
+  const team = response?.data ?? []
+  const total = response?.total ?? 0
+
+  // allTeam: fetch full list (no pagination) for stats
+  const { data: allResponse } = useSWR<PaginatedResponse<User>>(
     currentUser ? KEY : null,
     jsonFetcher,
     swrOptions,
   )
-
-  // Search state lives here per the no-global-context rule. The base KEY
-  // subscription above is untouched — mutations keep writing to it — while
-  // search results live in a separate, parallel SWR entry.
-  const [query, setQuery] = useState("")
-  const debouncedQuery = useDebouncedValue(query)
-
-  const trimmedQuery = debouncedQuery.trim()
-  const searchKey =
-    currentUser && trimmedQuery
-      ? `${KEY}?q=${encodeURIComponent(trimmedQuery)}`
-      : null
-  const { data: searchData, isLoading: isSearchLoading } = useSWR<User[]>(
-    searchKey,
-    jsonFetcher,
-    swrOptions,
-  )
-
-  const team = trimmedQuery ? (searchData ?? []) : (data ?? [])
-  const allTeam = data ?? []
+  const allTeam = allResponse?.data ?? []
 
   const createAccount = useCallback(
     async (input: NewAccountInput & { password: string }) => {
@@ -59,57 +86,57 @@ export function useTeam() {
         body: JSON.stringify(input),
       })
       if (!res.ok) return
-      const newUser = await res.json()
-      await mutate((prev) => [newUser, ...(prev ?? [])], { revalidate: false })
-      // Keep the cached warehouse list in sync with the new manager assignment.
-      if (newUser.role === "WAREHOUSE_ADMIN" && newUser.warehouseId) {
-        await globalMutate<Warehouse[]>(
-          WAREHOUSES_KEY,
-          (prev) =>
-            (prev ?? []).map((w) =>
-              w.id === newUser.warehouseId
-                ? { ...w, managedBy: newUser.id }
-                : w,
-            ),
-          { revalidate: false },
-        )
-      }
+      await mutate()
     },
-    [mutate, globalMutate],
+    [mutate],
   )
 
   const toggleAccountActive = useCallback(
     async (id: string) => {
-      const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
-      if (!res.ok) return
-      const updatedProfile = await res.json()
       await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id ? { ...u, isActive: updatedProfile.isActive } : u,
-          ),
-        { revalidate: false },
+        async () => {
+          const res = await fetch(`${KEY}/${id}/active`, { method: "PATCH" })
+          if (!res.ok) throw new Error("Failed")
+          return await res.json()
+        },
+        {
+          optimisticData: (current) => ({
+            ...(current ?? { data: [], total: 0 }),
+            data: (current?.data ?? []).map((u) =>
+              u.id === id ? { ...u, isActive: !u.isActive } : u,
+            ),
+          }),
+          rollbackOnError: true,
+          revalidate: true,
+        },
       )
+      _globalMutate((key: string) => key === KEY)
     },
-    [mutate],
+    [mutate, _globalMutate],
   )
 
   const togglePricingPermission = useCallback(
     async (id: string) => {
-      const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
-      if (!res.ok) return
-      const updatedProfile = await res.json()
       await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id
-              ? { ...u, canManagePricing: updatedProfile.canManagePricing }
-              : u,
-          ),
-        { revalidate: false },
+        async () => {
+          const res = await fetch(`${KEY}/${id}/pricing`, { method: "PATCH" })
+          if (!res.ok) throw new Error("Failed")
+          return await res.json()
+        },
+        {
+          optimisticData: (current) => ({
+            ...(current ?? { data: [], total: 0 }),
+            data: (current?.data ?? []).map((u) =>
+              u.id === id ? { ...u, canManagePricing: !u.canManagePricing } : u,
+            ),
+          }),
+          rollbackOnError: true,
+          revalidate: true,
+        },
       )
+      _globalMutate((key: string) => key === KEY)
     },
-    [mutate],
+    [mutate, _globalMutate],
   )
 
   const updateAccountWarehouse = useCallback(
@@ -120,36 +147,25 @@ export function useTeam() {
         body: JSON.stringify({ warehouseId }),
       })
       if (!res.ok) return
-      const updatedProfile = await res.json()
-      await mutate(
-        (prev) =>
-          (prev ?? []).map((u) =>
-            u.id === id ? { ...u, warehouseId: updatedProfile.warehouseId } : u,
-          ),
-        { revalidate: false },
-      )
-      // Reflect the managedBy change on the cached warehouse list.
-      await globalMutate<Warehouse[]>(
-        WAREHOUSES_KEY,
-        (prev) =>
-          (prev ?? []).map((w) => {
-            if (w.managedBy === id) return { ...w, managedBy: null }
-            if (warehouseId && w.id === warehouseId)
-              return { ...w, managedBy: id }
-            return w
-          }),
-        { revalidate: false },
-      )
+      await mutate()
+      _globalMutate(KEY)
     },
-    [mutate, globalMutate],
+    [mutate, _globalMutate],
   )
 
   return {
     team,
     allTeam,
+    total,
+    page,
+    setPage,
+    limit,
+    setLimit,
     query,
     setQuery,
-    isLoading: trimmedQuery ? isSearchLoading : isLoading,
+    role,
+    setRole,
+    isLoading,
     error,
     mutate,
     createAccount,

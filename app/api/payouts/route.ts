@@ -1,59 +1,88 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { merchant, order, payoutRequest } from "@/lib/db/schema"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { parseBody, payoutCreateSchema } from "@/lib/validation"
+import { forbidden, unauthorized } from "@/lib/api-response"
+import {
+  paginateResponse,
+  parsePagination,
+  parseStatusFilter,
+} from "@/lib/pagination"
 import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
+  const { limit, offset } = parsePagination(req)
   const search = new URL(req.url).searchParams.get("q")?.trim()
   let searchClause
   if (search) {
     const likeQ = `%${search}%`
     const conditions = [ilike(payoutRequest.code, likeQ)]
     // Also search by merchant business name.
-    const [{ count: merchantMatchCount }] = await db
-      .select({ count: sql<number>`count(*)` })
+    const merchantIds = db
+      .select({ id: merchant.id })
       .from(merchant)
       .where(ilike(merchant.businessName, likeQ))
-    if (merchantMatchCount > 0) {
-      const merchantIds = db
-        .select({ id: merchant.id })
-        .from(merchant)
-        .where(ilike(merchant.businessName, likeQ))
-      conditions.push(inArray(payoutRequest.merchantId, merchantIds))
-    }
+    conditions.push(inArray(payoutRequest.merchantId, merchantIds))
     searchClause = or(...conditions)
   }
 
+  const statuses = parseStatusFilter(req)
+
   if (me.role === "MERCHANT" && me.merchantId) {
-    const where = searchClause
-      ? and(eq(payoutRequest.merchantId, me.merchantId), searchClause)
-      : eq(payoutRequest.merchantId, me.merchantId)
-    const rows = await db.select().from(payoutRequest).where(where)
-    return NextResponse.json(rows)
+    let where = eq(payoutRequest.merchantId, me.merchantId)
+    if (searchClause) where = and(where, searchClause)!
+    if (statuses.length > 0)
+      where = and(where, inArray(payoutRequest.status, statuses as any))!
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(payoutRequest)
+      .where(where)
+
+    let q = db.select().from(payoutRequest).where(where).$dynamic()
+    if (limit !== undefined) q = q.limit(limit)
+    if (offset !== undefined) q = q.offset(offset)
+
+    const rows = await q
+    return NextResponse.json(paginateResponse(rows, count, limit, offset))
   }
 
-  if (me.role !== "SUPER_ADMIN") return NextResponse.json([])
+  if (me.role !== "SUPER_ADMIN")
+    return NextResponse.json(paginateResponse([], 0))
 
-  const rows = searchClause
-    ? await db.select().from(payoutRequest).where(searchClause)
-    : await db.select().from(payoutRequest)
-  return NextResponse.json(rows)
+  let where = searchClause
+  if (statuses.length > 0) {
+    const statusClause = inArray(payoutRequest.status, statuses as any)
+    where = where ? and(where, statusClause) : statusClause
+  }
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(payoutRequest)
+    .where(where)
+
+  let q = db.select().from(payoutRequest).$dynamic()
+  if (where) q = q.where(where)
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "MERCHANT" || !me.merchantId) {
-    return NextResponse.json(
-      { error: "Only merchants can request payouts" },
-      { status: 403 },
-    )
+    return forbidden("Only merchants can request payouts")
   }
+
+  const limited = rateLimit(`payouts:${getClientIp(req)}`, 10, 60)
+  if (limited) return limited
 
   const parsed = await parseBody(req, payoutCreateSchema)
   if (parsed.error) return parsed.error
@@ -93,7 +122,7 @@ export async function POST(req: Request) {
   const code = `PR-${String(seq).padStart(4, "0")}`
 
   // Transaction: insert the request and lock its orders atomically.
-  const newRequest = await db.transaction(async (tx: any) => {
+  const newRequest = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(payoutRequest)
       .values({

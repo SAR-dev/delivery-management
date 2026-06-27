@@ -3,20 +3,23 @@ import { auth } from "@/lib/auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
+import { paginateResponse, parsePagination } from "@/lib/pagination"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, inArray, or } from "drizzle-orm"
+import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
   // Only the Super Admin manages the Admin / Warehouse Admin roster.
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json(paginateResponse([], 0), { status: 200 })
   }
 
-  let where = inArray(profile.role, ["SUPER_ADMIN", "ADMIN", "WAREHOUSE_ADMIN"])
+  const { limit, offset } = parsePagination(req)
+  let where = inArray(profile.role, ["ADMIN", "WAREHOUSE_ADMIN"])
   const search = new URL(req.url).searchParams.get("q")?.trim()
   if (search) {
     const likeQ = `%${search}%`
@@ -30,11 +33,27 @@ export async function GET(req: Request) {
     )!
   }
 
-  const rows = await db
+  const roleParam = new URL(req.url).searchParams.get("role")?.trim()
+  if (roleParam) {
+    where = and(where, eq(profile.role, roleParam as any))!
+  }
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(profile)
+    .innerJoin(user, eq(profile.userId, user.id))
+    .where(where)
+
+  let q = db
     .select()
     .from(profile)
     .innerJoin(user, eq(profile.userId, user.id))
     .where(where)
+    .$dynamic()
+  if (limit !== undefined) q = q.limit(limit)
+  if (offset !== undefined) q = q.offset(offset)
+
+  const rows = await q
 
   const team = rows.map(
     ({ profile: p, user: u }: { profile: any; user: any }) => ({
@@ -54,14 +73,14 @@ export async function GET(req: Request) {
     }),
   )
 
-  return NextResponse.json(team)
+  return NextResponse.json(paginateResponse(team, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "SUPER_ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return forbidden()
   }
 
   const parsed = await parseBody(req, teamCreateSchema)

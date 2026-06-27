@@ -3,10 +3,6 @@
 import { useEffect } from "react"
 import { AlertTriangle } from "lucide-react"
 
-// global-error replaces the root layout when it fires, so it must include
-// <html> and <body> and cannot use components that depend on the layout context
-// (ThemeProvider, fonts, etc.). Keep it minimal and self-contained.
-
 export default function GlobalError({
   error,
   reset,

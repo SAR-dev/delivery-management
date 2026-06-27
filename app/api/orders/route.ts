@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/api-auth"
+import { notFound, unauthorized } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import {
   division,
@@ -7,17 +8,21 @@ import {
   securityConfig,
   warehouse,
 } from "@/lib/db/schema"
-import { parsePagination } from "@/lib/pagination"
+import {
+  paginateResponse,
+  parsePagination,
+  parseStatusFilter,
+} from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
+import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
 import { and, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
 
-  // Resolve the role-scoped WHERE clause first; SUPER_ADMIN / ADMIN see all.
   let where: SQL | undefined
   switch (me.role) {
     case "MERCHANT":
@@ -49,8 +54,6 @@ export async function GET(req: Request) {
       return NextResponse.json([])
   }
 
-  // Free-text search layered on top of the role-scoped where above — search
-  // never widens the visibility a user already has.
   const search = new URL(req.url).searchParams.get("q")?.trim()
   if (search) {
     const likeQ = `%${search}%`
@@ -60,53 +63,56 @@ export async function GET(req: Request) {
       ilike(order.recipientPhone, likeQ),
       ilike(order.deliveryCity, likeQ),
     ]
-    // Also search by merchant business name.
-    const [{ count: merchantMatchCount }] = await db
-      .select({ count: sql<number>`count(*)` })
+    const merchantIds = db
+      .select({ id: merchant.id })
       .from(merchant)
       .where(ilike(merchant.businessName, likeQ))
-    if (merchantMatchCount > 0) {
-      const merchantIds = db
-        .select({ id: merchant.id })
-        .from(merchant)
-        .where(ilike(merchant.businessName, likeQ))
-      conditions.push(inArray(order.merchantId, merchantIds))
-    }
-    // Also search by warehouse name and city.
-    const [{ count: warehouseMatchCount }] = await db
-      .select({ count: sql<number>`count(*)` })
+    conditions.push(inArray(order.merchantId, merchantIds))
+    const warehouseIds = db
+      .select({ id: warehouse.id })
       .from(warehouse)
       .where(or(ilike(warehouse.name, likeQ), ilike(warehouse.city, likeQ)))
-    if (warehouseMatchCount > 0) {
-      const warehouseIds = db
-        .select({ id: warehouse.id })
-        .from(warehouse)
-        .where(or(ilike(warehouse.name, likeQ), ilike(warehouse.city, likeQ)))
-      conditions.push(inArray(order.warehouseId, warehouseIds))
-    }
+    conditions.push(inArray(order.warehouseId, warehouseIds))
     const searchClause = or(...conditions)
     where = where ? and(where, searchClause) : searchClause
   }
 
+  const statuses = parseStatusFilter(req)
+  if (statuses.length > 0) {
+    const statusClause = inArray(order.status, statuses as any)
+    where = where ? and(where, statusClause) : statusClause
+  }
+
   const { limit, offset } = parsePagination(req)
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(order)
+    .where(where)
+
   let dbQuery = db.select().from(order).$dynamic()
   if (where) dbQuery = dbQuery.where(where)
   if (limit !== undefined) dbQuery = dbQuery.limit(limit)
   if (offset !== undefined) dbQuery = dbQuery.offset(offset)
 
   const rows = await dbQuery
-  return NextResponse.json(rows)
+  return NextResponse.json(paginateResponse(rows, count, limit, offset))
 }
 
 export async function POST(req: Request) {
   const me = await requireSession()
-  if (!me) return NextResponse.json(null, { status: 401 })
+  if (!me) return unauthorized()
   if (me.role !== "MERCHANT" || !me.merchantId) {
     return NextResponse.json(
       { error: "Only merchants can create orders" },
       { status: 403 },
     )
   }
+
+  const merchantId = me.merchantId
+
+  const limited = rateLimit(`orders:${getClientIp(req)}`, 30, 60)
+  if (limited) return limited
 
   const parsed = await parseBody(req, orderCreateSchema)
   if (parsed.error) return parsed.error
@@ -125,7 +131,6 @@ export async function POST(req: Request) {
     merchantNote,
   } = parsed.data
 
-  // Receiver division must exist and be active.
   const [deliveryDivision] = await db
     .select({ id: division.id })
     .from(division)
@@ -150,11 +155,11 @@ export async function POST(req: Request) {
   const [merchantRow] = await db
     .select()
     .from(merchant)
-    .where(eq(merchant.id, me.merchantId))
+    .where(eq(merchant.id, merchantId))
     .limit(1)
 
   if (!merchantRow) {
-    return NextResponse.json({ error: "Merchant not found" }, { status: 404 })
+    return notFound("Merchant not found")
   }
   if (merchantRow.status !== "ACTIVE") {
     return NextResponse.json(
@@ -200,7 +205,7 @@ export async function POST(req: Request) {
   // the bulk route's pattern — otherwise two concurrent single-order
   // submissions can read the same MAX(code) and generate the same PF-XXXXXX
   // code (race condition).
-  const [newOrder] = await db.transaction(async (tx: any) => {
+  const [newOrder] = await db.transaction(async (tx) => {
     const [{ maxCode }] = await tx
       .select({ maxCode: sql<string>`max(${order.code})` })
       .from(order)
@@ -214,7 +219,7 @@ export async function POST(req: Request) {
       .insert(order)
       .values({
         code,
-        merchantId: me.merchantId,
+        merchantId,
         pickupLocationId,
         recipientName,
         recipientPhone,
