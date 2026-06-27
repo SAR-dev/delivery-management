@@ -1,16 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import {
-  Ban,
-  CheckCircle2,
-  Clock,
-  MoreHorizontal,
-  RotateCcw,
-  ShieldCheck,
-  Store,
-  Tag,
-} from "lucide-react"
+import { Ban, CheckCircle2, Clock, MoreHorizontal, RotateCcw, ShieldCheck, Store, Tag, } from "lucide-react"
 import { toast } from "sonner"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { formatTk } from "@/lib/pricing"
@@ -70,6 +61,7 @@ export default function MerchantsPage() {
     "approve" | "suspend" | "reactivate" | null
   >(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   useEffect(() => {
     setStatuses(TAB_STATUSES[tab])
@@ -102,21 +94,26 @@ export default function MerchantsPage() {
 
   async function handleConfirm() {
     if (!confirmMerchant || !confirmAction) return
-    if (confirmAction === "approve") {
-      await approveMerchant(confirmMerchant.id)
-      toast.success(
-        `${confirmMerchant.businessName} approved. Assign a base rate next.`,
-      )
-    } else if (confirmAction === "suspend") {
-      await suspendMerchant(confirmMerchant.id)
-      toast.success(`${confirmMerchant.businessName} suspended.`)
-    } else if (confirmAction === "reactivate") {
-      await reactivateMerchant(confirmMerchant.id)
-      toast.success(`${confirmMerchant.businessName} reactivated.`)
+    setConfirmLoading(true)
+    try {
+      if (confirmAction === "approve") {
+        await approveMerchant(confirmMerchant.id)
+        toast.success(
+          `${confirmMerchant.businessName} approved. Assign a base rate next.`,
+        )
+      } else if (confirmAction === "suspend") {
+        await suspendMerchant(confirmMerchant.id)
+        toast.success(`${confirmMerchant.businessName} suspended.`)
+      } else if (confirmAction === "reactivate") {
+        await reactivateMerchant(confirmMerchant.id)
+        toast.success(`${confirmMerchant.businessName} reactivated.`)
+      }
+      setConfirmOpen(false)
+    } finally {
+      setConfirmLoading(false)
+      setConfirmMerchant(null)
+      setConfirmAction(null)
     }
-    setConfirmOpen(false)
-    setConfirmMerchant(null)
-    setConfirmAction(null)
   }
 
   const columns: DataTableColumn<Merchant>[] = [
@@ -348,6 +345,7 @@ export default function MerchantsPage() {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
+        loading={confirmLoading}
         title={
           confirmAction === "approve"
             ? "Approve merchant"
