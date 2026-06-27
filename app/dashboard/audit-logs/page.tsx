@@ -52,9 +52,7 @@ export default function AuditLogsPage() {
       header: "Actor",
       sortable: true,
       sortValue: (l) => l.actorName,
-      cell: (l) => (
-        <span className="font-medium">{l.actorName}</span>
-      ),
+      cell: (l) => <span className="font-medium">{l.actorName}</span>,
     },
     {
       id: "actorRole",

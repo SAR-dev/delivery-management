@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Mail,
-  User,
-} from "lucide-react"
+import { AlertTriangle, CheckCircle2, Clock, Mail, User } from "lucide-react"
 import type { EmailLog } from "@/lib/types"
 import {
   EMAIL_LOG_STATUS_LABELS,

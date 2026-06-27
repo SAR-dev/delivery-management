@@ -167,7 +167,7 @@ export default function MerchantsPage() {
       cell: (m) => {
         const needsRate = m.status === "ACTIVE" && m.baseRate <= 0
         return needsRate ? (
-          <span className="inline-flex items-center gap-1 text-chart-3">
+          <span className="text-chart-3 inline-flex items-center gap-1">
             <AlertTriangle className="size-4" />
           </span>
         ) : (

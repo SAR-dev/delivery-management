@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/api-auth"
 import { notFound, unauthorized } from "@/lib/api-response"
 import { db } from "@/lib/db"
 import { order, merchant } from "@/lib/db/schema"
-import { and, eq, inArray, or } from "drizzle-orm"
+import { and, eq, inArray, isNull, or } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(
@@ -30,7 +30,12 @@ export async function GET(
       break
     case "WAREHOUSE_ADMIN":
       if (!me.warehouseId) return notFound()
-      scope = eq(order.warehouseId, me.warehouseId)
+      // Mirror the list endpoint: warehouse-assigned orders OR picked-up
+      // parcels not yet assigned to any warehouse (incoming candidates).
+      scope = or(
+        eq(order.warehouseId, me.warehouseId),
+        and(isNull(order.warehouseId), eq(order.status, "PICKED_UP")),
+      )
       break
     case "ADMIN":
     case "SUPER_ADMIN":
