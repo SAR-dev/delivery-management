@@ -66,6 +66,9 @@ export default function WarehouseOrdersPage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const baseColumns = useOrderColumns()
@@ -245,6 +248,9 @@ export default function WarehouseOrdersPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

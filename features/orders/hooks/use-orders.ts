@@ -35,6 +35,8 @@ function buildUrl(
     offset?: number
     q?: string
     statuses?: string[]
+    sortId?: string
+    sortDir?: string
   },
 ) {
   const sp = new URLSearchParams()
@@ -42,6 +44,8 @@ function buildUrl(
   if (params.offset != null) sp.set("offset", String(params.offset))
   if (params.q) sp.set("q", params.q)
   if (params.statuses?.length) sp.set("status", params.statuses.join(","))
+  if (params.sortId) sp.set("sort", params.sortId)
+  if (params.sortDir) sp.set("sortDir", params.sortDir)
   const qs = sp.toString()
   return qs ? `${base}?${qs}` : base
 }
@@ -59,6 +63,8 @@ export function useOrders() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
   const [statuses, setStatuses] = useState<string[] | undefined>(undefined)
+  const [sortId, setSortId] = useState<string>("")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const debouncedQuery = useDebouncedValue(query)
 
   const trimmedQuery = debouncedQuery.trim()
@@ -68,6 +74,8 @@ export function useOrders() {
     offset,
     q: trimmedQuery || undefined,
     statuses,
+    sortId: sortId || undefined,
+    sortDir: sortId ? sortDir : undefined,
   })
 
   const {
@@ -323,6 +331,15 @@ export function useOrders() {
     [mutate],
   )
 
+  const onSortChange = useCallback(
+    (newSortId: string, newSortDir: "asc" | "desc") => {
+      setSortId(newSortId)
+      setSortDir(newSortDir)
+      setPage(1)
+    },
+    [],
+  )
+
   return {
     orders,
     allOrders,
@@ -335,6 +352,9 @@ export function useOrders() {
     setQuery,
     statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     warehouseFailedOrders,
     warehouseUnsettledOrders,
     merchantPayableOrders,

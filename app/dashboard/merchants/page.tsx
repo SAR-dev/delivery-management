@@ -55,6 +55,9 @@ export default function MerchantsPage() {
     query,
     setQuery,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     approveMerchant,
     suspendMerchant,
     reactivateMerchant,
@@ -307,6 +310,9 @@ export default function MerchantsPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             csvData={allMerchants}
             csv={{
               filename: "merchants",

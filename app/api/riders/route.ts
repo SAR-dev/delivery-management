@@ -4,9 +4,9 @@ import { auth } from "@/lib/auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, rider, warehouse } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
 import { getClientIp, rateLimit } from "@/lib/rate-limit"
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { parseBody, riderCreateSchema } from "@/lib/validation"
 import { NextResponse } from "next/server"
 
@@ -48,6 +48,22 @@ export async function GET(req: Request) {
       .where(scopedWhere)
 
     let scopedQuery = db.select().from(rider).where(scopedWhere).$dynamic()
+
+    const sortColumnMap = {
+      name: rider.name,
+      phone: rider.phone,
+      zone: rider.zone,
+      taskType: rider.taskType,
+      isActive: rider.isActive,
+    }
+    const sort = parseSort(req, sortColumnMap)
+    if (sort) {
+      scopedQuery =
+        sort.direction === "asc"
+          ? scopedQuery.orderBy(asc(sort.column))
+          : scopedQuery.orderBy(desc(sort.column))
+    }
+
     if (limit !== undefined) scopedQuery = scopedQuery.limit(limit)
     if (offset !== undefined) scopedQuery = scopedQuery.offset(offset)
 
@@ -63,6 +79,22 @@ export async function GET(req: Request) {
 
   let q = db.select().from(rider).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    name: rider.name,
+    phone: rider.phone,
+    zone: rider.zone,
+    taskType: rider.taskType,
+    isActive: rider.isActive,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

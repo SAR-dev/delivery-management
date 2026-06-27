@@ -44,6 +44,9 @@ export default function WarehouseExceptionsPage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const { merchants } = useMerchants()
@@ -104,8 +107,6 @@ export default function WarehouseExceptionsPage() {
     {
       id: "rider",
       header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
       cell: (o) => (
         <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
       ),
@@ -113,8 +114,6 @@ export default function WarehouseExceptionsPage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseName(o.warehouseId),
       cell: (o) => (
         <span className="text-sm">{warehouseName(o.warehouseId)}</span>
       ),
@@ -272,6 +271,9 @@ export default function WarehouseExceptionsPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

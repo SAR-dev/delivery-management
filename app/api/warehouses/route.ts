@@ -2,9 +2,9 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division, warehouse } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
 import { parseBody, warehouseCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
@@ -43,6 +43,21 @@ export async function GET(req: Request) {
 
   let q = db.select().from(warehouse).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    name: warehouse.name,
+    city: warehouse.city,
+    isActive: warehouse.isActive,
+    division: warehouse.divisionId,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

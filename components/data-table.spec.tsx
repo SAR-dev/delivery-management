@@ -28,9 +28,9 @@ const columns: DataTableColumn<Item>[] = [
 ]
 
 const data: Item[] = [
-  { id: "1", name: "Alice", value: 30 },
-  { id: "2", name: "Bob", value: 10 },
-  { id: "3", name: "Charlie", value: 20 },
+  { id: "1", name: "Charlie", value: 20 },
+  { id: "2", name: "Alice", value: 30 },
+  { id: "3", name: "Bob", value: 10 },
 ]
 
 function getKey(row: Item) {
@@ -145,7 +145,7 @@ describe("DataTable", () => {
       />,
     )
     await user.click(screen.getByText("Bob"))
-    expect(onClick).toHaveBeenCalledWith(data[1])
+    expect(onClick).toHaveBeenCalledWith(data[2])
   })
 
   it("hides pagination when pageSize is 0", () => {

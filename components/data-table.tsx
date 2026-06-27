@@ -442,11 +442,13 @@ export function DataTable<T>({
       } else {
         onSortChange("", "asc")
       }
+      setPage(1)
       return
     }
     if (sortId !== col.id) {
       setSortId(col.id)
       setSortDir("asc")
+      setPage(1)
       return
     }
     // Cycle: asc -> desc -> unsorted
@@ -456,6 +458,7 @@ export function DataTable<T>({
       setSortId(null)
       setSortDir("asc")
     }
+    setPage(1)
   }
 
   function handleDownloadCsv() {

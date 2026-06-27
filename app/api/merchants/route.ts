@@ -6,10 +6,11 @@ import { division, merchant, profile } from "@/lib/db/schema"
 import {
   paginateResponse,
   parsePagination,
+  parseSort,
   parseStatusFilter,
 } from "@/lib/pagination"
 import { merchantRegisterSchema, parseBody } from "@/lib/validation"
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -49,6 +50,23 @@ export async function GET(req: Request) {
 
   let q = db.select().from(merchant).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    business: merchant.businessName,
+    owner: merchant.ownerName,
+    status: merchant.status,
+    baseRate: merchant.baseRate,
+    perKg: merchant.extraRatePerKg,
+    createdAt: merchant.createdAt,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

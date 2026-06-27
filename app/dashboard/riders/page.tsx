@@ -29,6 +29,9 @@ export default function RidersPage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useRiders()
   const columns = useRiderColumns({ showWarehouse: true })
@@ -105,6 +108,9 @@ export default function RidersPage() {
             getRowKey={(r) => r.id}
             initialSortId="name"
             emptyMessage="No riders yet. Add one to get started."
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             onRowClick={handleRowClick}
           />
         </CardContent>

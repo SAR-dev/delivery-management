@@ -51,6 +51,9 @@ export default function OrdersPage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const baseColumns = useOrderColumns()
@@ -204,6 +207,9 @@ export default function OrdersPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             csvData={allOrders}
             csv={{
               filename: "orders",

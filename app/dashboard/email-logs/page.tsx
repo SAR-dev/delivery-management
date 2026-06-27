@@ -37,6 +37,9 @@ export default function EmailLogsPage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
     markAsSent,
   } = useEmailLogs()
@@ -174,6 +177,9 @@ export default function EmailLogsPage() {
             initialSortId="createdAt"
             initialSortDir="desc"
             emptyMessage={isLoading ? "Loading…" : "No email log entries yet."}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             csvData={allEmailLogs}
             csv={{
               filename: "email-logs",

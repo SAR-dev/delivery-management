@@ -42,6 +42,9 @@ export default function WarehouseIntakePage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const { merchants } = useMerchants()
@@ -135,8 +138,6 @@ export default function WarehouseIntakePage() {
     {
       id: "rider",
       header: "Brought by",
-      sortable: true,
-      sortValue: (o) => rider(o.pickupRiderId)?.name ?? "",
       cell: (o) => (
         <span className="flex items-center gap-1.5 text-sm">
           <Bike className="text-muted-foreground size-4" />
@@ -156,8 +157,6 @@ export default function WarehouseIntakePage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseName(o.warehouseId),
       cell: (o) => (
         <span className="text-sm">{warehouseName(o.warehouseId)}</span>
       ),
@@ -308,6 +307,9 @@ export default function WarehouseIntakePage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

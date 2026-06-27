@@ -15,12 +15,20 @@ type Result = { ok: true } | { ok: false; error?: string }
 
 function buildUrl(
   base: string,
-  params: { limit?: number; offset?: number; q?: string },
+  params: {
+    limit?: number
+    offset?: number
+    q?: string
+    sortId?: string
+    sortDir?: string
+  },
 ) {
   const sp = new URLSearchParams()
   if (params.limit != null) sp.set("limit", String(params.limit))
   if (params.offset != null) sp.set("offset", String(params.offset))
   if (params.q) sp.set("q", params.q)
+  if (params.sortId) sp.set("sort", params.sortId)
+  if (params.sortDir) sp.set("sortDir", params.sortDir)
   const qs = sp.toString()
   return qs ? `${base}?${qs}` : base
 }
@@ -31,6 +39,8 @@ export function useEmailLogs() {
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_TABLE_ROWS_PER_PAGE)
+  const [sortId, setSortId] = useState<string>("")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const debouncedQuery = useDebouncedValue(query)
 
   const trimmedQuery = debouncedQuery.trim()
@@ -39,6 +49,8 @@ export function useEmailLogs() {
     limit,
     offset,
     q: trimmedQuery || undefined,
+    sortId: sortId || undefined,
+    sortDir: sortId ? sortDir : undefined,
   })
 
   const {
@@ -69,6 +81,15 @@ export function useEmailLogs() {
     [mutate],
   )
 
+  const onSortChange = useCallback(
+    (newSortId: string, newSortDir: "asc" | "desc") => {
+      setSortId(newSortId)
+      setSortDir(newSortDir)
+      setPage(1)
+    },
+    [],
+  )
+
   return {
     emailLogs: response?.data ?? [],
     allEmailLogs: allResponse?.data ?? [],
@@ -79,6 +100,9 @@ export function useEmailLogs() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
     error,
     mutate,

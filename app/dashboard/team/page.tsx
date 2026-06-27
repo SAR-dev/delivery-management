@@ -16,7 +16,13 @@ import { CreateAccountDialog } from "@/features/team/dialogs/create-account-dial
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
 
 // Sentinel value for the "Unassigned" option, since the Select cannot use an
@@ -104,6 +110,9 @@ export default function TeamPage() {
     setQuery,
     role: _role,
     setRole,
+    sortId,
+    sortDir,
+    onSortChange,
     toggleAccountActive,
     togglePricingPermission,
     updateAccountWarehouse,
@@ -251,8 +260,6 @@ export default function TeamPage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (u) => warehouseName(u.warehouseId),
       cell: (u) => (
         <WarehouseSelect
           user={u}
@@ -303,6 +310,9 @@ export default function TeamPage() {
                   setPage(p)
                   setLimit(l)
                 }}
+                serverSortId={sortId}
+                serverSortDir={sortDir}
+                onSortChange={onSortChange}
               />
             </CardContent>
           </Card>
@@ -328,6 +338,9 @@ export default function TeamPage() {
                   setPage(p)
                   setLimit(l)
                 }}
+                serverSortId={sortId}
+                serverSortDir={sortDir}
+                onSortChange={onSortChange}
               />
             </CardContent>
           </Card>

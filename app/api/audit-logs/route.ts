@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { auditLog } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
-import { desc, ilike, or, sql } from "drizzle-orm"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
+import { asc, desc, ilike, or, sql } from "drizzle-orm"
 import { unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
@@ -32,12 +32,25 @@ export async function GET(req: Request) {
     .from(auditLog)
     .where(where)
 
-  let q = db
-    .select()
-    .from(auditLog)
-    .orderBy(desc(auditLog.createdAt))
-    .$dynamic()
+  let q = db.select().from(auditLog).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    createdAt: auditLog.createdAt,
+    actor: auditLog.actorName,
+    action: auditLog.action,
+    entity: auditLog.entityType,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  } else {
+    q = q.orderBy(desc(auditLog.createdAt))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

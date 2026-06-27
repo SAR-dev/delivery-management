@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Loader2, MoreHorizontal, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, } from "lucide-react"
+import {
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Warehouse as WarehouseIcon,
+} from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useDivisions } from "@/features/divisions/hooks/use-divisions"
@@ -19,7 +26,13 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,6 +74,9 @@ export default function WarehousesPage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     createWarehouse,
     updateWarehouse,
     deleteWarehouse,
@@ -223,8 +239,6 @@ export default function WarehousesPage() {
     {
       id: "division",
       header: "Division",
-      sortable: true,
-      sortValue: (w) => w.divisionName,
       headClassName: "hidden md:table-cell",
       cellClassName: "hidden md:table-cell",
       cell: (w) => (
@@ -337,6 +351,9 @@ export default function WarehousesPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

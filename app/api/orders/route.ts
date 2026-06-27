@@ -11,12 +11,24 @@ import {
 import {
   paginateResponse,
   parsePagination,
+  parseSort,
   parseStatusFilter,
 } from "@/lib/pagination"
 import { calcDeliveryCharge, calcSecurityMoney } from "@/lib/pricing"
 import { getClientIp, rateLimit } from "@/lib/rate-limit"
 import { orderCreateSchema, parseBody } from "@/lib/validation"
-import { and, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -92,6 +104,23 @@ export async function GET(req: Request) {
 
   let dbQuery = db.select().from(order).$dynamic()
   if (where) dbQuery = dbQuery.where(where)
+
+  const sortColumnMap = {
+    order: order.code,
+    city: order.deliveryCity,
+    weight: order.parcelWeightKg,
+    collectible: order.totalCollectible,
+    status: order.status,
+    createdAt: order.createdAt,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    dbQuery =
+      sort.direction === "asc"
+        ? dbQuery.orderBy(asc(sort.column))
+        : dbQuery.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) dbQuery = dbQuery.limit(limit)
   if (offset !== undefined) dbQuery = dbQuery.offset(offset)
 

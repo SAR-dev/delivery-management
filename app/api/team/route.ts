@@ -3,9 +3,9 @@ import { auth } from "@/lib/auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { profile, user, warehouse } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
 import { parseBody, teamCreateSchema } from "@/lib/validation"
-import { and, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
@@ -50,6 +50,20 @@ export async function GET(req: Request) {
     .innerJoin(user, eq(profile.userId, user.id))
     .where(where)
     .$dynamic()
+
+  const sortColumnMap = {
+    name: user.name,
+    contact: user.email,
+    status: profile.isActive,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

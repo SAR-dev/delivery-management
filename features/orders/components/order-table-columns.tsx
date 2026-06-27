@@ -57,15 +57,11 @@ export function useOrderColumns(): DataTableColumn<Order>[] {
     {
       id: "merchant",
       header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
       cell: (o) => merchantName(o.merchantId),
     },
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseDisplay(o.warehouseId),
       cell: (o) => {
         const w = warehouse(o.warehouseId)
         if (!w) return <span className="text-muted-foreground text-sm">—</span>
@@ -79,22 +75,25 @@ export function useOrderColumns(): DataTableColumn<Order>[] {
     },
     {
       id: "city",
-      header: "Delivery City",
+      header: "Delivery Location",
       sortable: true,
       sortValue: (o) => o.deliveryCity,
       cell: (o) => (
         <AddressModal order={o}>
-          <span className="text-sm underline decoration-dotted underline-offset-4">
-            {o.deliveryCity}
-          </span>
+          <div className="flex flex-col">
+            <span className="underline decoration-dotted underline-offset-4">
+              {o.deliveryCity}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {o.deliveryAddress}
+            </span>
+          </div>
         </AddressModal>
       ),
     },
     {
       id: "pickup",
       header: "Pickup Location",
-      sortable: true,
-      sortValue: (o) => pickupLocation(o.pickupLocationId)?.label ?? "",
       cell: (o) => {
         const p = pickupLocation(o.pickupLocationId)
         if (!p) return <span className="text-muted-foreground text-sm">—</span>
@@ -153,8 +152,6 @@ export function useOrderColumns(): DataTableColumn<Order>[] {
     {
       id: "pickupRider",
       header: "Pickup Rider",
-      sortable: true,
-      sortValue: (o) => riderName(o.pickupRiderId),
       cell: (o) =>
         o.pickupRiderId ? (
           <span className="flex items-center gap-1.5 text-sm">
@@ -168,8 +165,6 @@ export function useOrderColumns(): DataTableColumn<Order>[] {
     {
       id: "deliveryRider",
       header: "Delivery Rider",
-      sortable: true,
-      sortValue: (o) => riderName(o.deliveryRiderId),
       cell: (o) =>
         o.deliveryRiderId ? (
           <span className="flex items-center gap-1.5 text-sm">

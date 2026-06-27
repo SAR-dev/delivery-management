@@ -47,6 +47,9 @@ export default function PayoutsPage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     approvePayout,
     rejectPayout,
     isLoading,
@@ -257,6 +260,9 @@ export default function PayoutsPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             csvData={allPayoutRequests}
             csv={{
               filename: "payout-requests",

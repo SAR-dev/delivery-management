@@ -45,6 +45,9 @@ export default function RiderPickupQueuePage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const { merchants } = useMerchants()
@@ -104,8 +107,6 @@ export default function RiderPickupQueuePage() {
     {
       id: "merchant",
       header: "Merchant",
-      sortable: true,
-      sortValue: (o) => merchantName(o.merchantId),
       cell: (o) => {
         const m = merchant(o.merchantId)
         return (
@@ -119,8 +120,6 @@ export default function RiderPickupQueuePage() {
     {
       id: "pickup",
       header: "Pickup from",
-      sortable: true,
-      sortValue: (o) => pickup(o.pickupLocationId)?.label ?? "",
       cell: (o) => {
         const p = pickup(o.pickupLocationId)
         return (
@@ -229,6 +228,9 @@ export default function RiderPickupQueuePage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

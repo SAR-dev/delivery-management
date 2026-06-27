@@ -7,9 +7,20 @@ import { forbidden, unauthorized } from "@/lib/api-response"
 import {
   paginateResponse,
   parsePagination,
+  parseSort,
   parseStatusFilter,
 } from "@/lib/pagination"
-import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 export async function GET(req: Request) {
@@ -45,6 +56,22 @@ export async function GET(req: Request) {
       .where(where)
 
     let q = db.select().from(payoutRequest).where(where).$dynamic()
+
+    const sortColumnMap = {
+      request: payoutRequest.code,
+      method: payoutRequest.payoutMethod,
+      requested: payoutRequest.requestedAt,
+      amount: payoutRequest.amount,
+      status: payoutRequest.status,
+    }
+    const sort = parseSort(req, sortColumnMap)
+    if (sort) {
+      q =
+        sort.direction === "asc"
+          ? q.orderBy(asc(sort.column))
+          : q.orderBy(desc(sort.column))
+    }
+
     if (limit !== undefined) q = q.limit(limit)
     if (offset !== undefined) q = q.offset(offset)
 
@@ -67,6 +94,22 @@ export async function GET(req: Request) {
 
   let q = db.select().from(payoutRequest).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    request: payoutRequest.code,
+    method: payoutRequest.payoutMethod,
+    requested: payoutRequest.requestedAt,
+    amount: payoutRequest.amount,
+    status: payoutRequest.status,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

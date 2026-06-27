@@ -45,6 +45,9 @@ export default function RiderDeliveryQueuePage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const { warehouses } = useWarehouses()
@@ -122,8 +125,6 @@ export default function RiderDeliveryQueuePage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseName(o.warehouseId),
       cell: (o) => (
         <span className="text-sm">{warehouseName(o.warehouseId)}</span>
       ),
@@ -237,6 +238,9 @@ export default function RiderDeliveryQueuePage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>

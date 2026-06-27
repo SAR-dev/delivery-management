@@ -29,6 +29,9 @@ export default function AuditLogsPage() {
     setLimit,
     query,
     setQuery,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useAuditLogs()
 
@@ -115,6 +118,9 @@ export default function AuditLogsPage() {
             initialSortId="createdAt"
             initialSortDir="desc"
             emptyMessage={isLoading ? "Loading…" : "No audit log entries yet."}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
             csvData={allAuditLogs}
             csv={{
               filename: "audit-logs",

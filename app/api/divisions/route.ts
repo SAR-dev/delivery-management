@@ -2,9 +2,9 @@ import { requireSession } from "@/lib/api-auth"
 import { logAudit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { division } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
 import { divisionCreateSchema, parseBody } from "@/lib/validation"
-import { asc, eq, ilike, sql } from "drizzle-orm"
+import { asc, desc, eq, ilike, sql } from "drizzle-orm"
 import { forbidden, unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
@@ -21,8 +21,23 @@ export async function GET(req: Request) {
     .from(division)
     .where(where)
 
-  let q = db.select().from(division).orderBy(asc(division.name)).$dynamic()
+  let q = db.select().from(division).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    name: division.name,
+    isActive: division.isActive,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  } else {
+    q = q.orderBy(asc(division.name))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

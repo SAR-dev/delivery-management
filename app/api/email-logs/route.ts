@@ -1,8 +1,8 @@
 import { requireSession } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { emailLog } from "@/lib/db/schema"
-import { paginateResponse, parsePagination } from "@/lib/pagination"
-import { desc, ilike, or, sql } from "drizzle-orm"
+import { paginateResponse, parsePagination, parseSort } from "@/lib/pagination"
+import { asc, desc, ilike, or, sql } from "drizzle-orm"
 import { unauthorized } from "@/lib/api-response"
 import { NextResponse } from "next/server"
 
@@ -31,12 +31,26 @@ export async function GET(req: Request) {
     .from(emailLog)
     .where(where)
 
-  let q = db
-    .select()
-    .from(emailLog)
-    .orderBy(desc(emailLog.createdAt))
-    .$dynamic()
+  let q = db.select().from(emailLog).$dynamic()
   if (where) q = q.where(where)
+
+  const sortColumnMap = {
+    createdAt: emailLog.createdAt,
+    to: emailLog.to,
+    subject: emailLog.subject,
+    status: emailLog.status,
+    attempts: emailLog.attempts,
+  }
+  const sort = parseSort(req, sortColumnMap)
+  if (sort) {
+    q =
+      sort.direction === "asc"
+        ? q.orderBy(asc(sort.column))
+        : q.orderBy(desc(sort.column))
+  } else {
+    q = q.orderBy(desc(emailLog.createdAt))
+  }
+
   if (limit !== undefined) q = q.limit(limit)
   if (offset !== undefined) q = q.offset(offset)
 

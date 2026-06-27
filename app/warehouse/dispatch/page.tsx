@@ -42,6 +42,9 @@ export default function WarehouseDispatchPage() {
     setQuery,
     statuses: _statuses,
     setStatuses,
+    sortId,
+    sortDir,
+    onSortChange,
     isLoading,
   } = useOrders()
   const { merchants } = useMerchants()
@@ -116,8 +119,6 @@ export default function WarehouseDispatchPage() {
     {
       id: "rider",
       header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
       cell: (o) =>
         o.deliveryRiderId ? (
           <span className="flex items-center gap-1.5 text-sm">
@@ -140,8 +141,6 @@ export default function WarehouseDispatchPage() {
     {
       id: "warehouse",
       header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseName(o.warehouseId),
       cell: (o) => (
         <span className="text-sm">{warehouseName(o.warehouseId)}</span>
       ),
@@ -266,6 +265,9 @@ export default function WarehouseDispatchPage() {
               setPage(p)
               setLimit(l)
             }}
+            serverSortId={sortId}
+            serverSortDir={sortDir}
+            onSortChange={onSortChange}
           />
         </CardContent>
       </Card>
