@@ -15,7 +15,13 @@ const _byName = (a: Warehouse, b: Warehouse) => a.name.localeCompare(b.name)
 
 function buildUrl(
   base: string,
-  params: { limit?: number; offset?: number; q?: string; sortId?: string; sortDir?: string },
+  params: {
+    limit?: number
+    offset?: number
+    q?: string
+    sortId?: string
+    sortDir?: string
+  },
 ) {
   const sp = new URLSearchParams()
   if (params.limit != null) sp.set("limit", String(params.limit))

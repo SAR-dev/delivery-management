@@ -59,6 +59,7 @@ async function logEmail(
       status,
       attempts,
       error: error ?? null,
+      body: payload.html ?? null,
     })
   } catch (dbErr) {
     console.error("[mailer] Failed to write email_log entry:", dbErr)

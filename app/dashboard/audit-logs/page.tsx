@@ -52,12 +52,14 @@ export default function AuditLogsPage() {
       header: "Actor",
       sortable: true,
       sortValue: (l) => l.actorName,
-      cell: (l) => (
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">{l.actorName}</span>
-          <RoleBadge role={l.actorRole} />
-        </div>
-      ),
+      cell: (l) => <span className="font-medium">{l.actorName}</span>,
+    },
+    {
+      id: "actorRole",
+      header: "Role",
+      sortable: true,
+      sortValue: (l) => l.actorRole,
+      cell: (l) => <RoleBadge role={l.actorRole} />,
     },
     {
       id: "action",

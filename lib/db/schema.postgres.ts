@@ -474,6 +474,8 @@ export const emailLog = pgTable("email_log", {
   attempts: integer("attempts").notNull(),
   // Populated only when status is FAILED.
   error: text("error"),
+  // Raw HTML body of the email, stored for inspection in Email Logs.
+  body: text("body"),
   createdAt: ts("createdAt").notNull().defaultNow(),
   // Populated only when an Admin/Super Admin manually overrides a FAILED
   // entry to SENT (e.g. after confirming delivery or resending by hand).

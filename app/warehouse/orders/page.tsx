@@ -8,20 +8,26 @@ import {
   Clock,
   MoreHorizontal,
   Truck,
-  X,
 } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
-import { useOrderColumns } from "@/features/orders/components/order-table-columns"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
+import {
+  orderCodeColumn,
+  merchantColumn,
+  receiverColumn,
+  riderColumn,
+  warehouseColumn,
+  deliveryAddressColumn,
+  collectibleColumn,
+  statusColumn,
+} from "@/features/orders/components/order-table-columns"
 import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { TrackingTimeline } from "@/features/orders/components/tracking-timeline"
 import { CancelOrderDialog } from "@/features/orders/dialogs/cancel-order-dialog"
-import { FormDialog } from "@/components/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -71,12 +77,9 @@ export default function WarehouseOrdersPage() {
     onSortChange,
     isLoading,
   } = useOrders()
-  const baseColumns = useOrderColumns()
   const { merchants } = useMerchants()
   const { riders } = useRiders()
   const [tab, setTab] = useState<FilterTab>("ALL")
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
 
@@ -85,15 +88,13 @@ export default function WarehouseOrdersPage() {
     setPage(1)
   }, [tab, setStatuses, setPage])
 
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
+  const merchantName = (id: string) =>
+    merchants.find((m) => m.id === id)?.businessName ?? "Merchant"
+  const riderName = (id?: string | null) =>
+    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
+  const warehouseName = (id?: string | null) =>
+    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
-  // The orders API already scopes the list to this warehouse's parcels (plus
-  // picked-up parcels incoming to any hub), so no extra hub filter is needed.
-  // Stats and tab counts use the unfiltered (but still warehouse-scoped)
-  // `allOrders`; the table itself uses the search-narrowed `orders`.
   const inProgress = useMemo(
     () => allOrders.filter((o) => IN_PROGRESS_STATUSES.includes(o.status)),
     [allOrders],
@@ -111,13 +112,16 @@ export default function WarehouseOrdersPage() {
     [allOrders],
   )
 
-  function openOrder(order: Order) {
-    setActiveOrder(order)
-    setDialogOpen(true)
-  }
-
   const columns: DataTableColumn<Order>[] = [
-    ...baseColumns,
+    orderCodeColumn(),
+    merchantColumn(merchantName),
+    receiverColumn(),
+    warehouseColumn(warehouseName),
+    deliveryAddressColumn(),
+    collectibleColumn(),
+    statusColumn(),
+    riderColumn("pickup", riderName),
+    riderColumn("delivery", riderName),
     {
       id: "actions",
       header: "",
@@ -162,13 +166,6 @@ export default function WarehouseOrdersPage() {
       },
     },
   ]
-
-  const activeMerchant = activeOrder
-    ? merchant(activeOrder.merchantId)
-    : undefined
-  const activeWarehouse = activeOrder
-    ? warehouses.find((w) => w.id === activeOrder.warehouseId)
-    : undefined
 
   return (
     <div className="flex flex-col gap-6">
@@ -239,7 +236,6 @@ export default function WarehouseOrdersPage() {
             initialSortId="order"
             emptyMessage="No orders to show for this view."
             loading={isLoading}
-            onRowClick={openOrder}
             serverPaginated
             total={total}
             query={query}
@@ -254,39 +250,6 @@ export default function WarehouseOrdersPage() {
           />
         </CardContent>
       </Card>
-
-      <FormDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        size="lg"
-        title={activeOrder ? activeOrder.code : "Order"}
-        description={
-          activeOrder
-            ? `${merchantName(activeOrder.merchantId)} · ${activeOrder.deliveryCity}`
-            : undefined
-        }
-        footer={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setDialogOpen(false)}
-            className="w-full sm:w-auto"
-          >
-            <X className="size-4" />
-            Close
-          </Button>
-        }
-      >
-        {activeOrder ? (
-          <TrackingTimeline
-            order={activeOrder}
-            pickupRider={rider(activeOrder.pickupRiderId)}
-            warehouse={activeWarehouse}
-            deliveryRider={rider(activeOrder.deliveryRiderId)}
-            merchant={activeMerchant}
-          />
-        ) : null}
-      </FormDialog>
 
       <CancelOrderDialog
         order={cancelTarget}

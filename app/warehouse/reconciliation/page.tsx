@@ -2,24 +2,23 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import {
-  Banknote,
-  Bike,
-  CheckCircle2,
-  HandCoins,
-  Loader2,
-  Wallet,
-} from "lucide-react"
+import { Banknote, HandCoins, Loader2, Wallet } from "lucide-react"
 import { useAuth } from "@/features/account/hooks/use-auth"
 import { useWarehouses } from "@/features/warehouses/hooks/use-warehouses"
 import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
+import {
+  orderCodeColumn,
+  warehouseColumn,
+  deliveryAddressColumn,
+  riderColumn,
+  statusColumn,
+} from "@/features/orders/components/order-table-columns"
 import type { Order } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -46,16 +45,15 @@ export default function WarehouseReconciliationPage() {
   const [confirmOrder, setConfirmOrder] = useState<Order | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const merchant = (id: string) => merchants.find((m) => m.id === id)
-  const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
+  const merchantName = (id: string) =>
+    merchants.find((m) => m.id === id)?.businessName ?? "Merchant"
+  const riderName = (id?: string | null) =>
+    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
   const warehouseName = (id?: string | null) =>
     id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
 
   const unsettled = warehouseUnsettledOrders
 
-  // Delivered parcels at this warehouse whose COD has been settled.
   const settled = useMemo(
     () =>
       currentWarehouse
@@ -78,7 +76,6 @@ export default function WarehouseReconciliationPage() {
     0,
   )
 
-  // Table-facing versions, narrowed by the active search.
   const visibleUnsettled = useMemo(
     () =>
       currentWarehouse
@@ -132,48 +129,11 @@ export default function WarehouseReconciliationPage() {
   }
 
   const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "warehouse",
-      header: "Warehouse",
-      sortable: true,
-      sortValue: (o) => warehouseName(o.warehouseId),
-      cell: (o) => (
-        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
-      ),
-    },
-    {
-      id: "city",
-      header: "City",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => <span className="text-sm">{o.deliveryCity}</span>,
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      sortable: true,
-      sortValue: (o) => rider(o.deliveryRiderId)?.name ?? "",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5 text-sm">
-          <Bike className="text-muted-foreground size-4" />
-          {rider(o.deliveryRiderId)?.name ?? "—"}
-        </span>
-      ),
-    },
+    // Reconciliation shows merchant name below the code (no recipient needed).
+    orderCodeColumn({ subtitle: "merchant", merchantName }),
+    warehouseColumn(warehouseName),
+    deliveryAddressColumn(),
+    riderColumn("delivery", riderName, "Delivery rider"),
     {
       id: "collected",
       header: "Cash collected",
@@ -210,21 +170,7 @@ export default function WarehouseReconciliationPage() {
         </span>
       ),
     },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => (o.codSettledAt ? "settled" : "unsettled"),
-      cell: (o) =>
-        o.codSettledAt ? (
-          <span className="text-chart-2 flex items-center gap-1.5 text-sm">
-            <CheckCircle2 className="size-4" />
-            Settled by {o.codSettledBy ?? "Admin"}
-          </span>
-        ) : (
-          <OrderStatusBadge status={o.status} />
-        ),
-    },
+    statusColumn({ settledOverride: true }),
     {
       id: "actions",
       header: "",

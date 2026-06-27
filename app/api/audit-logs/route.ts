@@ -38,6 +38,7 @@ export async function GET(req: Request) {
   const sortColumnMap = {
     createdAt: auditLog.createdAt,
     actor: auditLog.actorName,
+    actorRole: auditLog.actorRole,
     action: auditLog.action,
     entity: auditLog.entityType,
   }

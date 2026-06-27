@@ -15,6 +15,7 @@ import type { EmailLog } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/data-table"
+import { EmailLogDetailDialog } from "@/features/email-logs/dialogs/email-log-detail-dialog"
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -44,6 +45,13 @@ export default function EmailLogsPage() {
     markAsSent,
   } = useEmailLogs()
   const [busy, setBusy] = useState<string | null>(null)
+  const [selectedLog, setSelectedLog] = useState<EmailLog | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  function handleRowClick(log: EmailLog) {
+    setSelectedLog(log)
+    setDetailOpen(true)
+  }
 
   async function handleMarkAsSent(log: EmailLog) {
     setBusy(log.id)
@@ -117,13 +125,6 @@ export default function EmailLogsPage() {
       ),
     },
     {
-      id: "error",
-      header: "Error",
-      cell: (l) => (
-        <span className="text-muted-foreground text-xs">{l.error ?? "—"}</span>
-      ),
-    },
-    {
       id: "actions",
       header: "",
       align: "right",
@@ -180,22 +181,28 @@ export default function EmailLogsPage() {
             serverSortId={sortId}
             serverSortDir={sortDir}
             onSortChange={onSortChange}
+            onRowClick={handleRowClick}
             csvData={allEmailLogs}
             csv={{
               filename: "email-logs",
-              headers: ["When", "To", "Subject", "Status", "Attempts", "Error"],
+              headers: ["When", "To", "Subject", "Status", "Attempts"],
               parser: (l) => [
                 new Date(l.createdAt).toLocaleString(),
                 l.to,
                 l.subject,
                 l.status,
                 l.attempts,
-                l.error ?? "",
               ],
             }}
           />
         </CardContent>
       </Card>
+
+      <EmailLogDetailDialog
+        log={selectedLog}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   )
 }

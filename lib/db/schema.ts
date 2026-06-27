@@ -14,10 +14,10 @@ const provider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase()
 
 const mod: typeof pgExports =
   provider === "turso"
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ? (require("./schema.turso") as typeof pgExports)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    : (require("./schema.postgres") as typeof pgExports)
+    ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require("./schema.turso") as typeof pgExports)
+    : // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require("./schema.postgres") as typeof pgExports)
 
 export const {
   user,

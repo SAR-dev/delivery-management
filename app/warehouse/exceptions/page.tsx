@@ -8,12 +8,16 @@ import { useOrders } from "@/features/orders/hooks/use-orders"
 import { useMerchants } from "@/features/merchants/hooks/use-merchants"
 import { useRiders } from "@/features/riders/hooks/use-riders"
 import { formatTk } from "@/lib/pricing"
+import {
+  orderCodeColumn,
+  riderColumn,
+  deliveryAddressColumn,
+  collectibleColumn,
+  statusColumn,
+} from "@/features/orders/components/order-table-columns"
 import type { Order, OrderStatus } from "@/lib/types"
 import { PageHeader } from "@/components/page-header"
 import { pageContent } from "@/config/content"
-import { OrderStatusBadge } from "@/features/orders/components/order-status-badge"
-import { TrackingCell } from "@/features/orders/components/tracking-cell"
-import { AddressModal } from "@/features/orders/components/address-modal"
 import { FailedDeliveryDialog } from "@/features/orders/dialogs/failed-delivery-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -30,7 +34,7 @@ const TAB_STATUSES: Record<FilterTab, OrderStatus[] | undefined> = {
 
 export default function WarehouseExceptionsPage() {
   const { currentUser } = useAuth()
-  const { currentWarehouse, warehouses } = useWarehouses()
+  const { currentWarehouse } = useWarehouses()
   const {
     orders,
     allOrders,
@@ -57,22 +61,16 @@ export default function WarehouseExceptionsPage() {
 
   const merchant = (id: string) => merchants.find((m) => m.id === id)
   const merchantName = (id: string) => merchant(id)?.businessName ?? "Merchant"
-  const rider = (id?: string | null) =>
-    id ? riders.find((r) => r.id === id) : undefined
-  const warehouseName = (id?: string | null) =>
-    id ? (warehouses.find((w) => w.id === id)?.name ?? "—") : "—"
+  const riderName = (id?: string | null) =>
+    id ? (riders.find((r) => r.id === id)?.name ?? "—") : "—"
 
   useEffect(() => {
     setStatuses(TAB_STATUSES[tab])
     setPage(1)
   }, [tab, setStatuses, setPage])
 
-  // FAILED_ATTEMPT parcels at this warehouse awaiting a decision. Already
-  // derived from the unfiltered list (see useOrders), so stats/tab counts
-  // stay stable regardless of the current search.
   const needsAction = warehouseFailedOrders
 
-  // Parcels this warehouse has already resolved as returned.
   const resolved = useMemo(
     () =>
       currentWarehouse
@@ -90,52 +88,10 @@ export default function WarehouseExceptionsPage() {
   }
 
   const columns: DataTableColumn<Order>[] = [
-    {
-      id: "order",
-      header: "Order",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => (
-        <div className="flex flex-col">
-          <span className="text-muted-foreground font-mono text-xs">
-            {o.code}
-          </span>
-          <span className="font-medium">{merchantName(o.merchantId)}</span>
-        </div>
-      ),
-    },
-    {
-      id: "rider",
-      header: "Delivery rider",
-      cell: (o) => (
-        <span className="text-sm">{rider(o.deliveryRiderId)?.name ?? "—"}</span>
-      ),
-    },
-    {
-      id: "warehouse",
-      header: "Warehouse",
-      cell: (o) => (
-        <span className="text-sm">{warehouseName(o.warehouseId)}</span>
-      ),
-    },
-    {
-      id: "city",
-      header: "City",
-      sortable: true,
-      sortValue: (o) => o.deliveryCity,
-      cell: (o) => (
-        <AddressModal order={o}>
-          <div className="flex flex-col">
-            <span className="underline decoration-dotted underline-offset-4">
-              {o.deliveryCity}
-            </span>
-            <span className="text-muted-foreground text-xs">
-              {o.recipientName} · {o.recipientPhone}
-            </span>
-          </div>
-        </AddressModal>
-      ),
-    },
+    // Exceptions show merchant name as the subtitle below the code.
+    orderCodeColumn({ subtitle: "merchant", merchantName }),
+    riderColumn("delivery", riderName, "Delivery rider"),
+    deliveryAddressColumn(),
     {
       id: "attempts",
       header: "Attempts",
@@ -145,13 +101,6 @@ export default function WarehouseExceptionsPage() {
       cell: (o) => (
         <span className="tabular-nums">{o.deliveryAttempts ?? 1}</span>
       ),
-    },
-    {
-      id: "tracking",
-      header: "Tracking",
-      sortable: true,
-      sortValue: (o) => o.code,
-      cell: (o) => <TrackingCell code={o.code} />,
     },
     {
       id: "note",
@@ -165,27 +114,12 @@ export default function WarehouseExceptionsPage() {
           </span>
         ) : (
           <span className="text-muted-foreground text-xs">
-            Open tracking for attempt details
+            See order details for attempt history
           </span>
         ),
     },
-    {
-      id: "collectible",
-      header: "Collectible",
-      align: "right",
-      sortable: true,
-      sortValue: (o) => o.totalCollectible,
-      cell: (o) => (
-        <span className="tabular-nums">{formatTk(o.totalCollectible)}</span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      sortable: true,
-      sortValue: (o) => o.status,
-      cell: (o) => <OrderStatusBadge status={o.status} />,
-    },
+    collectibleColumn(),
+    statusColumn(),
     {
       id: "actions",
       header: "",
@@ -285,9 +219,7 @@ export default function WarehouseExceptionsPage() {
             ? (merchant(activeOrder.merchantId)?.businessName ?? "Merchant")
             : ""
         }
-        riderName={
-          activeOrder ? (rider(activeOrder.deliveryRiderId)?.name ?? "—") : ""
-        }
+        riderName={activeOrder ? riderName(activeOrder.deliveryRiderId) : ""}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
       />
