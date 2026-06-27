@@ -1,14 +1,46 @@
 /**
  * lib/db/schema.ts
  *
- * Static re-export of the postgres schema for TypeScript's type checker.
+ * Re-exports the correct schema based on DB_PROVIDER at runtime.
  * Both schema.postgres and schema.turso export the same names with the same
- * logical shape, so postgres types are valid for both providers.
+ * logical shape, so types are compatible across providers.
  *
- * Runtime provider dispatch (which driver/schema is actually instantiated)
- * lives in lib/db/index.ts — not here. Application code imports types and
- * table references from this file; it never imports schema.postgres or
- * schema.turso directly.
+ * TypeScript always sees the postgres types (the canonical shapes).
  */
 
-export * from "./schema.postgres"
+import type * as pgExports from "./schema.postgres"
+
+const provider = (process.env.DB_PROVIDER ?? "postgres").toLowerCase()
+
+const mod: typeof pgExports =
+  provider === "turso"
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? (require("./schema.turso") as typeof pgExports)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    : (require("./schema.postgres") as typeof pgExports)
+
+export const {
+  user,
+  session,
+  account,
+  verification,
+  profileRoles,
+  profile,
+  division,
+  warehouse,
+  riderTaskTypes,
+  rider,
+  merchantStatuses,
+  merchant,
+  pickupLocation,
+  securityConfig,
+  payoutRequestStatuses,
+  payoutRequest,
+  orderDeliveryTypes,
+  orderStatuses,
+  order,
+  failedMail,
+  emailLogStatuses,
+  emailLog,
+  auditLog,
+} = mod

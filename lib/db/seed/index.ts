@@ -8,6 +8,7 @@
  *   npx tsx lib/db/seed.ts --min
  */
 
+import "dotenv/config"
 import { pool } from "@/lib/db"
 import { cleanDatabase } from "./clean"
 import { seedDivisions } from "./divisions"
@@ -55,7 +56,7 @@ async function main() {
     console.error("\n[seed] ERROR:", err)
     process.exit(1)
   } finally {
-    await pool!.end()
+    if (pool) await pool.end()
   }
 }
 
