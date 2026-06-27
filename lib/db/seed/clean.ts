@@ -34,11 +34,11 @@ export async function cleanDatabase() {
       sql`TRUNCATE TABLE "order", "payout_request", "profile", "verification", "session", "account", "user", "security_config", "pickup_location", "merchant", "rider", "warehouse", "division", "audit_log", "email_log" CASCADE`,
     )
   } else {
-    await db.run(sql`PRAGMA foreign_keys = OFF`)
+    await db.execute(sql`PRAGMA foreign_keys = OFF`)
     for (const table of tables) {
-      await db.run(sql`DELETE FROM ${sql.identifier(table)}`)
+      await db.execute(sql`DELETE FROM ${sql.identifier(table)}`)
     }
-    await db.run(sql`PRAGMA foreign_keys = ON`)
+    await db.execute(sql`PRAGMA foreign_keys = ON`)
   }
 
   log("Clean complete.\n")
